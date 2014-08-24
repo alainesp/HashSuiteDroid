@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="8dp">
+
+     <TableRow
+         android:layout_width="wrap_content"
+         android:layout_height="wrap_content">
+    	
+    	<TextView
+            android:id="@+id/user_added"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:text="Users Added: 0" />
+
+        <TextView
+            android:id="@+id/lines_skipped"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:text="Lines Skipped: 0" />
+    </TableRow>
+
+    <ProgressBar
+        android:id="@+id/status_completition"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="100" />
+
+<TableLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingTop="8dp">
+    
+     <TableRow
+         android:layout_width="wrap_content"
+         android:layout_height="wrap_content">
+        
+         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:text="Format" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textStyle="bold"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:text="Added" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textStyle="bold"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:text="Disable" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textStyle="bold"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:text="Exist" />
+    </TableRow>
+    
+     <!-- just draw a black line -->
+    <View
+        android:layout_height="2dip"
+        android:background="#000000" />
+
+    <TableRow
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" >
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textStyle="bold"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:text="LM" />
+        
+        <TextView
+            android:id="@+id/lm_added"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:gravity="center_horizontal"
+            android:text="0" />
+
+        <TextView
+            android:id="@+id/lm_disable"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:gravity="center_horizontal"
+            android:text="0" />
+
+        <TextView
+            android:id="@+id/lm_exist"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:gravity="center_horizontal"
+            android:text="0" />
+
+    </TableRow>
+
+    <TableRow
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" >
+
+         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textStyle="bold"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:text="NTLM" />
+         
+        <TextView
+            android:id="@+id/ntlm_added"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:gravity="center_horizontal"
+            android:text="0" />
+
+        <TextView
+            android:id="@+id/ntlm_disable"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:gravity="center_horizontal"
+            android:text="0" />
+
+        <TextView
+            android:id="@+id/ntlm_exist"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:gravity="center_horizontal"
+            android:text="0" />
+
+    </TableRow>
+    
+    <TableRow
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" >
+        
+         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textStyle="bold"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:text="DCC" />
+
+        <TextView
+            android:id="@+id/dcc_added"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:gravity="center_horizontal"
+            android:text="0" />
+
+        <TextView
+            android:id="@+id/dcc_disable"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:gravity="center_horizontal"
+            android:text="0" />
+
+        <TextView
+            android:id="@+id/dcc_exist"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingLeft="@dimen/activity_horizontal_margin"
+            android:textAppearance='?android:attr/textAppearanceMedium'
+            android:gravity="center_horizontal"
+            android:text="0" />
+
+    </TableRow>
+    
+</TableLayout>
+
+</LinearLayout>

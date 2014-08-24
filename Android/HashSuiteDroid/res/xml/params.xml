@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" >
+    
+    <com.hashsuite.droid.RulesPreference
+        	android:key="pref_key_rules"
+        	android:defaultValue="32767"
+        	android:title="Active Rules"/>
+
+    <PreferenceCategory android:title="Hardware">
+        
+    <com.hashsuite.droid.ThreadsPreference
+        android:key="pref_key_threads"
+        android:defaultValue="1"
+        android:title="CPU Threads"
+        android:icon="@drawable/ic_action_computer"
+        android:dialogMessage="Please select the number of threads"/>
+    
+    <com.hashsuite.droid.BatteryLimitPreference
+        	android:key="pref_key_battery_limit"
+        	android:defaultValue="20"
+        	android:icon="@drawable/ic_action_battery"
+        	android:title="Battery Limit"/>
+    
+    </PreferenceCategory>
+    
+    <PreferenceCategory android:title="Charset">
+    
+        <com.hashsuite.droid.RangeNumberPreference
+        	android:key="pref_key_charset_range"
+        	android:defaultValue="327680"
+        	android:title="Keys size"/>
+        
+        <com.hashsuite.droid.CharsetStringPreference
+        	android:key="pref_key_charset_string"
+        	android:defaultValue="15"
+        	android:title="Characters"
+        	android:dialogMessage="Select the characters to use"/>
+        
+        <CheckBoxPreference
+            android:key="pref_key_charset_use_rules"
+            android:title="Use rules"
+            android:defaultValue="false"/>
+        
+    </PreferenceCategory>
+    
+    <PreferenceCategory android:title="Wordlist">
+        
+        <com.hashsuite.droid.WordlistPreference 
+            android:key="pref_key_wordlist"
+            android:title="Wordlist file"
+            android:icon="@drawable/ic_action_copy"
+            android:defaultValue="0"/>
+        
+        <CheckBoxPreference
+            android:key="pref_key_wordlist_use_rules"
+            android:title="Use rules"
+            android:defaultValue="true"/>
+        
+    </PreferenceCategory>
+    
+    <PreferenceCategory android:title="Keyboard">
+        
+        <com.hashsuite.droid.RangeNumberPreference
+        	android:key="pref_key_keyboard_range"
+        	android:defaultValue="589826"
+        	android:title="Keys size"/>
+        
+        <com.hashsuite.droid.KeyboardLayoutPreference
+            android:key="pref_key_keyboard_layout"
+            android:title="Keyboard layout"
+            android:icon="@drawable/ic_action_keyboard"
+            android:defaultValue="0"/>
+        
+        <CheckBoxPreference
+            android:key="pref_key_keyboard_use_rules"
+            android:title="Use rules"
+            android:defaultValue="false"/>
+        
+    </PreferenceCategory>
+    
+    <PreferenceCategory android:title="Phrases">
+        
+        <com.hashsuite.droid.RangeNumberPreference
+        	android:key="pref_key_phrases_range"
+        	android:defaultValue="262146"
+        	android:title="Sentence size [words]"/>
+        
+        <com.hashsuite.droid.NumberPreference
+        	android:key="pref_key_phrases_words"
+        	android:defaultValue="210"
+        	android:title="Words pool"/>
+        
+        <CheckBoxPreference
+            android:key="pref_key_phrases_use_rules"
+            android:title="Use rules"
+            android:defaultValue="false"/>
+        
+    </PreferenceCategory>
+
+</PreferenceScreen>
