@@ -4,7 +4,7 @@
 // Code licensed under GPL version 2
 
 #include "common.h"
-#ifndef ANDROID
+#ifdef _WIN32
 	#include <windows.h>
 #endif
 
@@ -527,7 +527,6 @@ PUBLIC void detect_hardware()
 	if (android_getCpuFamily() == ANDROID_CPU_FAMILY_ARM && (features & ANDROID_CPU_ARM_FEATURE_ARMv7) && (features & ANDROID_CPU_ARM_FEATURE_NEON))
 		current_cpu.capabilites[CPU_CAP_NEON] = TRUE;
 
-	// OS string
 	current_cpu.cores = current_cpu.logical_processors = android_getCpuCount();
 }
 #else

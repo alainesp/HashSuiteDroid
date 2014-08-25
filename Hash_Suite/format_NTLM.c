@@ -1052,7 +1052,7 @@ PRIVATE char* ocl_gen_charset_code(unsigned int ntlm_size_bit_table, GPUDevice* 
 		ocl_gen_kernel_with_lenght(source+strlen(source), i, vector_int_size, ntlm_size_bit_table);
 	}
 
-	//{// Comment this see opencl code
+	//{// Uncomment this to view opencl code
 	//	FILE* code = fopen("C:\\Users\\alain\\Desktop\\opencl_code.c","w");
 	//	fwrite(source, 1, strlen(source), code);
 	//	fclose(code);
@@ -1457,7 +1457,7 @@ PRIVATE OpenCL_Param* ocl_protocol_common_init(unsigned int gpu_index, generate_
 
 	// Write the kernel
 	ocl_gen_kernel_ntlm(source, "nt_crypt", ocl_rule_simple_copy, NULL, NULL, NULL, NTLM_MAX_KEY_LENGHT, param->NUM_KEYS_OPENCL);
-	//{// Comment this to view code
+	//{// Uncomment this to view code
 	//	FILE* code = fopen("C:\\Users\\alain\\Desktop\\opencl_code.c","w");
 	//	fwrite(source, 1, strlen(source), code);
 	//	fclose(code);
@@ -1586,70 +1586,60 @@ PRIVATE char* ocl_gen_rules_code(unsigned int ntlm_size_bit_table, GPUDevice* gp
 	// Kernel needed to convert from common format to the ordered by lenght format
 	ocl_gen_kernel_common_2_ordered(base_source, param->NUM_KEYS_OPENCL, NTLM_MAX_KEY_LENGHT);
 	
-	/*cl_uint count_lenght_by_thread = (NTLM_MAX_KEY_LENGHT + 1) / __min(NTLM_MAX_KEY_LENGHT + 1, current_cpu.logical_processors);
-	cl_uint thread_remainder = (NTLM_MAX_KEY_LENGHT + 1) - count_lenght_by_thread*__min(NTLM_MAX_KEY_LENGHT + 1, current_cpu.logical_processors);
-	pos_in_source[0] = strlen(base_source) + 1;*/
-
-	//for (cl_uint thread_id = 0; thread_id < __min(NTLM_MAX_KEY_LENGHT + 1, current_cpu.logical_processors); thread_id++)
-	{
-		char* source = base_source;// +pos_in_source[thread_id];
-
-		// This is because AMD compiler do not support __constant vars inside a kernel
-		ocl_write_code** constants_written = (ocl_write_code**)malloc(current_rules_count*sizeof(ocl_write_code*));
-		int num_constants_written = 0;
+	char* source = base_source;
+	// This is because AMD compiler do not support __constant vars inside a kernel
+	ocl_write_code** constants_written = (ocl_write_code**)malloc(current_rules_count*sizeof(ocl_write_code*));
+	int num_constants_written = 0;
 		
-		// Write the definitions needed by the opencl implementation
-		ocl_write_ntlm_header(source+strlen(source), gpu, ntlm_size_bit_table);
+	// Write the definitions needed by the opencl implementation
+	ocl_write_ntlm_header(source+strlen(source), gpu, ntlm_size_bit_table);
 
-		unsigned int lenght = 0;// thread_id*count_lenght_by_thread + __min(thread_id, thread_remainder);
-		unsigned int max_lenght = NTLM_MAX_KEY_LENGHT + 1;// (thread_id + 1)*count_lenght_by_thread + __min(thread_id + 1, thread_remainder);
-		// Generate one kernel for each rule
-		for (; lenght < max_lenght; lenght++)
+	unsigned int lenght = 0;
+	unsigned int max_lenght = NTLM_MAX_KEY_LENGHT + 1;
+	// Generate one kernel for each rule
+	for (; lenght < max_lenght; lenght++)
+	{
+		for (int i = 0; i < current_rules_count; i++)
 		{
-			//thread_id_by_lenght[lenght] = thread_id;
-			for (int i = 0; i < current_rules_count; i++)
+			char kernel_name[12];
+			char found_param[64];
+			int* need_param_ptr = NULL;
+			// Find the index of the current rule
+			int rule_index;
+			for (rule_index = 0; rule_index < num_rules; rule_index++)
+			if (rules[rule_index].function == current_rules[i])
+				break;
+
+			if (rules[rule_index].ocl.max_param_value)
+				need_param_ptr = &param->param0;
+
+			// If needed to use constants -> write it only once
+			if (rules[rule_index].ocl.setup_constants)
 			{
-				char kernel_name[12];
-				char found_param[64];
-				int* need_param_ptr = NULL;
-				// Find the index of the current rule
-				int rule_index;
-				for (rule_index = 0; rule_index < num_rules; rule_index++)
-				if (rules[rule_index].function == current_rules[i])
-					break;
-
-				if (rules[rule_index].ocl.max_param_value)
-					need_param_ptr = &param->param0;
-
-				// If needed to use constants -> write it only once
-				if (rules[rule_index].ocl.setup_constants)
+				int constants_already_written = FALSE, j;
+				// Check if was written before
+				for (j = 0; j < num_constants_written; j++)
+				if (rules[rule_index].ocl.setup_constants == constants_written[j])
 				{
-					int constants_already_written = FALSE, j;
-					// Check if was written before
-					for (j = 0; j < num_constants_written; j++)
-					if (rules[rule_index].ocl.setup_constants == constants_written[j])
-					{
-						constants_already_written = TRUE;
-						break;
-					}
-					if (!constants_already_written)
-					{
-						constants_written[num_constants_written] = rules[rule_index].ocl.setup_constants;
-						num_constants_written++;
-						rules[rule_index].ocl.setup_constants(source);
-					}
+					constants_already_written = TRUE;
+					break;
 				}
-				// Write the kernel
-				sprintf(kernel_name, "nt_%il%i", i, lenght);
-				sprintf(found_param, "(%uu+%s)", (rule_index << 22) + (lenght << 27), rules[rule_index].ocl.found_param);
-				ocl_gen_kernel_ntlm(source+strlen(source), kernel_name, rules[rule_index].ocl.begin, rules[rule_index].ocl.end, found_param, need_param_ptr, lenght, param->NUM_KEYS_OPENCL);
+				if (!constants_already_written)
+				{
+					constants_written[num_constants_written] = rules[rule_index].ocl.setup_constants;
+					num_constants_written++;
+					rules[rule_index].ocl.setup_constants(source);
+				}
 			}
+			// Write the kernel
+			sprintf(kernel_name, "nt_%il%i", i, lenght);
+			sprintf(found_param, "(%uu+%s)", (rule_index << 22) + (lenght << 27), rules[rule_index].ocl.found_param);
+			ocl_gen_kernel_ntlm(source+strlen(source), kernel_name, rules[rule_index].ocl.begin, rules[rule_index].ocl.end, found_param, need_param_ptr, lenght, param->NUM_KEYS_OPENCL);
 		}
-		free(constants_written);
-		//pos_in_source[thread_id + 1] = strlen(source) + 1 + pos_in_source[thread_id];
 	}
+	free(constants_written);
 
-	//{// Comment this to view code
+	//{// Uncomment this to view code
 	//	FILE* code = fopen("C:\\Users\\alain\\Desktop\\opencl_code.c","w");
 	//	fwrite(base_source, 1, strlen(base_source), code);
 	//	fclose(code);
@@ -1852,8 +1842,6 @@ PRIVATE void ocl_protocol_rules_work(OpenCL_Param* param)
 
 	finish_thread();
 }
-
-#include <process.h>
 PRIVATE OpenCL_Param* ocl_protocol_rules_init(unsigned int gpu_device_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_ntlm_crypt)
 {
 	cl_int code;
@@ -1913,32 +1901,7 @@ out:
 		ntlm_size_bit_table = get_bit_table_mask(num_passwords_loaded, gpu_devices[gpu_device_index].l1_cache_size * 1024, gpu_devices[gpu_device_index].l2_cache_size * 1024);
 
 	// Generate code
-	//size_t* pos_in_source = (size_t*)malloc((__min(NTLM_MAX_KEY_LENGHT + 1, current_cpu.logical_processors) + 1)*sizeof(size_t));
-	//cl_uint* thread_id_by_lenght = (cl_uint*)malloc((NTLM_MAX_KEY_LENGHT + 1)*sizeof(cl_uint));
 	source = ocl_gen_rules_code(ntlm_size_bit_table, &gpu_devices[gpu_device_index], param, kernel2common_index);//, pos_in_source, thread_id_by_lenght);// Generate opencl code
-
-	//param->num_rules_programs = __min(NTLM_MAX_KEY_LENGHT + 1, current_cpu.logical_processors);
-	//param->rules_programs = (cl_program*)malloc(param->num_rules_programs*sizeof(cl_program));
-	//HANDLE* _threads = (HANDLE*)malloc(param->num_rules_programs*sizeof(HANDLE));
-	//// Build with all cpu cores
-	//for (unsigned int thread_id = 0; thread_id < param->num_rules_programs; thread_id++)
-	//{
-	//	oclBuildDataAsync data;
-	//	data.compiler_options = gpu_devices[gpu_device_index].compiler_options;
-	//	data.param = param;
-	//	data.source = source+pos_in_source[thread_id];
-	//	data.thread_id = thread_id;
-	//	_threads[thread_id] = (HANDLE)_beginthreadex(NULL, 0, &build_opencl_program_async, &data, 0, NULL);
-	//}
-	//free(pos_in_source);
-	//// Wait for the build to finish
-	//for (unsigned int thread_id = 0; thread_id < param->num_rules_programs; thread_id++)
-	//{
-	//	WaitForSingleObject(_threads[thread_id], INFINITE);
-	//	// Destroy the thread object.
-	//	CloseHandle(_threads[thread_id]);
-	//}
-	//free(_threads);
 
 	// Perform runtime source compilation
 	if (!build_opencl_program(param, source, gpu_devices[gpu_device_index].compiler_options))
@@ -1968,7 +1931,6 @@ out:
 		{
 			char name_buffer[12];
 			sprintf(name_buffer, "nt_%il%i", i, len);
-			//param->rules_kernels[i + len*current_rules_count] = pclCreateKernel(param->rules_programs[thread_id_by_lenght[len]], name_buffer, &code);
 			param->rules_kernels[i + len*current_rules_count] = pclCreateKernel(param->program, name_buffer, &code);
 			if (code != CL_SUCCESS)
 			{
@@ -1976,7 +1938,6 @@ out:
 				return NULL;
 			}
 		}
-	//free(thread_id_by_lenght);
 
 	// Create memory objects
 	create_opencl_mem(param, GPU_ORDERED_KEYS, CL_MEM_READ_WRITE, 32 * sizeof(cl_uint)+param->NUM_KEYS_OPENCL*gpu_key_buffer_lenght, NULL);

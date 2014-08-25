@@ -56,29 +56,29 @@ typedef void perform_crypt_funtion(CryptParam*);
 #ifdef HS_OPENCL_SUPPORT
 typedef struct OpenCL_Param
 {
-	union{// Support Cuda driver API
+	union{// Support OpenCL/Cuda driver API
 		cl_device_id id;
 		CUdevice cu_id;
 	};
 
-	union{// Support Cuda driver API
+	union{// Support OpenCL/Cuda driver API
 		cl_context context;
 		CUcontext cu_context;
 	};
 
 	cl_command_queue queue;
 
-	union{// Support Cuda driver API
+	union{// Support OpenCL/Cuda driver API
 		cl_program program;
 		CUmodule cu_module;
 	};
 
-	union{// Support Cuda driver API
+	union{// Support OpenCL/Cuda driver API
 		cl_mem mems[10];
 		CUdeviceptr cu_mems[10];
 	};
 
-	union{// Support Cuda driver API
+	union{// Support OpenCL/Cuda driver API
 		cl_kernel kernels[MAX_KEY_LENGHT];
 		CUfunction cu_kernels[MAX_KEY_LENGHT];
 	};
@@ -96,8 +96,6 @@ typedef struct OpenCL_Param
 	// Needed by rules
 	cl_kernel* rules_kernels;
 	cl_uint num_rules_kernels;
-	//cl_program* rules_programs;
-	//cl_uint num_rules_programs;
 }
 OpenCL_Param;
 typedef void gpu_crypt_funtion(OpenCL_Param*);
@@ -356,6 +354,7 @@ extern int* num_user_by_formats;
 
 // Executed at program init
 void init_all(const char* program_exe_path);
+// Other common funtions
 char* get_full_path(char* filename);
 void itoaWithDigitGrouping(int64_t number, char* str);
 void filelength2string(int64_t length, char* str);
@@ -483,7 +482,7 @@ extern OtherSystemInfo current_system_info;
 #define VENDOR_AMD		0
 #define VENDOR_NVIDIA	1
 #define VENDOR_INTEL	2
-#define VENDOR_UNKNOW	3
+#define VENDOR_UNKNOW	128
 
 #define GPU_STATUS_FAILED		0
 #define GPU_STATUS_TEMPERATURE	1
@@ -529,7 +528,7 @@ typedef struct GPUDevice
 	char* compiler_options;
 	cl_ulong max_mem_alloc_size;
 	cl_uint vector_int_size;//Preferred native vector width size for built-in scalar types that can be put into vectors
-	cl_uint vector_int_size_when_consecutive;
+	cl_uint vector_int_size_when_consecutive;// Hack because bug in Nvidia OpenCL compiler (newer versions fix this problem)
 	size_t max_work_group_size1;
 	size_t lm_work_group_size;
 	cl_uint major_cc;

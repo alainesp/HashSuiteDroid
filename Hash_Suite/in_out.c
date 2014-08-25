@@ -10,7 +10,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <ctype.h>
-#ifndef ANDROID
+#ifdef _WIN32
 	#include <io.h>
 #endif
 

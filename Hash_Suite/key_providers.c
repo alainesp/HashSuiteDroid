@@ -6,10 +6,10 @@
 #include "common.h"
 #include <stdio.h>
 
-#ifdef ANDROID
-	#include <pthread.h>
-#else
+#ifdef _WIN32
 	#include <windows.h>
+#else
+	#include <pthread.h>
 #endif
 
 PUBLIC int64_t num_keys_served_from_save;

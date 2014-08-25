@@ -18,7 +18,7 @@
 	#define _aligned_free(x)					free(x)
 	#define _aligned_realloc(x,size,align)		realloc(x,size)
 
-	#define _beginthread(perform_crypt, UNUSED, param) {pthread_t hs_pthread_id;pthread_create(&hs_pthread_id, NULL, perform_crypt, param);}
+	#define HS_NEW_THREAD(function, param) {pthread_t hs_pthread_id;pthread_create(&hs_pthread_id, NULL, function, param);}
 
 	#define HS_MUTEX			pthread_mutex_t
 	#define HS_CREATE_MUTEX(x)	pthread_mutex_init(x, NULL)
@@ -26,26 +26,26 @@
 	#define HS_LEAVE_MUTEX(x)	pthread_mutex_unlock(x)
 	#define HS_DELETE_MUTEX(x)  pthread_mutex_destroy(x)
 
-#else
+#elif defined(_WIN32)// Windows OS
 
 	#define HS_ALIGN(x) __declspec(align(x))
 	#define HS_USE_COMPRESS_WORDLISTS
 	#define PATH_SEPARATOR '\\'
 
-#ifdef _M_ARM
+#ifdef _M_ARM// Win Phone 8
 	#define HS_ARM
-
-	#define _beginthread(perform_crypt, UNUSED, param) (perform_crypt)(param)
+	#define HS_NEW_THREAD(function, param) (function)(param)
 
 	#define HS_MUTEX			SRWLOCK
 	#define HS_CREATE_MUTEX(x)	InitializeSRWLock(x)
 	#define HS_ENTER_MUTEX(x)	AcquireSRWLockExclusive(x)
 	#define HS_LEAVE_MUTEX(x)	ReleaseSRWLockExclusive(x)
 	#define HS_DELETE_MUTEX(x)
-#else
+#else// Windows Desktop
 	#define HS_X86
 	#define HS_OPENCL_SUPPORT
 	#define HS_IMPORT_FROM_SYSTEM
+	#define HS_NEW_THREAD(function, param) _beginthread(function, 0, param)
 	
 	#define HS_MUTEX			CRITICAL_SECTION
 	#define HS_CREATE_MUTEX(x)	InitializeCriticalSection(x)

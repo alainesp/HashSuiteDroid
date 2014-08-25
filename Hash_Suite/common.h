@@ -21,7 +21,7 @@
 
 #define PTR_SIZE_IN_BITS (sizeof(void*)*8)
 
-#ifdef ANDROID
+#ifndef _WIN32
 	unsigned char* _strupr(unsigned char *string);
 	unsigned char* _strlwr(unsigned char *string);
 	long long _filelengthi64(int file);

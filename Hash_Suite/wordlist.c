@@ -7,13 +7,13 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#ifdef ANDROID
-	#include <pthread.h>
-	#define HS_COPY_REG	uint32_t
-#else
+#ifdef _WIN32
 	#include <windows.h>
 	#include <io.h>
 	#define HS_COPY_REG	uint64_t
+#else
+	#include <pthread.h>
+	#define HS_COPY_REG	uint32_t
 #endif
 
 #define HS_COPY_SIZE sizeof(HS_COPY_REG)

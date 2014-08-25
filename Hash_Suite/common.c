@@ -41,7 +41,7 @@ PUBLIC int num_formats = 0;
 // Map to convert hexadecimal char into his corresponding value
 PUBLIC unsigned char hex_to_num[256];
 
-#ifdef ANDROID
+#ifndef _WIN32
 PUBLIC unsigned char* _strupr(unsigned char* string)
 {
 	unsigned char* ptr = string;
@@ -333,7 +333,7 @@ PRIVATE void formats_init(int db_already_initialize)
 
 	formats[LM_INDEX] = lm_format;
 	formats[NTLM_INDEX] = ntlm_format;
-	formats[MSCASH_INDEX] = mscash_format;
+	formats[DCC_INDEX] = mscash_format;
 	num_formats = 3;
 #ifdef INCLUDE_DCC2
 	formats[DCC2_INDEX] = dcc2_format;

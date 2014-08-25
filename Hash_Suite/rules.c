@@ -5,10 +5,10 @@
 
 #include "common.h"
 
-#ifdef ANDROID
-	#include <pthread.h>
-#else
+#ifdef _WIN32
 	#include <windows.h>
+#else
+	#include <pthread.h>
 #endif
 
 #define rules_nt_buffer				rules_data_buffer

@@ -9,11 +9,11 @@
 #include <time.h>
 #include <stdio.h>
 
-#ifdef ANDROID
-	#include <pthread.h>
-#else
+#ifdef _WIN32
 	#include <windows.h>
 	#include <process.h>
+#else
+	#include <pthread.h>
 #endif
 
 // Mutex for thread-safe access
@@ -489,7 +489,7 @@ out:
 			if(gpu_devices[i].is_used && crypt_ptr_params[i])
 			{
 				crypt_ptr_params[i]->thread_id = thread_id;
-				_beginthread(crypt_ptr_func[i], 0, crypt_ptr_params[i]);
+				HS_NEW_THREAD(crypt_ptr_func[i], crypt_ptr_params[i]);
 				thread_id++;
 			}
 
@@ -502,7 +502,7 @@ out:
 	{
 		crypto_params[thread_id].gen = generate;
 		crypto_params[thread_id].thread_id = thread_id;
-		_beginthread(perform_crypt, 0, crypto_params+thread_id);
+		HS_NEW_THREAD(perform_crypt, crypto_params+thread_id);
 		thread_id++;
 	}
 	else
@@ -510,7 +510,7 @@ out:
 		{
 			crypto_params[thread_id].gen = generate;
 			crypto_params[thread_id].thread_id = thread_id;
-			_beginthread(perform_crypt, 0, crypto_params+thread_id);
+			HS_NEW_THREAD(perform_crypt, crypto_params+thread_id);
 		}
 
 	save_time = clock();
