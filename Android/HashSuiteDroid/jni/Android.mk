@@ -13,7 +13,7 @@ LOCAL_SRC_FILES += $(HS_DIR)wordlist.c $(HS_DIR)compress/zlib/unzip.c $(HS_DIR)c
 
 ifeq ($(TARGET_ARCH_ABI),armeabi-v7a)
     LOCAL_ARM_NEON  := true
-    LOCAL_SRC_FILES += neon.S
+    LOCAL_SRC_FILES += $(HS_DIR)arch_neon.S
 endif
 
 LOCAL_STATIC_LIBRARIES := cpufeatures
