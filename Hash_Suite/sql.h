@@ -1,7 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2013 by Alain Espinosa
-//
-// Code licensed under GPL version 2
+// Copyright (c) 2011-2013 by Alain Espinosa. See LICENSE.
 
 #define CREATE_SCHEMA											\
 "CREATE TABLE IF NOT EXISTS Account (							\

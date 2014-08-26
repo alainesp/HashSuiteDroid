@@ -1,7 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2014 by Alain Espinosa
-//
-// Code licensed under GPL version 2
+// Copyright (c) 2014 by Alain Espinosa. See LICENSE.
 
 #define ROTATE(reg1,reg2,rot,t1,t2)	\
     vshr.u32 t1  , reg1, #(32-rot);\

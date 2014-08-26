@@ -1,7 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2013-2014 by Alain Espinosa
-//
-// Code licensed under GPL version 2
+// Copyright (c) 2013-2014 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
