@@ -1408,7 +1408,6 @@ PUBLIC void introduce_fast_lm(AttackData** batch, int* num_attack_in_batch)
 	}
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 PUBLIC void register_key_providers(int db_already_initialize)
 {
 	int i = 0;

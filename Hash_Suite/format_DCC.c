@@ -581,7 +581,7 @@ next_iteration:
 
 #define STEP3_PART(a,b,c,d,value)	a = SSE2_ADD(a, SSE2_ADD(_mm_set1_epi32(value), SSE2_XOR(SSE2_XOR(d, c), b)));
 
-PRIVATE void dcc_ntlm_part_sse2(__m128i* nt_buffer, __m128i* crypt_result)
+PUBLIC void dcc_ntlm_part_sse2(__m128i* nt_buffer, __m128i* crypt_result)
 {
 	__m128i a, b, c, d;
 
@@ -672,7 +672,7 @@ PRIVATE void dcc_ntlm_part_sse2(__m128i* nt_buffer, __m128i* crypt_result)
 	crypt_result[4+2] = c;
 	crypt_result[4+3] = d;
 }
-PRIVATE void dcc_salt_part_sse2(unsigned int* salt_buffer, __m128i* crypt_result)
+PUBLIC void dcc_salt_part_sse2(unsigned int* salt_buffer, __m128i* crypt_result)
 {
 	__m128i a, b, c, d;
 
@@ -748,7 +748,7 @@ PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
 	unsigned int i, j, k;
 	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT, sizeof(unsigned char));
 
-	memset(nt_buffer, 0, 4*NT_NUM_KEYS*sizeof(__m128i));
+	memset(nt_buffer, 0, 16*4*NT_NUM_KEYS);
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
 	{

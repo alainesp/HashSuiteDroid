@@ -429,9 +429,8 @@ void hash_lm(const char* message, char* hash);
 	#define CPU_CAP_AVX2			0x0008
 	
 	#define MAX_NUM_CAPS			12
-#endif
 
-#ifdef HS_ARM
+#elif defined(HS_ARM)
 	#define CPU_CAP_NEON			0x0001
 	#define MAX_NUM_CAPS			4
 #endif

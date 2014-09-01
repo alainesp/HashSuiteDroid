@@ -66,25 +66,111 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, u
 }
 
 #define LOAD_BIG_ENDIAN(x, data) x = rotate(data, 16U); x = ((x & 0x00FF00FF) << 8) + ((x >> 8) & 0x00FF00FF);
+#define DCC2_R(w0, w1, w2, w3)	(W[w0*simd_with+i] = rotate((W[w0*simd_with+i] ^ W[w1*simd_with+i] ^ W[w2*simd_with+i] ^ W[w3*simd_with+i]), 1))
+
+PRIVATE void sha1_process( unsigned int* state, unsigned int* W, unsigned int simd_with )
+{
+	for (unsigned int i = 0; i < simd_with; i++)
+	{
+		unsigned int A = state[i+0*simd_with];
+		unsigned int B = state[i+1*simd_with];
+		unsigned int C = state[i+2*simd_with];
+		unsigned int D = state[i+3*simd_with];
+		unsigned int E = state[i+4*simd_with];
+
+		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[0 ]; B = rotate(B, 30);
+		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[1 ]; A = rotate(A, 30);
+		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[2 ]; E = rotate(E, 30);
+		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[3 ]; D = rotate(D, 30);
+		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[4 ]; C = rotate(C, 30);
+		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[5 ]; B = rotate(B, 30);
+		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[6 ]; A = rotate(A, 30);
+		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[7 ]; E = rotate(E, 30);
+		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[8 ]; D = rotate(D, 30);
+		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[9 ]; C = rotate(C, 30);
+		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[10]; B = rotate(B, 30);
+		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[11]; A = rotate(A, 30);
+		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[12]; E = rotate(E, 30);
+		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[13]; D = rotate(D, 30);
+		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[14]; C = rotate(C, 30);
+		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[15]; B = rotate(B, 30);
+		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + DCC2_R(0, 13,  8, 2); A = rotate(A, 30);
+		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + DCC2_R(1, 14,  9, 3); E = rotate(E, 30);
+		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + DCC2_R(2, 15, 10, 4); D = rotate(D, 30);
+		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + DCC2_R(3,  0, 11, 5); C = rotate(C, 30);
+
+		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + DCC2_R(4 , 1 , 12, 6); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + DCC2_R(5 , 2 , 13, 7); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(6 , 3 , 14, 8); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(7 , 4 , 15, 9); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(8 , 5 , 0, 10); C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + DCC2_R(9 , 6 , 1, 11); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + DCC2_R(10, 7 , 2, 12); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(11, 8 , 3, 13); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(12, 9 , 4, 14); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(13, 10, 5, 15); C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + DCC2_R(14, 11, 6,  0); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + DCC2_R(15, 12, 7,  1); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(0 , 13, 8,  2) ; E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(1 , 14, 9,  3); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(2 , 15, 10, 4); C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + DCC2_R(3 ,  0, 11, 5); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + DCC2_R(4 ,  1, 12, 6); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(5 ,  2, 13, 7); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(6 ,  3, 14, 8); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(7 ,  4, 15, 9); C = rotate(C, 30);
+
+		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(8, 5, 0, 10); B = rotate(B, 30);
+		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(9, 6, 1, 11); A = rotate(A, 30);
+		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(10, 7, 2, 12); E = rotate(E, 30);
+		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(11, 8, 3, 13); D = rotate(D, 30);
+		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(12, 9, 4, 14); C = rotate(C, 30);
+		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(13, 10, 5, 15); B = rotate(B, 30);
+		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(14, 11, 6, 0); A = rotate(A, 30);
+		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(15, 12, 7, 1); E = rotate(E, 30);
+		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(0, 13, 8, 2) ; D = rotate(D, 30);
+		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(1, 14, 9, 3); C = rotate(C, 30);
+		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(2, 15, 10, 4); B = rotate(B, 30);
+		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(3, 0, 11, 5); A = rotate(A, 30);
+		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(4, 1, 12, 6); E = rotate(E, 30);
+		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(5, 2, 13, 7); D = rotate(D, 30);
+		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(6, 3, 14, 8); C = rotate(C, 30);
+		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(7, 4, 15, 9); B = rotate(B, 30);
+		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(8, 5, 0, 10); A = rotate(A, 30);
+		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(9, 6, 1, 11); E = rotate(E, 30);
+		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(10, 7, 2, 12); D = rotate(D, 30);
+		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(11, 8, 3, 13); C = rotate(C, 30);
+																   
+		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(12, 9, 4, 14); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(13, 10, 5, 15); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(14, 11, 6, 0); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(15, 12, 7, 1); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(0, 13, 8, 2) ; C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(1, 14, 9, 3); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(2, 15, 10, 4); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(3, 0, 11, 5); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(4, 1, 12, 6); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(5, 2, 13, 7); C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(6, 3, 14, 8); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(7, 4, 15, 9); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(8, 5, 0, 10); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(9, 6, 1, 11); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(10, 7, 2, 12); C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(11, 8, 3, 13); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(12, 9, 4, 14); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(13, 10, 5, 15); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(14, 11, 6, 0); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(15, 12, 7, 1); C = rotate(C, 30);
+
+		state[i+0*simd_with] += A;
+		state[i+1*simd_with] += B;
+		state[i+2*simd_with] += C;
+		state[i+3*simd_with] += D;
+		state[i+4*simd_with] += E;
+	}
+}
 
 // Calculate W in each iteration
-#define R0  ( W[0 ] = rotate((W[13] ^ W[8 ] ^ W[2 ] ^ W[0 ]), 1) )
-#define R1  ( W[1 ] = rotate((W[14] ^ W[9 ] ^ W[3 ] ^ W[1 ]), 1) )
-#define R2  ( W[2 ] = rotate((W[15] ^ W[10] ^ W[4 ] ^ W[2 ]), 1) )
-#define R3  ( W[3 ] = rotate((W[0 ] ^ W[11] ^ W[5 ] ^ W[3 ]), 1) )
-#define R4  ( W[4 ] = rotate((W[1 ] ^ W[12] ^ W[6 ] ^ W[4 ]), 1) )
-#define R5  ( W[5 ] = rotate((W[2 ] ^ W[13] ^ W[7 ] ^ W[5 ]), 1) )
-#define R6  ( W[6 ] = rotate((W[3 ] ^ W[14] ^ W[8 ] ^ W[6 ]), 1) )
-#define R7  ( W[7 ] = rotate((W[4 ] ^ W[15] ^ W[9 ] ^ W[7 ]), 1) )
-#define R8  ( W[8 ] = rotate((W[5 ] ^ W[0 ] ^ W[10] ^ W[8 ]), 1) )
-#define R9  ( W[9 ] = rotate((W[6 ] ^ W[1 ] ^ W[11] ^ W[9 ]), 1) )
-#define R10 ( W[10] = rotate((W[7 ] ^ W[2 ] ^ W[12] ^ W[10]), 1) )
-#define R11 ( W[11] = rotate((W[8 ] ^ W[3 ] ^ W[13] ^ W[11]), 1) )
-#define R12 ( W[12] = rotate((W[9 ] ^ W[4 ] ^ W[14] ^ W[12]), 1) )
-#define R13 ( W[13] = rotate((W[10] ^ W[5 ] ^ W[15] ^ W[13]), 1) )
-#define R14 ( W[14] = rotate((W[11] ^ W[6 ] ^ W[0 ] ^ W[14]), 1) )
-#define R15 ( W[15] = rotate((W[12] ^ W[7 ] ^ W[1 ] ^ W[15]), 1) )
-
 #define Q0  ( W[0 ] = rotate((sha1_hash[2 ] ^ sha1_hash[0 ]), 1) )
 #define Q1  ( W[1 ] = rotate((sha1_hash[3 ] ^ sha1_hash[1 ]), 1) )
 #define Q2  ( W[2 ] = rotate((0x2A0 ^ sha1_hash[4 ] ^ sha1_hash[2 ]), 1) )
@@ -102,133 +188,16 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, u
 #define Q14 ( W[14] = rotate((W[11] ^ W[6 ] ^ W[0 ]), 1) )
 #define Q15 ( W[15] = rotate((W[12] ^ W[7 ] ^ W[1 ] ^ 0x2A0), 1) )
 
-PRIVATE void sha1_process( unsigned int state[5], const unsigned int data[16] )
+#undef DCC2_R
+#define DCC2_R(w0, w1, w2, w3)	(W[w0] = rotate((W[w0] ^ W[w1] ^ W[w2] ^ W[w3]), 1))
+
+PRIVATE void sha1_process_sha1(const unsigned int state[5], unsigned int sha1_hash[5], unsigned int W[16] )
 {
-    unsigned int W[16], A, B, C, D, E;
-
-	LOAD_BIG_ENDIAN(W[ 0], data[ 0]);
-	LOAD_BIG_ENDIAN(W[ 1], data[ 1]);
-	LOAD_BIG_ENDIAN(W[ 2], data[ 2]);
-	LOAD_BIG_ENDIAN(W[ 3], data[ 3]);
-	LOAD_BIG_ENDIAN(W[ 4], data[ 4]);
-	LOAD_BIG_ENDIAN(W[ 5], data[ 5]);
-	LOAD_BIG_ENDIAN(W[ 6], data[ 6]);
-	LOAD_BIG_ENDIAN(W[ 7], data[ 7]);
-	LOAD_BIG_ENDIAN(W[ 8], data[ 8]);
-	LOAD_BIG_ENDIAN(W[ 9], data[ 9]);
-	LOAD_BIG_ENDIAN(W[10], data[10]);
-	LOAD_BIG_ENDIAN(W[11], data[11]);
-	LOAD_BIG_ENDIAN(W[12], data[12]);
-	LOAD_BIG_ENDIAN(W[13], data[13]);
-	W[14] = data[14];
-	W[15] = data[15];
-
-
-    A = state[0];
-    B = state[1];
-    C = state[2];
-    D = state[3];
-    E = state[4];
-
-    E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[0 ]; B = rotate(B, 30);
-    D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[1 ]; A = rotate(A, 30);
-    C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[2 ]; E = rotate(E, 30);
-    B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[3 ]; D = rotate(D, 30);
-    A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[4 ]; C = rotate(C, 30);
-    E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[5 ]; B = rotate(B, 30);
-    D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[6 ]; A = rotate(A, 30);
-    C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[7 ]; E = rotate(E, 30);
-    B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[8 ]; D = rotate(D, 30);
-    A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[9 ]; C = rotate(C, 30);
-    E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[10]; B = rotate(B, 30);
-    D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[11]; A = rotate(A, 30);
-    C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[12]; E = rotate(E, 30);
-    B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[13]; D = rotate(D, 30);
-    A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[14]; C = rotate(C, 30);
-    E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[15]; B = rotate(B, 30);
-    D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 +   R0 ; A = rotate(A, 30);
-    C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 +   R1 ; E = rotate(E, 30);
-    B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 +   R2 ; D = rotate(D, 30);
-    A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 +   R3 ; C = rotate(C, 30);
-
-    E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + R4 ; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + R5 ; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + R6 ; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + R7 ; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + R8 ; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + R9 ; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + R10; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + R11; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + R12; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + R13; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + R14; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + R15; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + R0 ; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + R1 ; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + R2 ; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + R3 ; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + R4 ; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + R5 ; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + R6 ; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + R7 ; C = rotate(C, 30);
-
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + R8 ; B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + R9 ; A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + R10; E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + R11; D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + R12; C = rotate(C, 30);
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + R13; B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + R14; A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + R15; E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + R0 ; D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + R1 ; C = rotate(C, 30);
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + R2 ; B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + R3 ; A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + R4 ; E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + R5 ; D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + R6 ; C = rotate(C, 30);
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + R7 ; B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + R8 ; A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + R9 ; E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + R10; D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + R11; C = rotate(C, 30);
-																   
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + R12; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + R13; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + R14; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + R15; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + R0 ; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + R1 ; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + R2 ; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + R3 ; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + R4 ; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + R5 ; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + R6 ; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + R7 ; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + R8 ; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + R9 ; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + R10; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + R11; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + R12; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + R13; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + R14; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + R15; C = rotate(C, 30);
-
-    state[0] += A;
-    state[1] += B;
-    state[2] += C;
-    state[3] += D;
-    state[4] += E;
-}
-PRIVATE void sha1_process_sha1(const unsigned int state[5], unsigned int sha1_hash[5] )
-{
-    unsigned int W[16], A, B, C, D, E;
-
-    A = state[0];
-    B = state[1];
-    C = state[2];
-    D = state[3];
-    E = state[4];
+    unsigned int A = state[0];
+    unsigned int B = state[1];
+    unsigned int C = state[2];
+    unsigned int D = state[3];
+    unsigned int E = state[4];
 
     E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + sha1_hash[0]; B = rotate(B, 30);
     D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + sha1_hash[1]; A = rotate(A, 30);
@@ -263,56 +232,56 @@ PRIVATE void sha1_process_sha1(const unsigned int state[5], unsigned int sha1_ha
     A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + Q13; C = rotate(C, 30);
     E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + Q14; B = rotate(B, 30);
     D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + Q15; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + R0 ; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + R1 ; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + R2 ; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + R3 ; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + R4 ; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + R5 ; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + R6 ; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + R7 ; C = rotate(C, 30);
+    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(0, 13, 8, 2) ; E = rotate(E, 30);
+    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(1, 14, 9, 3); D = rotate(D, 30);
+    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(2, 15, 10, 4); C = rotate(C, 30);
+    E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + DCC2_R(3, 0, 11, 5); B = rotate(B, 30);
+    D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + DCC2_R(4, 1, 12, 6); A = rotate(A, 30);
+    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(5, 2, 13, 7); E = rotate(E, 30);
+    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(6, 3, 14, 8); D = rotate(D, 30);
+    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(7, 4, 15, 9); C = rotate(C, 30);
 
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + R8 ; B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + R9 ; A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + R10; E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + R11; D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + R12; C = rotate(C, 30);
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + R13; B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + R14; A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + R15; E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + R0 ; D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + R1 ; C = rotate(C, 30);
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + R2 ; B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + R3 ; A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + R4 ; E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + R5 ; D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + R6 ; C = rotate(C, 30);
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + R7 ; B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + R8 ; A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + R9 ; E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + R10; D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + R11; C = rotate(C, 30);
+    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(8, 5, 0, 10); B = rotate(B, 30);
+    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(9, 6, 1, 11); A = rotate(A, 30);
+    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(10, 7, 2, 12); E = rotate(E, 30);
+    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(11, 8, 3, 13); D = rotate(D, 30);
+    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(12, 9, 4, 14); C = rotate(C, 30);
+    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(13, 10, 5, 15); B = rotate(B, 30);
+    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(14, 11, 6, 0); A = rotate(A, 30);
+    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(15, 12, 7, 1); E = rotate(E, 30);
+    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(0, 13, 8, 2) ; D = rotate(D, 30);
+    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(1, 14, 9, 3); C = rotate(C, 30);
+    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(2, 15, 10, 4); B = rotate(B, 30);
+    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(3, 0, 11, 5); A = rotate(A, 30);
+    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(4, 1, 12, 6); E = rotate(E, 30);
+    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(5, 2, 13, 7); D = rotate(D, 30);
+    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(6, 3, 14, 8); C = rotate(C, 30);
+    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(7, 4, 15, 9); B = rotate(B, 30);
+    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(8, 5, 0, 10); A = rotate(A, 30);
+    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(9, 6, 1, 11); E = rotate(E, 30);
+    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(10, 7, 2, 12); D = rotate(D, 30);
+    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(11, 8, 3, 13); C = rotate(C, 30);
 																   
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + R12; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + R13; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + R14; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + R15; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + R0 ; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + R1 ; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + R2 ; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + R3 ; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + R4 ; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + R5 ; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + R6 ; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + R7 ; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + R8 ; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + R9 ; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + R10; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + R11; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + R12; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + R13; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + R14; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + R15; C = rotate(C, 30);
+    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(12, 9, 4, 14); B = rotate(B, 30);
+    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(13, 10, 5, 15); A = rotate(A, 30);
+    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(14, 11, 6, 0); E = rotate(E, 30);
+    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(15, 12, 7, 1); D = rotate(D, 30);
+    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(0, 13, 8, 2) ; C = rotate(C, 30);
+    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(1, 14, 9, 3); B = rotate(B, 30);
+    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(2, 15, 10, 4); A = rotate(A, 30);
+    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(3, 0, 11, 5); E = rotate(E, 30);
+    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(4, 1, 12, 6); D = rotate(D, 30);
+    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(5, 2, 13, 7); C = rotate(C, 30);
+    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(6, 3, 14, 8); B = rotate(B, 30);
+    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(7, 4, 15, 9); A = rotate(A, 30);
+    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(8, 5, 0, 10); E = rotate(E, 30);
+    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(9, 6, 1, 11); D = rotate(D, 30);
+    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(10, 7, 2, 12); C = rotate(C, 30);
+    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(11, 8, 3, 13); B = rotate(B, 30);
+    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(12, 9, 4, 14); A = rotate(A, 30);
+    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(13, 10, 5, 15); E = rotate(E, 30);
+    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(14, 11, 6, 0); D = rotate(D, 30);
+    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(15, 12, 7, 1); C = rotate(C, 30);
 
     sha1_hash[0] = state[0] + A;
     sha1_hash[1] = state[1] + B;
@@ -321,44 +290,41 @@ PRIVATE void sha1_process_sha1(const unsigned int state[5], unsigned int sha1_ha
     sha1_hash[4] = state[4] + E;
 }
 
-void dcc_ntlm_part_x86(unsigned int* nt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_x86(unsigned int* salt_buffer, unsigned int* crypt_result);
-PRIVATE void crypt_ntlm_protocol_x86(CryptParam* param)
+void dcc_ntlm_part_c_code(unsigned int* nt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_c_code(unsigned int* salt_buffer, unsigned int* crypt_result);
+PRIVATE void crypt_ntlm_protocol_c_code(CryptParam* param)
 {
-	unsigned int i,j;
-	
 	unsigned int * nt_buffer = (unsigned int* )calloc(16*NT_NUM_KEYS, sizeof(unsigned int));
 	unsigned char* key       = (unsigned char*)calloc(MAX_KEY_LENGHT, sizeof(unsigned char));
-	unsigned int crypt_result[12];
+
+	unsigned int crypt_result[12],sha1_hash[5], opad_state[5], ipad_state[5], W[16];
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
 	{
-		for(i = 0; i < NT_NUM_KEYS; i++)
+		for(unsigned int i = 0; i < NT_NUM_KEYS; i++)
 		{
 			unsigned int* salt_buffer = (unsigned int*)salts_values;
 
-			dcc_ntlm_part_x86(nt_buffer+i, crypt_result);
+			dcc_ntlm_part_c_code(nt_buffer+i, crypt_result);
 
 			// For all salts
-			for(j = 0; j < num_diff_salts; j++, salt_buffer += 11)
+			for(unsigned int j = 0; j < num_diff_salts; j++, salt_buffer += 11)
 			{
-				unsigned int a,b,c,d,index;
-
-				dcc_salt_part_x86(salt_buffer, crypt_result);
+				dcc_salt_part_c_code(salt_buffer, crypt_result);
 				
-				a = crypt_result[8+0];
-				b = crypt_result[8+1];
-				c = crypt_result[8+2];
-				d = crypt_result[8+3];
+				unsigned int a = crypt_result[8+0];
+				unsigned int b = crypt_result[8+1];
+				unsigned int c = crypt_result[8+2];
+				unsigned int d = crypt_result[8+3];
 
 				d = rotate(d + SQRT_3, 9);
-				c += (d ^ a ^ b) + salt_buffer[1]  + SQRT_3; c = rotate(c, 11);
-				b += (c ^ d ^ a) + salt_buffer[9]  + SQRT_3; b = rotate(b, 15);
+				c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = rotate(c, 11);
+				b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = rotate(b, 15);
 													
-				a += (b ^ c ^ d) +crypt_result[3]  + SQRT_3; a = rotate(a, 3);
-				d += (a ^ b ^ c) + salt_buffer[7]  + SQRT_3; d = rotate(d, 9);
-				c += (d ^ a ^ b) + salt_buffer[3]  + SQRT_3; c = rotate(c, 11);
-				b += (c ^ d ^ a) +		0		   + SQRT_3; b = rotate(b, 15);
+				a += (b ^ c ^ d) +crypt_result[3] + SQRT_3; a = rotate(a, 3);
+				d += (a ^ b ^ c) + salt_buffer[7] + SQRT_3; d = rotate(d, 9);
+				c += (d ^ a ^ b) + salt_buffer[3] + SQRT_3; c = rotate(c, 11);
+				b += (c ^ d ^ a)				  + SQRT_3; b = rotate(b, 15);
 
 				a += INIT_A;
 				b += INIT_B;
@@ -366,60 +332,70 @@ PRIVATE void crypt_ntlm_protocol_x86(CryptParam* param)
 				d += INIT_D;
 
 				//pbkdf2
+				unsigned int salt_len = (salt_buffer[10] >> 3) - 16;
+				LOAD_BIG_ENDIAN(a, a);
+				LOAD_BIG_ENDIAN(b, b);
+				LOAD_BIG_ENDIAN(c, c);
+				LOAD_BIG_ENDIAN(d, d);
+
+				// ipad_state
+				W[0] = a ^ 0x36363636;
+				W[1] = b ^ 0x36363636;
+				W[2] = c ^ 0x36363636;
+				W[3] = d ^ 0x36363636;
+				memset(&W[4], 0x36, (16-4)*sizeof(unsigned int));
+
+				ipad_state[0] = INIT_A;
+				ipad_state[1] = INIT_B;
+				ipad_state[2] = INIT_C;
+				ipad_state[3] = INIT_D;
+				ipad_state[4] = INIT_E;
+				sha1_process( ipad_state, W, 1 );
+				// opad_state
+				W[0] = a ^ 0x5C5C5C5C;
+				W[1] = b ^ 0x5C5C5C5C;
+				W[2] = c ^ 0x5C5C5C5C;
+				W[3] = d ^ 0x5C5C5C5C;
+				memset(&W[4], 0x5C, (16-4)*sizeof(unsigned int));
+
+				opad_state[0] = INIT_A;
+				opad_state[1] = INIT_B;
+				opad_state[2] = INIT_C;
+				opad_state[3] = INIT_D;
+				opad_state[4] = INIT_E;
+				sha1_process( opad_state, W, 1 );
+
+				memcpy(&sha1_hash, &ipad_state, 5*sizeof(unsigned int));
+
+				// Process the salt
+				memcpy(W, salt_buffer, salt_len);
+				memcpy(((unsigned char*)W)+salt_len, "\x0\x0\x0\x1\x80", 5);
+				memset(((unsigned char*)W)+salt_len+5, 0, 60 - (salt_len+5));
+				W[15] = (64+salt_len+4) << 3;
+				for (unsigned int k = 0; k < 14; k++)
 				{
-					unsigned int sha1_hash[5], opad_state[5], ipad_state[5], pad[16];
-					unsigned int salt_len = (salt_buffer[10] >> 3) - 16;
+					LOAD_BIG_ENDIAN(W[k], W[k]);
+				}
+				sha1_process( sha1_hash, W, 1 );
 
-					for (unsigned int k = 0; k < 2; k++)
-					{
-						unsigned int mask = 0x36363636;
-						unsigned int* state = ipad_state;
-						if(k)
-						{
-							mask = 0x5C5C5C5C;
-							state = opad_state;
-						}
-						pad[0] = a ^ mask;
-						pad[1] = b ^ mask;
-						pad[2] = c ^ mask;
-						pad[3] = d ^ mask;
-						memset(&pad[4], mask & 0xFF, sizeof(pad)-16);
+				sha1_process_sha1( opad_state, sha1_hash, W);
+				// Only copy first 16 bytes, since that is ALL this format uses
+				memcpy(crypt_result+8, sha1_hash, 4*sizeof(unsigned int));
 
-						state[0] = INIT_A;
-						state[1] = INIT_B;
-						state[2] = INIT_C;
-						state[3] = INIT_D;
-						state[4] = INIT_E;
-						sha1_process( state, pad );
-					}
-					memcpy(&sha1_hash, &ipad_state, sizeof(ipad_state));
+				for(unsigned int k = 1; k < 10240; k++)
+				{
+					sha1_process_sha1( ipad_state, sha1_hash, W);
+					sha1_process_sha1( opad_state, sha1_hash, W);
 
-					// Process the salt
-					memcpy(pad, salt_buffer, salt_len);
-					memcpy(((unsigned char*)pad)+salt_len, "\x0\x0\x0\x1\x80", 5);
-					memset(((unsigned char*)pad)+salt_len+5, 0, 60 - (salt_len+5));
-					pad[15] = (64+salt_len+4) << 3;
-					sha1_process( sha1_hash, pad );
-
-					sha1_process_sha1( opad_state, sha1_hash);
-					// Only copy first 16 bytes, since that is ALL this format uses
-					memcpy(crypt_result+8, sha1_hash, 16);
-
-					for(unsigned int k = 1; k < 10240; k++)
-					{
-						sha1_process_sha1( ipad_state, sha1_hash);
-						sha1_process_sha1( opad_state, sha1_hash);
-
-						// Only XOR first 16 bytes, since that is ALL this format uses
-						crypt_result[8+0] ^= sha1_hash[0];
-						crypt_result[8+1] ^= sha1_hash[1];
-						crypt_result[8+2] ^= sha1_hash[2];
-						crypt_result[8+3] ^= sha1_hash[3];
-					}
+					// Only XOR first 16 bytes, since that is ALL this format uses
+					crypt_result[8+0] ^= sha1_hash[0];
+					crypt_result[8+1] ^= sha1_hash[1];
+					crypt_result[8+2] ^= sha1_hash[2];
+					crypt_result[8+3] ^= sha1_hash[3];
 				}
 
 				// Search for a match
-				index = salt_index[j];
+				unsigned int index = salt_index[j];
 
 				// Partial match
 				while(index != NO_ELEM)
@@ -441,6 +417,411 @@ PRIVATE void crypt_ntlm_protocol_x86(CryptParam* param)
 	finish_thread();
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// SSE2 Implementation
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#ifdef HS_X86
+#include <emmintrin.h>
+
+#define SSE2_AND(a,b)	_mm_and_si128(a,b)
+#define SSE2_OR(a,b)	_mm_or_si128(a,b)
+#define SSE2_XOR(a,b)	_mm_xor_si128(a,b)
+#define SSE2_ADD(a,b)	_mm_add_epi32(a,b)
+
+#define SSE2_3XOR(a,b,c)		SSE2_XOR(SSE2_XOR(a,b),c)
+#define SSE2_4XOR(a,b,c,d)		SSE2_XOR(SSE2_XOR(a,b),SSE2_XOR(c,d))
+#define SSE2_3ADD(a,b,c)		SSE2_ADD(SSE2_ADD(a,b),c)
+#define SSE2_4ADD(a,b,c,d)		SSE2_ADD(SSE2_ADD(a,b),SSE2_ADD(c,d))
+#define SSE2_5ADD(a,b,c,d,e)	SSE2_ADD(SSE2_ADD(SSE2_ADD(a,b),SSE2_ADD(c,d)),e)
+
+#define SSE2_ROTATE(a,rot)	SSE2_OR(_mm_slli_epi32(a, rot), _mm_srli_epi32(a, 32-rot))
+
+#define LOAD_BIG_ENDIAN_SSE2(x) x = SSE2_OR(_mm_slli_epi32(x, 16), _mm_srli_epi32(x, 16)); x = SSE2_ADD(_mm_slli_epi32(SSE2_AND(x, _mm_set1_epi32(0x00FF00FF)), 8), SSE2_AND(_mm_srli_epi32(x, 8), _mm_set1_epi32(0x00FF00FF)));
+// Calculate W in each iteration
+#undef DCC2_R
+#define DCC2_R(w0, w1, w2, w3)	W[w0] = SSE2_ROTATE(SSE2_4XOR(W[w0], W[w1], W[w2], W[w3]), 1)
+
+PRIVATE void sha1_process_sha1_sse21(const __m128i state[5], __m128i sha1_hash[5], __m128i W[16] )
+{
+    __m128i A = state[0];
+    __m128i B = state[1];
+    __m128i C = state[2];
+    __m128i D = state[3];
+    __m128i E = state[4];
+
+	__m128i step_const = _mm_set1_epi32(SQRT_2);
+    E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_XOR(D, SSE2_AND(B, SSE2_XOR(C, D))), step_const, sha1_hash[0]			); B = SSE2_ROTATE(B, 30);
+    D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_XOR(C, SSE2_AND(A, SSE2_XOR(B, C))), step_const, sha1_hash[1]			); A = SSE2_ROTATE(A, 30);
+    C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_XOR(B, SSE2_AND(E, SSE2_XOR(A, B))), step_const, sha1_hash[2]			); E = SSE2_ROTATE(E, 30);
+    B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_XOR(A, SSE2_AND(D, SSE2_XOR(E, A))), step_const, sha1_hash[3]			); D = SSE2_ROTATE(D, 30);
+    A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_XOR(E, SSE2_AND(C, SSE2_XOR(D, E))), step_const, sha1_hash[4]			); C = SSE2_ROTATE(C, 30);
+    E = SSE2_4ADD(E, SSE2_ROTATE(A, 5), SSE2_XOR(D, SSE2_AND(B, SSE2_XOR(C, D))), _mm_set1_epi32(SQRT_2+0x80000000) ); B = SSE2_ROTATE(B, 30);
+    D = SSE2_4ADD(D, SSE2_ROTATE(E, 5), SSE2_XOR(C, SSE2_AND(A, SSE2_XOR(B, C))), step_const						); A = SSE2_ROTATE(A, 30);
+    C = SSE2_4ADD(C, SSE2_ROTATE(D, 5), SSE2_XOR(B, SSE2_AND(E, SSE2_XOR(A, B))), step_const						); E = SSE2_ROTATE(E, 30);
+    B = SSE2_4ADD(B, SSE2_ROTATE(C, 5), SSE2_XOR(A, SSE2_AND(D, SSE2_XOR(E, A))), step_const						); D = SSE2_ROTATE(D, 30);
+    A = SSE2_4ADD(A, SSE2_ROTATE(B, 5), SSE2_XOR(E, SSE2_AND(C, SSE2_XOR(D, E))), step_const						); C = SSE2_ROTATE(C, 30);
+    E = SSE2_4ADD(E, SSE2_ROTATE(A, 5), SSE2_XOR(D, SSE2_AND(B, SSE2_XOR(C, D))), step_const						); B = SSE2_ROTATE(B, 30);
+    D = SSE2_4ADD(D, SSE2_ROTATE(E, 5), SSE2_XOR(C, SSE2_AND(A, SSE2_XOR(B, C))), step_const						); A = SSE2_ROTATE(A, 30);
+    C = SSE2_4ADD(C, SSE2_ROTATE(D, 5), SSE2_XOR(B, SSE2_AND(E, SSE2_XOR(A, B))), step_const						); E = SSE2_ROTATE(E, 30);
+    B = SSE2_4ADD(B, SSE2_ROTATE(C, 5), SSE2_XOR(A, SSE2_AND(D, SSE2_XOR(E, A))), step_const						); D = SSE2_ROTATE(D, 30);
+    A = SSE2_4ADD(A, SSE2_ROTATE(B, 5), SSE2_XOR(E, SSE2_AND(C, SSE2_XOR(D, E))), step_const						); C = SSE2_ROTATE(C, 30);
+    E = SSE2_4ADD(E, SSE2_ROTATE(A, 5), SSE2_XOR(D, SSE2_AND(B, SSE2_XOR(C, D))), _mm_set1_epi32(SQRT_2 + 0x2A0)	); B = SSE2_ROTATE(B, 30);
+    W[0] = SSE2_ROTATE(SSE2_XOR(sha1_hash[2 ], sha1_hash[0 ]), 1)						; D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_XOR(C, SSE2_AND(A, SSE2_XOR(B, C))), step_const, W[0]); A = SSE2_ROTATE(A, 30);
+    W[1] = SSE2_ROTATE(SSE2_XOR(sha1_hash[3 ], sha1_hash[1 ]), 1)						; C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_XOR(B, SSE2_AND(E, SSE2_XOR(A, B))), step_const, W[1]); E = SSE2_ROTATE(E, 30);
+	W[2] = SSE2_ROTATE(SSE2_3XOR(_mm_set1_epi32(0x2A0), sha1_hash[4], sha1_hash[2]), 1) ; B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_XOR(A, SSE2_AND(D, SSE2_XOR(E, A))), step_const, W[2]); D = SSE2_ROTATE(D, 30);
+	W[3] = SSE2_ROTATE(SSE2_3XOR(W[0], _mm_set1_epi32(0x80000000), sha1_hash[3]), 1)	; A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_XOR(E, SSE2_AND(C, SSE2_XOR(D, E))), step_const, W[3]); C = SSE2_ROTATE(C, 30);
+
+	step_const = _mm_set1_epi32(SQRT_3);
+	W[4 ] = SSE2_ROTATE(SSE2_XOR(W[1], sha1_hash[4 ]), 1) 						; E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_3XOR(B, C, D), step_const, W[4 ]); B = SSE2_ROTATE(B, 30);
+	W[5 ] = SSE2_ROTATE(SSE2_XOR(W[2], _mm_set1_epi32(0x80000000)), 1) 			; D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_3XOR(A, B, C), step_const, W[5 ]); A = SSE2_ROTATE(A, 30);
+	W[6 ] = SSE2_ROTATE(W[3], 1) 												; C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_3XOR(E, A, B), step_const, W[6 ]); E = SSE2_ROTATE(E, 30);
+	W[7 ] = SSE2_ROTATE(SSE2_XOR(W[4], _mm_set1_epi32(0x2A0)), 1) 				; B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_3XOR(D, E, A), step_const, W[7 ]); D = SSE2_ROTATE(D, 30);
+	W[8 ] = SSE2_ROTATE(SSE2_XOR(W[5], W[0]), 1) 								; A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_3XOR(C, D, E), step_const, W[8 ]); C = SSE2_ROTATE(C, 30);
+	W[9 ] = SSE2_ROTATE(SSE2_XOR(W[6], W[1]), 1) 								; E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_3XOR(B, C, D), step_const, W[9 ]); B = SSE2_ROTATE(B, 30);
+	W[10] = SSE2_ROTATE(SSE2_XOR(W[7], W[2]), 1) 								; D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_3XOR(A, B, C), step_const, W[10]); A = SSE2_ROTATE(A, 30);
+	W[11] = SSE2_ROTATE(SSE2_XOR(W[8], W[3] ), 1) 								; C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_3XOR(E, A, B), step_const, W[11]); E = SSE2_ROTATE(E, 30);
+	W[12] = SSE2_ROTATE(SSE2_XOR(W[9], W[4]), 1) 								; B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_3XOR(D, E, A), step_const, W[12]); D = SSE2_ROTATE(D, 30);
+	W[13] = SSE2_ROTATE(SSE2_3XOR(W[10], W[5], _mm_set1_epi32(0x2A0)), 1) 		; A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_3XOR(C, D, E), step_const, W[13]); C = SSE2_ROTATE(C, 30);
+	W[14] = SSE2_ROTATE(SSE2_3XOR(W[11], W[6], W[0]), 1) 						; E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_3XOR(B, C, D), step_const, W[14]); B = SSE2_ROTATE(B, 30);
+	W[15] = SSE2_ROTATE(SSE2_4XOR(W[12], W[7], W[1], _mm_set1_epi32(0x2A0)), 1) ; D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_3XOR(A, B, C), step_const, W[15]); A = SSE2_ROTATE(A, 30);
+    DCC2_R(0, 13,  8, 2); C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_3XOR(E, A, B), step_const, W[0]); E = SSE2_ROTATE(E, 30);
+    DCC2_R(1, 14,  9, 3); B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_3XOR(D, E, A), step_const, W[1]); D = SSE2_ROTATE(D, 30);
+    DCC2_R(2, 15, 10, 4); A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_3XOR(C, D, E), step_const, W[2]); C = SSE2_ROTATE(C, 30);
+    DCC2_R(3,  0, 11, 5); E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_3XOR(B, C, D), step_const, W[3]); B = SSE2_ROTATE(B, 30);
+    DCC2_R(4,  1, 12, 6); D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_3XOR(A, B, C), step_const, W[4]); A = SSE2_ROTATE(A, 30);
+    DCC2_R(5,  2, 13, 7); C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_3XOR(E, A, B), step_const, W[5]); E = SSE2_ROTATE(E, 30);
+    DCC2_R(6,  3, 14, 8); B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_3XOR(D, E, A), step_const, W[6]); D = SSE2_ROTATE(D, 30);
+    DCC2_R(7,  4, 15, 9); A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_3XOR(C, D, E), step_const, W[7]); C = SSE2_ROTATE(C, 30);
+
+	step_const = _mm_set1_epi32(0x8F1BBCDC);
+    DCC2_R(8 ,  5,  0, 10); E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_OR(SSE2_AND(B, C), SSE2_AND(D, SSE2_OR(B, C))), step_const, W[8 ]); B = SSE2_ROTATE(B, 30);
+    DCC2_R(9 ,  6,  1, 11); D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_OR(SSE2_AND(A, B), SSE2_AND(C, SSE2_OR(A, B))), step_const, W[9 ]); A = SSE2_ROTATE(A, 30);
+    DCC2_R(10,  7,  2, 12); C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_OR(SSE2_AND(E, A), SSE2_AND(B, SSE2_OR(E, A))), step_const, W[10]); E = SSE2_ROTATE(E, 30);
+    DCC2_R(11,  8,  3, 13); B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_OR(SSE2_AND(D, E), SSE2_AND(A, SSE2_OR(D, E))), step_const, W[11]); D = SSE2_ROTATE(D, 30);
+    DCC2_R(12,  9,  4, 14); A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_OR(SSE2_AND(C, D), SSE2_AND(E, SSE2_OR(C, D))), step_const, W[12]); C = SSE2_ROTATE(C, 30);
+    DCC2_R(13, 10,  5, 15); E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_OR(SSE2_AND(B, C), SSE2_AND(D, SSE2_OR(B, C))), step_const, W[13]); B = SSE2_ROTATE(B, 30);
+    DCC2_R(14, 11,  6,  0); D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_OR(SSE2_AND(A, B), SSE2_AND(C, SSE2_OR(A, B))), step_const, W[14]); A = SSE2_ROTATE(A, 30);
+    DCC2_R(15, 12,  7,  1); C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_OR(SSE2_AND(E, A), SSE2_AND(B, SSE2_OR(E, A))), step_const, W[15]); E = SSE2_ROTATE(E, 30);
+    DCC2_R(0 , 13,  8,  2); B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_OR(SSE2_AND(D, E), SSE2_AND(A, SSE2_OR(D, E))), step_const, W[0 ]); D = SSE2_ROTATE(D, 30);
+    DCC2_R(1 , 14,  9,  3); A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_OR(SSE2_AND(C, D), SSE2_AND(E, SSE2_OR(C, D))), step_const, W[1 ]); C = SSE2_ROTATE(C, 30);
+    DCC2_R(2 , 15, 10,  4); E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_OR(SSE2_AND(B, C), SSE2_AND(D, SSE2_OR(B, C))), step_const, W[2 ]); B = SSE2_ROTATE(B, 30);
+    DCC2_R(3 ,  0, 11,  5); D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_OR(SSE2_AND(A, B), SSE2_AND(C, SSE2_OR(A, B))), step_const, W[3 ]); A = SSE2_ROTATE(A, 30);
+    DCC2_R(4 ,  1, 12,  6); C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_OR(SSE2_AND(E, A), SSE2_AND(B, SSE2_OR(E, A))), step_const, W[4 ]); E = SSE2_ROTATE(E, 30);
+    DCC2_R(5 ,  2, 13,  7); B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_OR(SSE2_AND(D, E), SSE2_AND(A, SSE2_OR(D, E))), step_const, W[5 ]); D = SSE2_ROTATE(D, 30);
+    DCC2_R(6 ,  3, 14,  8); A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_OR(SSE2_AND(C, D), SSE2_AND(E, SSE2_OR(C, D))), step_const, W[6 ]); C = SSE2_ROTATE(C, 30);
+    DCC2_R(7 ,  4, 15,  9); E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_OR(SSE2_AND(B, C), SSE2_AND(D, SSE2_OR(B, C))), step_const, W[7 ]); B = SSE2_ROTATE(B, 30);
+    DCC2_R(8 ,  5,  0, 10); D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_OR(SSE2_AND(A, B), SSE2_AND(C, SSE2_OR(A, B))), step_const, W[8 ]); A = SSE2_ROTATE(A, 30);
+    DCC2_R(9 ,  6,  1, 11); C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_OR(SSE2_AND(E, A), SSE2_AND(B, SSE2_OR(E, A))), step_const, W[9 ]); E = SSE2_ROTATE(E, 30);
+    DCC2_R(10,  7,  2, 12); B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_OR(SSE2_AND(D, E), SSE2_AND(A, SSE2_OR(D, E))), step_const, W[10]); D = SSE2_ROTATE(D, 30);
+    DCC2_R(11,  8,  3, 13); A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_OR(SSE2_AND(C, D), SSE2_AND(E, SSE2_OR(C, D))), step_const, W[11]); C = SSE2_ROTATE(C, 30);
+										
+	step_const = _mm_set1_epi32(0xCA62C1D6);
+    DCC2_R(12,  9,  4, 14); E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_3XOR(B, C, D), step_const, W[12]); B = SSE2_ROTATE(B, 30);
+    DCC2_R(13, 10,  5, 15); D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_3XOR(A, B, C), step_const, W[13]); A = SSE2_ROTATE(A, 30);
+    DCC2_R(14, 11,  6,  0); C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_3XOR(E, A, B), step_const, W[14]); E = SSE2_ROTATE(E, 30);
+    DCC2_R(15, 12,  7,  1); B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_3XOR(D, E, A), step_const, W[15]); D = SSE2_ROTATE(D, 30);
+    DCC2_R(0 , 13,  8,  2); A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_3XOR(C, D, E), step_const, W[0 ]); C = SSE2_ROTATE(C, 30);
+    DCC2_R(1 , 14,  9,  3); E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_3XOR(B, C, D), step_const, W[1 ]); B = SSE2_ROTATE(B, 30);
+    DCC2_R(2 , 15, 10,  4); D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_3XOR(A, B, C), step_const, W[2 ]); A = SSE2_ROTATE(A, 30);
+    DCC2_R(3 ,  0, 11,  5); C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_3XOR(E, A, B), step_const, W[3 ]); E = SSE2_ROTATE(E, 30);
+    DCC2_R(4 ,  1, 12,  6); B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_3XOR(D, E, A), step_const, W[4 ]); D = SSE2_ROTATE(D, 30);
+    DCC2_R(5 ,  2, 13,  7); A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_3XOR(C, D, E), step_const, W[5 ]); C = SSE2_ROTATE(C, 30);
+    DCC2_R(6 ,  3, 14,  8); E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_3XOR(B, C, D), step_const, W[6 ]); B = SSE2_ROTATE(B, 30);
+    DCC2_R(7 ,  4, 15,  9); D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_3XOR(A, B, C), step_const, W[7 ]); A = SSE2_ROTATE(A, 30);
+    DCC2_R(8 ,  5,  0, 10); C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_3XOR(E, A, B), step_const, W[8 ]); E = SSE2_ROTATE(E, 30);
+    DCC2_R(9 ,  6,  1, 11); B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_3XOR(D, E, A), step_const, W[9 ]); D = SSE2_ROTATE(D, 30);
+    DCC2_R(10,  7,  2, 12); A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_3XOR(C, D, E), step_const, W[10]); C = SSE2_ROTATE(C, 30);
+    DCC2_R(11,  8,  3, 13); E = SSE2_5ADD(E, SSE2_ROTATE(A, 5), SSE2_3XOR(B, C, D), step_const, W[11]); B = SSE2_ROTATE(B, 30);
+    DCC2_R(12,  9,  4, 14); D = SSE2_5ADD(D, SSE2_ROTATE(E, 5), SSE2_3XOR(A, B, C), step_const, W[12]); A = SSE2_ROTATE(A, 30);
+    DCC2_R(13, 10,  5, 15); C = SSE2_5ADD(C, SSE2_ROTATE(D, 5), SSE2_3XOR(E, A, B), step_const, W[13]); E = SSE2_ROTATE(E, 30);
+    DCC2_R(14, 11,  6,  0); B = SSE2_5ADD(B, SSE2_ROTATE(C, 5), SSE2_3XOR(D, E, A), step_const, W[14]); D = SSE2_ROTATE(D, 30);
+    DCC2_R(15, 12,  7,  1); A = SSE2_5ADD(A, SSE2_ROTATE(B, 5), SSE2_3XOR(C, D, E), step_const, W[15]); C = SSE2_ROTATE(C, 30);
+
+    sha1_hash[0] = SSE2_ADD(state[0], A);
+    sha1_hash[1] = SSE2_ADD(state[1], B);
+    sha1_hash[2] = SSE2_ADD(state[2], C);
+    sha1_hash[3] = SSE2_ADD(state[3], D);
+    sha1_hash[4] = SSE2_ADD(state[4], E);
+}
+
+
+// Test--------------------------------------------------------------------------------------------------------
+// Calculate W in each iteration
+#undef Q0 
+#undef Q1 
+#undef Q2 
+#undef Q3 
+#undef Q4 
+#undef Q5 
+#undef Q6 
+#undef Q7 
+#undef Q8 
+#undef Q9 
+#undef Q10
+#undef Q11
+#undef Q12
+#undef Q13
+#undef Q14
+#undef Q15
+#define Q0  ( W[0 ].m128i_u32[i] = rotate((sha1_hash[2 ].m128i_u32[i] ^ sha1_hash[0 ].m128i_u32[i]), 1) )
+#define Q1  ( W[1 ].m128i_u32[i] = rotate((sha1_hash[3 ].m128i_u32[i] ^ sha1_hash[1 ].m128i_u32[i]), 1) )
+#define Q2  ( W[2 ].m128i_u32[i] = rotate((0x2A0 ^ sha1_hash[4 ].m128i_u32[i] ^ sha1_hash[2 ].m128i_u32[i]), 1) )
+#define Q3  ( W[3 ].m128i_u32[i] = rotate((W[0 ].m128i_u32[i] ^ 0x80000000 ^ sha1_hash[3 ].m128i_u32[i]), 1) )
+#define Q4  ( W[4 ].m128i_u32[i] = rotate((W[1 ].m128i_u32[i] ^ sha1_hash[4 ].m128i_u32[i]), 1) )
+#define Q5  ( W[5 ].m128i_u32[i] = rotate((W[2 ].m128i_u32[i] ^ 0x80000000), 1) )
+#define Q6  ( W[6 ].m128i_u32[i] = rotate((W[3 ].m128i_u32[i] ), 1) )
+#define Q7  ( W[7 ].m128i_u32[i] = rotate((W[4 ].m128i_u32[i] ^ 0x2A0), 1) )
+#define Q8  ( W[8 ].m128i_u32[i] = rotate((W[5 ].m128i_u32[i] ^ W[0 ].m128i_u32[i]), 1) )
+#define Q9  ( W[9 ].m128i_u32[i] = rotate((W[6 ].m128i_u32[i] ^ W[1 ].m128i_u32[i]), 1) )
+#define Q10 ( W[10].m128i_u32[i] = rotate((W[7 ].m128i_u32[i] ^ W[2 ].m128i_u32[i]), 1) )
+#define Q11 ( W[11].m128i_u32[i] = rotate((W[8 ].m128i_u32[i] ^ W[3 ].m128i_u32[i]), 1) )
+#define Q12 ( W[12].m128i_u32[i] = rotate((W[9 ].m128i_u32[i] ^ W[4 ].m128i_u32[i]), 1) )
+#define Q13 ( W[13].m128i_u32[i] = rotate((W[10].m128i_u32[i] ^ W[5 ].m128i_u32[i] ^ 0x2A0), 1) )
+#define Q14 ( W[14].m128i_u32[i] = rotate((W[11].m128i_u32[i] ^ W[6 ].m128i_u32[i] ^ W[0 ].m128i_u32[i]), 1) )
+#define Q15 ( W[15].m128i_u32[i] = rotate((W[12].m128i_u32[i] ^ W[7 ].m128i_u32[i] ^ W[1 ].m128i_u32[i] ^ 0x2A0), 1) )
+#undef DCC2_R
+#define DCC2_R(w0, w1, w2, w3)	(W[w0].m128i_u32[i] = rotate((W[w0].m128i_u32[i] ^ W[w1].m128i_u32[i] ^ W[w2].m128i_u32[i] ^ W[w3].m128i_u32[i]), 1))
+PRIVATE void sha1_process_sha1_sse2(const __m128i state[5], __m128i sha1_hash[5], __m128i W[16])
+{
+	for (unsigned int i = 0; i < 4; i++)
+	{
+		unsigned int A = state[0].m128i_u32[i];
+		unsigned int B = state[1].m128i_u32[i];
+		unsigned int C = state[2].m128i_u32[i];
+		unsigned int D = state[3].m128i_u32[i];
+		unsigned int E = state[4].m128i_u32[i];
+
+		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + sha1_hash[0].m128i_u32[i]; B = rotate(B, 30);
+		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + sha1_hash[1].m128i_u32[i]; A = rotate(A, 30);
+		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + sha1_hash[2].m128i_u32[i]; E = rotate(E, 30);
+		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + sha1_hash[3].m128i_u32[i]; D = rotate(D, 30);
+		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + sha1_hash[4].m128i_u32[i]; C = rotate(C, 30);
+		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + 0x80000000  ; B = rotate(B, 30);
+		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2		       ; A = rotate(A, 30);
+		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2		       ; E = rotate(E, 30);
+		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2		       ; D = rotate(D, 30);
+		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2		       ; C = rotate(C, 30);
+		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2		       ; B = rotate(B, 30);
+		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2		       ; A = rotate(A, 30);
+		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2		       ; E = rotate(E, 30);
+		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2		       ; D = rotate(D, 30);
+		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2		       ; C = rotate(C, 30);
+		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + 0x2A0	   ; B = rotate(B, 30);
+		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 +  Q0		   ; A = rotate(A, 30);
+		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 +  Q1		   ; E = rotate(E, 30);
+		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 +  Q2		   ; D = rotate(D, 30);
+		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 +  Q3		   ; C = rotate(C, 30);
+
+		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + Q4 ; B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + Q5 ; A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + Q6 ; E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + Q7 ; D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + Q8 ; C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + Q9 ; B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + Q10; A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + Q11; E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + Q12; D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + Q13; C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + Q14; B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + Q15; A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(0, 13, 8, 2) ; E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(1, 14, 9, 3); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(2, 15, 10, 4); C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + DCC2_R(3, 0, 11, 5); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + DCC2_R(4, 1, 12, 6); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(5, 2, 13, 7); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(6, 3, 14, 8); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(7, 4, 15, 9); C = rotate(C, 30);
+
+		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(8, 5, 0, 10); B = rotate(B, 30);
+		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(9, 6, 1, 11); A = rotate(A, 30);
+		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(10, 7, 2, 12); E = rotate(E, 30);
+		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(11, 8, 3, 13); D = rotate(D, 30);
+		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(12, 9, 4, 14); C = rotate(C, 30);
+		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(13, 10, 5, 15); B = rotate(B, 30);
+		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(14, 11, 6, 0); A = rotate(A, 30);
+		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(15, 12, 7, 1); E = rotate(E, 30);
+		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(0, 13, 8, 2) ; D = rotate(D, 30);
+		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(1, 14, 9, 3); C = rotate(C, 30);
+		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(2, 15, 10, 4); B = rotate(B, 30);
+		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(3, 0, 11, 5); A = rotate(A, 30);
+		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(4, 1, 12, 6); E = rotate(E, 30);
+		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(5, 2, 13, 7); D = rotate(D, 30);
+		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(6, 3, 14, 8); C = rotate(C, 30);
+		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(7, 4, 15, 9); B = rotate(B, 30);
+		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(8, 5, 0, 10); A = rotate(A, 30);
+		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(9, 6, 1, 11); E = rotate(E, 30);
+		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(10, 7, 2, 12); D = rotate(D, 30);
+		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(11, 8, 3, 13); C = rotate(C, 30);
+																   
+		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(12, 9, 4, 14); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(13, 10, 5, 15); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(14, 11, 6, 0); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(15, 12, 7, 1); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(0, 13, 8, 2) ; C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(1, 14, 9, 3); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(2, 15, 10, 4); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(3, 0, 11, 5); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(4, 1, 12, 6); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(5, 2, 13, 7); C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(6, 3, 14, 8); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(7, 4, 15, 9); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(8, 5, 0, 10); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(9, 6, 1, 11); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(10, 7, 2, 12); C = rotate(C, 30);
+		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(11, 8, 3, 13); B = rotate(B, 30);
+		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(12, 9, 4, 14); A = rotate(A, 30);
+		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(13, 10, 5, 15); E = rotate(E, 30);
+		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(14, 11, 6, 0); D = rotate(D, 30);
+		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(15, 12, 7, 1); C = rotate(C, 30);
+
+		sha1_hash[0].m128i_u32[i] = state[0].m128i_u32[i] + A;
+		sha1_hash[1].m128i_u32[i] = state[1].m128i_u32[i] + B;
+		sha1_hash[2].m128i_u32[i] = state[2].m128i_u32[i] + C;
+		sha1_hash[3].m128i_u32[i] = state[3].m128i_u32[i] + D;
+		sha1_hash[4].m128i_u32[i] = state[4].m128i_u32[i] + E;
+	}
+}
+//------------------------------------------------------------------------------------------------------------------------------
+
+void dcc_ntlm_part_sse2(__m128i* nt_buffer, __m128i* crypt_result);
+void dcc_salt_part_sse2(unsigned int* salt_buffer, __m128i* crypt_result);
+PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
+{
+	__m128i* nt_buffer = (__m128i*)_aligned_malloc(16*4*NT_NUM_KEYS, 16);
+	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT, sizeof(unsigned char));
+
+	__m128i crypt_result[12], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
+
+	memset(nt_buffer, 0, 16*4*NT_NUM_KEYS);
+
+	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
+	{
+		for(unsigned int i = 0; i < NT_NUM_KEYS/4; i++)
+		{
+			unsigned int* salt_buffer = (unsigned int*)salts_values;
+
+			dcc_ntlm_part_sse2(nt_buffer+i, crypt_result);
+
+			// For all salts
+			for(unsigned int j = 0; j < num_diff_salts; j++, salt_buffer += 11)
+			{
+				dcc_salt_part_sse2(salt_buffer, crypt_result);
+				
+				__m128i a = crypt_result[8+0];
+				__m128i b = crypt_result[8+1];
+				__m128i c = crypt_result[8+2];
+				__m128i d = crypt_result[8+3];
+				__m128i sqrt_3 = _mm_set1_epi32(SQRT_3);
+
+				d = SSE2_ADD(d, sqrt_3); d = SSE2_ROTATE(d, 9);
+				c = SSE2_4ADD(c, SSE2_3XOR(d, a, b), _mm_set1_epi32(salt_buffer[1]), sqrt_3); c = SSE2_ROTATE(c, 11);
+				b = SSE2_4ADD(b, SSE2_3XOR(c, d, a), _mm_set1_epi32(salt_buffer[9]), sqrt_3); b = SSE2_ROTATE(b, 15);
+
+				a = SSE2_4ADD(a, SSE2_3XOR(b, c, d),		crypt_result[3]			, sqrt_3); a = SSE2_ROTATE(a, 3);
+				d = SSE2_4ADD(d, SSE2_3XOR(a, b, c), _mm_set1_epi32(salt_buffer[7]) , sqrt_3); d = SSE2_ROTATE(d, 9);
+				c = SSE2_4ADD(c, SSE2_3XOR(d, a, b), _mm_set1_epi32(salt_buffer[3]) , sqrt_3); c = SSE2_ROTATE(c, 11);
+				b = SSE2_3ADD(b, SSE2_3XOR(c, d, a)									, sqrt_3); b = SSE2_ROTATE(b, 15);
+
+				a = SSE2_ADD(a, _mm_set1_epi32(INIT_A));
+				b = SSE2_ADD(b, _mm_set1_epi32(INIT_B));
+				c = SSE2_ADD(c, _mm_set1_epi32(INIT_C));
+				d = SSE2_ADD(d, _mm_set1_epi32(INIT_D));
+
+				//pbkdf2
+				unsigned int salt_len = (salt_buffer[10] >> 3) - 16;
+				LOAD_BIG_ENDIAN_SSE2(a);
+				LOAD_BIG_ENDIAN_SSE2(b);
+				LOAD_BIG_ENDIAN_SSE2(c);
+				LOAD_BIG_ENDIAN_SSE2(d);
+
+				// ipad_state
+				W[0] = SSE2_XOR(a, _mm_set1_epi32(0x36363636));
+				W[1] = SSE2_XOR(b, _mm_set1_epi32(0x36363636));
+				W[2] = SSE2_XOR(c, _mm_set1_epi32(0x36363636));
+				W[3] = SSE2_XOR(d, _mm_set1_epi32(0x36363636));
+				memset(&W[4], 0x36, (16-4)*sizeof(__m128i));
+
+				ipad_state[0] = _mm_set1_epi32(INIT_A);
+				ipad_state[1] = _mm_set1_epi32(INIT_B);
+				ipad_state[2] = _mm_set1_epi32(INIT_C);
+				ipad_state[3] = _mm_set1_epi32(INIT_D);
+				ipad_state[4] = _mm_set1_epi32(INIT_E);
+				sha1_process( (unsigned int*)ipad_state, (unsigned int*)W, 4 );
+				// opad_state
+				W[0] = SSE2_XOR(a, _mm_set1_epi32(0x5C5C5C5C));
+				W[1] = SSE2_XOR(b, _mm_set1_epi32(0x5C5C5C5C));
+				W[2] = SSE2_XOR(c, _mm_set1_epi32(0x5C5C5C5C));
+				W[3] = SSE2_XOR(d, _mm_set1_epi32(0x5C5C5C5C));
+				memset(&W[4], 0x5C, (16-4)*sizeof(__m128i));
+
+				opad_state[0] = _mm_set1_epi32(INIT_A);
+				opad_state[1] = _mm_set1_epi32(INIT_B);
+				opad_state[2] = _mm_set1_epi32(INIT_C);
+				opad_state[3] = _mm_set1_epi32(INIT_D);
+				opad_state[4] = _mm_set1_epi32(INIT_E);
+				sha1_process( (unsigned int*)opad_state, (unsigned int*)W, 4 );
+
+				memcpy(&sha1_hash, &ipad_state, 5*sizeof(__m128i));
+
+				// Process the salt
+				memcpy(W, salt_buffer, salt_len);
+				memcpy(((unsigned char*)W)+salt_len, "\x0\x0\x0\x1\x80", 5);
+				memset(((unsigned char*)W)+salt_len+5, 0, 60 - (salt_len+5));
+				W[14] = _mm_set1_epi32(0);
+				W[15] = _mm_set1_epi32((64+salt_len+4) << 3);
+				for (int k = 13; k >= 0; k--)
+				{
+					// Convert to BIG_ENDIAN
+					unsigned int x = rotate(((unsigned int*)W)[k], 16U);
+					x = ((x & 0x00FF00FF) << 8) + ((x >> 8) & 0x00FF00FF);
+					W[k] = _mm_set1_epi32(x);
+				}
+				sha1_process( (unsigned int*)sha1_hash, (unsigned int*)W, 4 );
+
+				sha1_process_sha1_sse2( opad_state, sha1_hash, W);
+				// Only copy first 16 bytes, since that is ALL this format uses
+				memcpy(crypt_result+8, sha1_hash, 4*sizeof(__m128i));
+
+				for(unsigned int k = 1; k < 10240; k++)
+				{
+					sha1_process_sha1_sse2( ipad_state, sha1_hash, W);
+					sha1_process_sha1_sse2( opad_state, sha1_hash, W);
+
+					// Only XOR first 16 bytes, since that is ALL this format uses
+					crypt_result[8+0] = SSE2_XOR(crypt_result[8+0], sha1_hash[0]);
+					crypt_result[8+1] = SSE2_XOR(crypt_result[8+1], sha1_hash[1]);
+					crypt_result[8+2] = SSE2_XOR(crypt_result[8+2], sha1_hash[2]);
+					crypt_result[8+3] = SSE2_XOR(crypt_result[8+3], sha1_hash[3]);
+				}
+
+				// Search for a match
+				unsigned int index = salt_index[j];
+
+				for (unsigned int k = 0; k < 4; k++)
+				{
+					// Partial match
+					while(index != NO_ELEM)
+					{
+						unsigned int* bin = ((unsigned int*)binary_values) + index*4;
+
+						// Total match
+						if(crypt_result[8+0].m128i_u32[k] == bin[0] && crypt_result[8+1].m128i_u32[k] == bin[1] && crypt_result[8+2].m128i_u32[k] == bin[2] && crypt_result[8+3].m128i_u32[k] == bin[3])
+							password_was_found(index, ntlm2utf8_key((unsigned int*)nt_buffer, key, NT_NUM_KEYS, i*4+k));
+					
+						index = same_salt_next[index];
+					}
+				}
+			}
+		}
+	}
+
+	free(key);
+	_aligned_free(nt_buffer);
+	finish_thread();
+}
+#endif
+
 PRIVATE int bench_values[] = {1,4,16,64};
 Format dcc2_format = {
 	"DCC2"/*"MSCASH2"*/,
@@ -453,9 +834,9 @@ Format dcc2_format = {
 	LENGHT(bench_values),
 	get_binary,
 #ifdef _M_X64
-	{{CPU_CAP_AVX2, PROTOCOL_NTLM, crypt_ntlm_protocol_x86}, {CPU_CAP_AVX, PROTOCOL_NTLM, crypt_ntlm_protocol_x86}, {CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_x86}},
+	{{CPU_CAP_AVX2, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}, {CPU_CAP_AVX, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}, {CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}},
 #else
-	{{CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_x86}, {CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_x86}, {CPU_CAP_X86, PROTOCOL_NTLM, crypt_ntlm_protocol_x86}},
+	{{CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}, {CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}, {CPU_CAP_X86, PROTOCOL_NTLM, crypt_ntlm_protocol_c_code}},
 #endif
 	{{PROTOCOL_CHARSET_OCL, NULL}, {PROTOCOL_CHARSET_OCL, NULL}, {PROTOCOL_CHARSET_OCL, NULL}, {PROTOCOL_CHARSET_OCL, NULL}}
 };
