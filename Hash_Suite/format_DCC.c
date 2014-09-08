@@ -80,6 +80,106 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, u
 	return out[3];
 }
 
+#ifdef HS_ARM
+
+void dcc_ntlm_part_neon(void* nt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_neon4(void* salt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_neon5(void* salt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_neon6(void* salt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_neon7(void* salt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_neon8(void* salt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_neon9(void* salt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_neon10(void* salt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_neon11(void* salt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_neon12(void* salt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_neon13(void* salt_buffer, unsigned int* crypt_result);
+#define NT_NUM_KEYS_NEON 64
+
+typedef int salt_part_func(void* salt_buffer, unsigned int* crypt_result);
+PRIVATE salt_part_func* dcc_salt_part_neons[] = {
+	dcc_salt_part_neon4, dcc_salt_part_neon4, dcc_salt_part_neon4, dcc_salt_part_neon4,
+	dcc_salt_part_neon4, dcc_salt_part_neon4, dcc_salt_part_neon4, dcc_salt_part_neon4,
+	dcc_salt_part_neon4, dcc_salt_part_neon4, dcc_salt_part_neon5, dcc_salt_part_neon5,
+	dcc_salt_part_neon6, dcc_salt_part_neon6, dcc_salt_part_neon7, dcc_salt_part_neon7,
+	dcc_salt_part_neon8, dcc_salt_part_neon8, dcc_salt_part_neon9, dcc_salt_part_neon9,
+	dcc_salt_part_neon10, dcc_salt_part_neon10, dcc_salt_part_neon11, dcc_salt_part_neon11,
+	dcc_salt_part_neon12, dcc_salt_part_neon12, dcc_salt_part_neon13, dcc_salt_part_neon13
+};
+
+PRIVATE void crypt_ntlm_protocol_neon(CryptParam* param)
+{
+	unsigned int* nt_buffer		= (unsigned int*)_aligned_malloc(16*4*NT_NUM_KEYS_NEON, 32);
+	unsigned int* crypt_result	= (unsigned int*)_aligned_malloc(16*2*4*3, 32);
+
+	unsigned int i, j, k;
+	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT, sizeof(unsigned char));
+
+	memset(nt_buffer, 0, 16*4*NT_NUM_KEYS_NEON);
+
+	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS_NEON, param->thread_id))
+	{
+		for(i = 0; i < NT_NUM_KEYS_NEON/8; i++)
+		{
+			unsigned int* salt_buffer = (unsigned int*)salts_values;
+			dcc_ntlm_part_neon(nt_buffer+4*2*i, crypt_result);
+
+			//Another MD4_crypt For all salts
+			for(j = 0; j < num_diff_salts; j++, salt_buffer += 11)
+			{
+				//dcc_salt_part_neon13(salt_buffer, crypt_result);
+				dcc_salt_part_neons[salt_buffer[10] >> 4](salt_buffer, crypt_result);
+
+				for(k = 0; k < 8; k++)
+				{
+					// Search for a match
+					unsigned int index = salt_index[j];
+
+					// Partial match
+					while(index != NO_ELEM)
+					{
+						unsigned int a, b, c, d = crypt_result[8*8+3*8+k];
+						unsigned int* bin = ((unsigned int*)binary_values) + index * 4;
+
+						if(d != bin[3]) goto next_iteration;
+						d = rotate(d + SQRT_3, 9);
+
+						c = crypt_result[8*8+2*8+k];
+						b = crypt_result[8*8+1*8+k];
+						a = crypt_result[8*8+0*8+k];
+
+						c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = rotate(c, 11);
+						if(c != bin[2]) goto next_iteration;
+
+						b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = rotate(b, 15);
+						if(b != bin[1]) goto next_iteration;
+
+						a += (b ^ c ^ d) + crypt_result[3*8+k] + SQRT_3; a = rotate(a, 3);
+						if(a != bin[0]) goto next_iteration;
+
+						// Total match
+						password_was_found(index, ntlm2utf8_key((unsigned int*)nt_buffer, key, NT_NUM_KEYS_NEON, 8*i+k));
+next_iteration:
+						index = same_salt_next[index];
+					}
+				}
+			}
+		}
+	}
+
+	// Release resources
+	free(key);
+	_aligned_free(nt_buffer);
+	_aligned_free(crypt_result);
+
+	finish_thread();
+}
+
+#endif
+
+#ifndef _M_X64
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// C Implementation
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 PUBLIC void dcc_ntlm_part_c_code(unsigned int* nt_buffer, unsigned int* crypt_result)
 {
 	unsigned int a,b,c,d;
@@ -229,103 +329,6 @@ PUBLIC void dcc_salt_part_c_code(unsigned int* salt_buffer, unsigned int* crypt_
 	crypt_result[8+3] = d;
 }
 
-#ifdef HS_ARM
-
-void dcc_ntlm_part_neon(void* nt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon4(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon5(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon6(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon7(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon8(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon9(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon10(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon11(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon12(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon13(void* salt_buffer, unsigned int* crypt_result);
-#define NT_NUM_KEYS_NEON 64
-
-typedef int salt_part_func(void* salt_buffer, unsigned int* crypt_result);
-PRIVATE salt_part_func* dcc_salt_part_neons[] = {
-	dcc_salt_part_neon4, dcc_salt_part_neon4, dcc_salt_part_neon4, dcc_salt_part_neon4,
-	dcc_salt_part_neon4, dcc_salt_part_neon4, dcc_salt_part_neon4, dcc_salt_part_neon4,
-	dcc_salt_part_neon4, dcc_salt_part_neon4, dcc_salt_part_neon5, dcc_salt_part_neon5,
-	dcc_salt_part_neon6, dcc_salt_part_neon6, dcc_salt_part_neon7, dcc_salt_part_neon7,
-	dcc_salt_part_neon8, dcc_salt_part_neon8, dcc_salt_part_neon9, dcc_salt_part_neon9,
-	dcc_salt_part_neon10, dcc_salt_part_neon10, dcc_salt_part_neon11, dcc_salt_part_neon11,
-	dcc_salt_part_neon12, dcc_salt_part_neon12, dcc_salt_part_neon13, dcc_salt_part_neon13
-};
-
-PRIVATE void crypt_ntlm_protocol_neon(CryptParam* param)
-{
-	unsigned int* nt_buffer		= (unsigned int*)_aligned_malloc(16*4*NT_NUM_KEYS_NEON, 32);
-	unsigned int* crypt_result	= (unsigned int*)_aligned_malloc(16*2*4*3, 32);
-
-	unsigned int i, j, k;
-	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT, sizeof(unsigned char));
-
-	memset(nt_buffer, 0, 16*4*NT_NUM_KEYS_NEON);
-
-	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS_NEON, param->thread_id))
-	{
-		for(i = 0; i < NT_NUM_KEYS_NEON/8; i++)
-		{
-			unsigned int* salt_buffer = (unsigned int*)salts_values;
-			dcc_ntlm_part_neon(nt_buffer+4*2*i, crypt_result);
-
-			//Another MD4_crypt For all salts
-			for(j = 0; j < num_diff_salts; j++, salt_buffer += 11)
-			{
-				//dcc_salt_part_neon13(salt_buffer, crypt_result);
-				dcc_salt_part_neons[salt_buffer[10] >> 4](salt_buffer, crypt_result);
-
-				for(k = 0; k < 8; k++)
-				{
-					// Search for a match
-					unsigned int index = salt_index[j];
-
-					// Partial match
-					while(index != NO_ELEM)
-					{
-						unsigned int a, b, c, d = crypt_result[8*8+3*8+k];
-						unsigned int* bin = ((unsigned int*)binary_values) + index * 4;
-
-						if(d != bin[3]) goto next_iteration;
-						d = rotate(d + SQRT_3, 9);
-
-						c = crypt_result[8*8+2*8+k];
-						b = crypt_result[8*8+1*8+k];
-						a = crypt_result[8*8+0*8+k];
-
-						c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = rotate(c, 11);
-						if(c != bin[2]) goto next_iteration;
-
-						b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = rotate(b, 15);
-						if(b != bin[1]) goto next_iteration;
-
-						a += (b ^ c ^ d) + crypt_result[3*8+k] + SQRT_3; a = rotate(a, 3);
-						if(a != bin[0]) goto next_iteration;
-
-						// Total match
-						password_was_found(index, ntlm2utf8_key((unsigned int*)nt_buffer, key, NT_NUM_KEYS_NEON, 8*i+k));
-next_iteration:
-						index = same_salt_next[index];
-					}
-				}
-			}
-		}
-	}
-
-	// Release resources
-	free(key);
-	_aligned_free(nt_buffer);
-	_aligned_free(crypt_result);
-
-	finish_thread();
-}
-
-#endif
-
-#ifndef _M_X64
 PRIVATE void crypt_ntlm_protocol_c_code(CryptParam* param)
 {
 	unsigned int i,j;
@@ -393,27 +396,26 @@ void dcc_salt_part_avx(void* salt_buffer, unsigned int* crypt_result);
 PRIVATE void crypt_ntlm_protocol_avx(CryptParam* param)
 {
 	unsigned int* nt_buffer		= (unsigned int*)_aligned_malloc(16*4*NT_NUM_KEYS_AVX, 32);
-	unsigned int* crypt_result	= (unsigned int*)_aligned_malloc(16*2*4*3, 32);
+	unsigned int* crypt_result	= (unsigned int*)_aligned_malloc(16*2*12, 32);
 
-	unsigned int i, j, k;
 	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT, sizeof(unsigned char));
 
 	memset(nt_buffer, 0, 16*4*NT_NUM_KEYS_AVX);
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS_AVX, param->thread_id))
 	{
-		for(i = 0; i < NT_NUM_KEYS_AVX/8; i++)
+		for(unsigned int i = 0; i < NT_NUM_KEYS_AVX/8; i++)
 		{
 			unsigned int* salt_buffer = (unsigned int*)salts_values;
 			dcc_ntlm_part_avx(nt_buffer+4*2*i, crypt_result);
 
 			//Another MD4_crypt for the salt
 			// For all salts
-			for(j = 0; j < num_diff_salts; j++, salt_buffer += 11)
+			for(unsigned int j = 0; j < num_diff_salts; j++, salt_buffer += 11)
 			{
 				dcc_salt_part_avx(salt_buffer, crypt_result);
 
-				for(k = 0; k < 8; k++)
+				for(unsigned int k = 0; k < 8; k++)
 				{
 					// Search for a match
 					unsigned int index = salt_index[j];
@@ -431,13 +433,13 @@ PRIVATE void crypt_ntlm_protocol_avx(CryptParam* param)
 						b = crypt_result[8*8+1*8+k];
 						a = crypt_result[8*8+0*8+k];
 
-						c += (d ^ a ^ b) + salt_buffer[1] +  SQRT_3; c = rotate(c, 11);
+						c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = rotate(c, 11);
 						if(c != bin[2]) goto next_iteration;
 
-						b += (c ^ d ^ a) + salt_buffer[9]+  SQRT_3; b = rotate(b, 15);
+						b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = rotate(b, 15);
 						if(b != bin[1]) goto next_iteration;
 
-						a += (b ^ c ^ d) + crypt_result[3*8+k]  +  SQRT_3; a = rotate(a, 3);
+						a += (b ^ c ^ d) + crypt_result[3*8+k] + SQRT_3; a = rotate(a, 3);
 						if(a != bin[0]) goto next_iteration;
 
 						// Total match
