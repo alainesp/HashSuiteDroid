@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename resource &apos;HashSuiteDroid/assets/en_words_used_in_phrases_ordered.txt&apos; to &apos;en_words_phrases.txt&apos;" description="Rename resource &apos;en_words_used_in_phrases_ordered.txt&apos;" flags="7" id="org.eclipse.ltk.core.refactoring.rename.resource" input="assets/en_words_used_in_phrases_ordered.txt" name="en_words_phrases.txt" stamp="1398898307889" updateReferences="true"/>
+</session>

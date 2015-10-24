@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<launchConfiguration type="com.android.ide.eclipse.ndk.debug.LaunchConfigType">
+<intAttribute key="com.android.ide.eclipse.adt.action" value="0"/>
+<stringAttribute key="com.android.ide.eclipse.adt.commandline" value=""/>
+<intAttribute key="com.android.ide.eclipse.adt.delay" value="0"/>
+<booleanAttribute key="com.android.ide.eclipse.adt.nobootanim" value="false"/>
+<intAttribute key="com.android.ide.eclipse.adt.speed" value="0"/>
+<stringAttribute key="com.android.ide.eclipse.adt.target" value="AUTO"/>
+<booleanAttribute key="com.android.ide.eclipse.adt.wipedata" value="false"/>
+<stringAttribute key="com.android.ide.eclipse.ndk.ndklaunch.gdb" value="${NdkGdb}"/>
+<listAttribute key="com.android.ide.eclipse.ndk.ndklaunch.solib">
+<listEntry value="${NdkProject}/obj/local/${NdkCompatAbi}/"/>
+</listAttribute>
+<stringAttribute key="org.eclipse.cdt.dsf.gdb.DEBUG_NAME" value="C:/Users/alain/Desktop/android-ndk-r9/toolchains/arm-linux-androideabi-4.6/prebuilt/windows-x86_64/bin/arm-linux-androideabi-gdb"/>
+<stringAttribute key="org.eclipse.cdt.dsf.gdb.GDB_INIT" value=""/>
+<stringAttribute key="org.eclipse.cdt.dsf.gdb.HOST" value="localhost"/>
+<stringAttribute key="org.eclipse.cdt.dsf.gdb.PORT" value="5039"/>
+<booleanAttribute key="org.eclipse.cdt.dsf.gdb.REMOTE_TCP" value="true"/>
+<listAttribute key="org.eclipse.cdt.dsf.gdb.SOLIB_PATH">
+<listEntry value="C:\Users\alain\Desktop\Hash_Suite\trunk\Android\HashSuiteDroid/obj/local/armeabi-v7a/"/>
+</listAttribute>
+<stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_ID" value="gdbserver"/>
+<stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_START_MODE" value="remote"/>
+<booleanAttribute key="org.eclipse.cdt.launch.DEBUGGER_STOP_AT_MAIN" value="false"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROGRAM_NAME" value="C:\Users\alain\Desktop\Hash_Suite\trunk\Android\HashSuiteDroid/obj/local/armeabi-v7a/app_process"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROJECT_ATTR" value="HashSuiteDroid"/>
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_PATHS">
+<listEntry value="/HashSuiteDroid"/>
+<listEntry value="/HashSuiteDroid/AndroidManifest.xml"/>
+</listAttribute>
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_TYPES">
+<listEntry value="4"/>
+<listEntry value="1"/>
+</listAttribute>
+<stringAttribute key="org.eclipse.dsf.launch.MEMORY_BLOCKS" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot;?&gt;&#13;&#10;&lt;memoryBlockExpressionList context=&quot;reserved-for-future-use&quot;/&gt;&#13;&#10;"/>
+<booleanAttribute key="org.eclipse.jdt.launching.ALLOW_TERMINATE" value="true"/>
+<stringAttribute key="org.eclipse.jdt.launching.PROJECT_ATTR" value="HashSuiteDroid"/>
+</launchConfiguration>

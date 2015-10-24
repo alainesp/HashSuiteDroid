@@ -1,0 +1,9 @@
+
+**** Build of configuration Default for project HashSuiteDroid ****
+
+C:\Users\alain\Desktop\android-ndk-r9\ndk-build.cmd all 
+Gdbserver      : [arm-linux-androideabi-4.6] libs/armeabi-v7a/gdbserver
+Gdbsetup       : libs/armeabi-v7a/gdb.setup
+Install        : libHashSuiteNative.so => libs/armeabi-v7a/libHashSuiteNative.so
+
+**** Build Finished ****

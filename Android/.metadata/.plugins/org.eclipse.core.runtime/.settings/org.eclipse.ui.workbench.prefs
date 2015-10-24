@@ -1,0 +1,3 @@
+PLUGINS_NOT_ACTIVATED_ON_STARTUP=
+UIActivities.org.eclipse.cdt.debug.dsfgdbActivity=true
+eclipse.preferences.version=1

@@ -1,0 +1,65 @@
+1402258116808	Rename method 'OnImportHashes'
+1402258144340	Rename method 'OnImportFile'
+1402344860178	Copy file
+1402344867190	Move file
+1402344880810	Rename resource 'Copy of one_account.xml'
+1402344910427	Rename resource 'layout-w600dp'
+1402345221381	Rename resource 'layout-w100dp'
+1402345268037	Rename resource 'layout-w600dp'
+1402345334860	Rename resource 'layout-w500dp'
+1402345373502	Rename resource 'layout-w400dp'
+1402345417524	Rename resource 'layout-w300dp'
+1402345470419	Rename resource 'layout-w350dp'
+1402345521349	Rename resource 'layout-w370dp'
+1402345562893	Rename resource 'layout-w380dp'
+1402345626099	Rename resource 'layout-w390dp'
+1402345740564	Rename resource 'layout-w380dp'
+1402346562715	Rename resource 'layout-w800dp'
+1402346579874	Copy file
+1402346590040	Move file
+1402346602685	Rename resource 'Copy of status_tab.xml'
+1402347307615	Rename resource 'layout-w690dp'
+1402347366889	Rename resource 'layout-w500dp'
+1402347426281	Rename resource 'layout-w600dp'
+1402347465255	Rename resource 'layout-w550dp'
+1402347509001	Rename resource 'layout-w640dp'
+1402347549874	Rename resource 'layout-w660dp'
+1402347594601	Rename resource 'layout-w650dp'
+1402347766016	Rename resource 'layout-w640dp'
+1402413246224	Rename resource 'main_param_tab.xml'
+1402416288576	Copy file
+1402416296346	Move file
+1402416309653	Rename resource 'Copy of one_account.xml'
+1402416340431	Copy file
+1402416347327	Move file
+1402416357401	Rename resource 'Copy of main_tab.xml'
+1402417432994	Delete element
+1402417812267	Copy file
+1402417818524	Move file
+1402417827274	Rename resource 'Copy of status_tab.xml'
+1402433143920	Rename resource 'en_words_phrases.txt'
+1402446078920	Copy file
+1402446084441	Move file
+1402446094595	Rename resource 'Copy of params.xml'
+1402496158707	Rename field 'my_tabs0'
+1402496962319	Rename resource 'layout-w1000dp'
+1402497056731	Copy file
+1402497152335	Move file
+1402497161809	Rename resource 'Copy of one_account.xml'
+1402498177719	Delete element
+1402498200707	Copy file
+1402498206174	Move file
+1402498216063	Rename resource 'Copy of params.xml'
+1402500543145	Delete elements
+1402500555549	Delete elements
+1402500563525	Delete element
+1402503996812	Move file
+1402504000502	Delete element
+1402505343657	Rename type 'MainFragment'
+1402508119691	Rename resource 'preference_number_picker_dialog.xml'
+1402508139738	Copy file
+1402513190514	Rename type 'NameIdData'
+1402515695783	Infer generic type arguments
+1402610657921	Rename resource 'slide_in_left.xml'
+1402610670159	Rename resource 'slide_out_right.xml'
+1402618671426	Rename resource 'wordlist_small.lst'
