@@ -17,32 +17,32 @@
 #include "ioapi.h"
 #include "iowin32.h"
 
-#if WINAPI_FAMILY == WINAPI_FAMILY_PHONE_APP
-HANDLE WINAPI CreateFileA(
-	_In_      LPCTSTR lpFileName,
-	_In_      DWORD dwDesiredAccess,
-	_In_      DWORD dwShareMode,
-	_In_opt_  LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-	_In_      DWORD dwCreationDisposition,
-	_In_      DWORD dwFlagsAndAttributes,
-	_In_opt_  HANDLE hTemplateFile);
-
-HANDLE WINAPI CreateFileW(
-	_In_      LPCWSTR lpFileName,
-	_In_      DWORD dwDesiredAccess,
-	_In_      DWORD dwShareMode,
-	_In_opt_  LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-	_In_      DWORD dwCreationDisposition,
-	_In_      DWORD dwFlagsAndAttributes,
-	_In_opt_  HANDLE hTemplateFile);
-
-DWORD WINAPI SetFilePointer(
-  _In_         HANDLE hFile,
-  _In_         LONG lDistanceToMove,
-  _Inout_opt_  PLONG lpDistanceToMoveHigh,
-  _In_         DWORD dwMoveMethod
-);
-#endif
+//#if WINAPI_FAMILY == WINAPI_FAMILY_PHONE_APP
+//HANDLE WINAPI CreateFileA(
+//	_In_      LPCSTR lpFileName,
+//	_In_      DWORD dwDesiredAccess,
+//	_In_      DWORD dwShareMode,
+//	_In_opt_  LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+//	_In_      DWORD dwCreationDisposition,
+//	_In_      DWORD dwFlagsAndAttributes,
+//	_In_opt_  HANDLE hTemplateFile);
+//
+//HANDLE WINAPI CreateFileW(
+//	_In_      LPCWSTR lpFileName,
+//	_In_      DWORD dwDesiredAccess,
+//	_In_      DWORD dwShareMode,
+//	_In_opt_  LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+//	_In_      DWORD dwCreationDisposition,
+//	_In_      DWORD dwFlagsAndAttributes,
+//	_In_opt_  HANDLE hTemplateFile);
+//
+//DWORD WINAPI SetFilePointer(
+//  _In_         HANDLE hFile,
+//  _In_         LONG lDistanceToMove,
+//  _Inout_opt_  PLONG lpDistanceToMoveHigh,
+//  _In_         DWORD dwMoveMethod
+//);
+//#endif
 
 #ifndef INVALID_HANDLE_VALUE
 #define INVALID_HANDLE_VALUE (0xFFFFFFFF)
@@ -136,7 +136,7 @@ voidpf ZCALLBACK win32_open64_file_funcA (voidpf opaque,const void* filename,int
     win32_translate_open_mode(mode,&dwDesiredAccess,&dwCreationDisposition,&dwShareMode,&dwFlagsAndAttributes);
 
     if ((filename!=NULL) && (dwDesiredAccess != 0))
-        hFile = CreateFileA((LPCTSTR)filename, dwDesiredAccess, dwShareMode, NULL, dwCreationDisposition, dwFlagsAndAttributes, NULL);
+        hFile = CreateFileA((LPCSTR)filename, dwDesiredAccess, dwShareMode, NULL, dwCreationDisposition, dwFlagsAndAttributes, NULL);
 
     return win32_build_iowin(hFile);
 }

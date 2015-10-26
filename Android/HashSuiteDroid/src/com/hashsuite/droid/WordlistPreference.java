@@ -134,7 +134,6 @@ public class WordlistPreference extends DialogPreference implements OnItemClickL
         wordlist_list = (ListView)view.findViewById(R.id.list_wordlist);
         wordlist_list.setAdapter(new ArrayAdapter<WordlistData>(MainActivity.my_activity, android.R.layout.simple_list_item_1, wordlist));
         wordlist_list.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
-        //wordlist_list.setSelection(mValue);
         wordlist_list.setItemChecked(mValue, true);
         wordlist_list.setOnItemClickListener((OnItemClickListener) this);
     }

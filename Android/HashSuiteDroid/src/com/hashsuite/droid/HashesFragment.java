@@ -26,10 +26,13 @@ public class HashesFragment extends Fragment implements OnTouchListener
 {
 	private GestureDetector mDetector;
 	private TextView pager_text = null;
-	private Spinner _key_providers = null;
+	private Spinner key_providers = null;
+	private Spinner formats = null;
 	private LinearLayout hashes0;
 	private LinearLayout hashes1;
 	private ViewFlipper hashes_flipper;
+	
+	public static native String[] GetFormats();
 
 	public HashesFragment()
 	{
@@ -242,31 +245,35 @@ public class HashesFragment extends Fragment implements OnTouchListener
 
 	public void SetProviderSelection(int pos)
 	{
-		_key_providers.setSelection(pos);
+		key_providers.setSelection(pos);
+	}
+	public void SetFormatSelection(int pos)
+	{
+		formats.setSelection(pos);
+		MainActivity.format_index = pos;
 	}
 
 	@Override
 	public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState)
 	{
 		View rootView = inflater.inflate(R.layout.main_tab, container, false);
-		Spinner _formats = (Spinner) rootView.findViewById(R.id.format_selector);
-		_key_providers = (Spinner) rootView.findViewById(R.id.key_provider_selector);
+		formats = (Spinner) rootView.findViewById(R.id.format_selector);
+		key_providers = (Spinner) rootView.findViewById(R.id.key_provider_selector);
 		// Create an ArrayAdapter using the string array and a default spinner layout
-		ArrayAdapter<CharSequence> _formats_adapter = new ArrayAdapter<CharSequence>(MainActivity.my_activity, android.R.layout.simple_spinner_item,
-				new CharSequence[] { "LM", "NTLM", "DCC" });
+		ArrayAdapter<String> _formats_adapter = new ArrayAdapter<String>(MainActivity.my_activity, android.R.layout.simple_spinner_item, GetFormats());
 		ArrayAdapter<CharSequence> _key_provider_adapter = new ArrayAdapter<CharSequence>(MainActivity.my_activity, android.R.layout.simple_spinner_item,
 				new CharSequence[] { "Charset", "Wordlist", "Keyboard", "Phrases", "DB Info", "LM2NT" });
 		// Specify the layout to use when the list of choices appears
 		_formats_adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-		_formats.setOnItemSelectedListener(MainActivity.my_activity);
+		formats.setOnItemSelectedListener(MainActivity.my_activity);
 		_key_provider_adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-		_key_providers.setOnItemSelectedListener(MainActivity.my_activity);
+		key_providers.setOnItemSelectedListener(MainActivity.my_activity);
 		// Apply the adapter to the spinner
-		_formats.setAdapter(_formats_adapter);
-		_key_providers.setAdapter(_key_provider_adapter);
+		formats.setAdapter(_formats_adapter);
+		key_providers.setAdapter(_key_provider_adapter);
 
-		_formats.setSelection(MainActivity.format_index);
-		_key_providers.setSelection(MainActivity.key_provider_index);
+		formats.setSelection(MainActivity.format_index);
+		key_providers.setSelection(MainActivity.key_provider_index);
 
 		hashes_flipper = (ViewFlipper) rootView.findViewById(R.id.hashes_flipper);
 		hashes0 = (LinearLayout) rootView.findViewById(R.id.list_hashes);
@@ -292,7 +299,6 @@ public class HashesFragment extends Fragment implements OnTouchListener
 
 	class MyGestureListener extends GestureDetector.SimpleOnGestureListener
 	{
-		// private static final String DEBUG_TAG = "Gestures";
 		private int SWIPE_MIN_DISTANCE;
 		private int SWIPE_VELOCITY_THRESHOLD;
 		private int SWIPE_MAX_VELOCITY_THRESHOLD;
@@ -329,15 +335,9 @@ public class HashesFragment extends Fragment implements OnTouchListener
 						&& Math.abs(velocityX) < SWIPE_MAX_VELOCITY_THRESHOLD)
 				{
 					if (diffX > 0)
-					{
-						// Log.d(DEBUG_TAG, "Fling Right");
 						goPrevPage(true);
-					}
 					else
-					{
-						// Log.d(DEBUG_TAG, "Fling Left");
 						goNextPage(true);
-					}
 				}
 			}
 			else
@@ -349,15 +349,9 @@ public class HashesFragment extends Fragment implements OnTouchListener
 						&& Math.abs(velocityY) < SWIPE_MAX_VELOCITY_THRESHOLD)
 				{
 					if (diffY > 0)
-					{
-						// Log.d(DEBUG_TAG, "Fling Bottom");
 						goPrevPage(false);
-					}
 					else
-					{
-						// Log.d(DEBUG_TAG, "Fling Top");
 						goNextPage(false);
-					}
 				}
 			}
 

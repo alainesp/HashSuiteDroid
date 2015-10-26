@@ -5,6 +5,9 @@ package com.hashsuite.droid;
 
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.preference.CheckBoxPreference;
+import android.preference.Preference;
+import android.preference.PreferenceCategory;
 import android.preference.PreferenceFragment;
 
 public class ParamsFragment extends PreferenceFragment
@@ -24,13 +27,11 @@ public class ParamsFragment extends PreferenceFragment
 	private static final String pref_key_phrases_use_rules = "pref_key_phrases_use_rules";
 	private static final String pref_key_rules = "pref_key_rules";
 	
-	//public static Params tab_params;
+	private static final int ICON_SNAPDRAGON = 20;
 	static SharedPreferences params;
 
 	public ParamsFragment()
-	{
-		//tab_params = this;
-	}
+	{}
 
 	@Override
 	public void onCreate(Bundle savedInstanceState)
@@ -39,11 +40,36 @@ public class ParamsFragment extends PreferenceFragment
 
 		// Load the preferences from an XML resource
 		addPreferencesFromResource(R.xml.params);
+		
+		PreferenceCategory hardware_category = (PreferenceCategory)this.findPreference("pref_key_hardware");
+		GPUInfo[] gpus_info = GPUInfo.GetGpusInfo();
+		for (int i = 0; i < gpus_info.length; i++)
+		{
+			Preference preference = new CheckBoxPreference(MainActivity.my_activity);
+			preference.setTitle("Use " + gpus_info[i].name);
+			preference.setKey("pref_key_gpu" + i);
+			preference.setDefaultValue(true);
+			preference.setPersistent(true);
+			if(MainActivity.screen_width_dp < 640 || MainActivity.screen_width_dp >= 960)
+				preference.setIcon((gpus_info[i].vendor_icon==ICON_SNAPDRAGON) ? R.drawable.ic_snapdragon : R.drawable.ic_opencl);
+			hardware_category.addPreference(preference);
+		}
+	}
+	
+	public static int getGPUsUsed()
+	{
+		int mask = 0;
+		GPUInfo[] gpus_info = GPUInfo.GetGpusInfo();
+		for (int i = 0; i < gpus_info.length; i++)
+			if(params.getBoolean("pref_key_gpu" + i, true))
+				mask |= 1 << i;
+		
+		return mask;
 	}
 
 	public static int getNumThreads()
 	{
-		return params.getInt(pref_key_threads, Runtime.getRuntime().availableProcessors());
+		return params.getInt(pref_key_threads, ThreadsPreference.getDefaultValue());
 	}
 	
 	public static int getBatteryLimit()

@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2014 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2014-2015 by Alain Espinosa. See LICENSE.
 
 #include <string.h>
 #include <jni.h>
@@ -14,59 +14,33 @@
 	#include "../../android-ndk-profiler/prof.h"
 #endif
 
-static char buffer_str[512];
-static ImportParam m_imp_param;
+#ifdef HS_TESTING
+PRIVATE char test_param[512];
+PRIVATE int m_is_cracking = FALSE;
+#endif
 
-int valid_hex_string(unsigned char* ciphertext,int lenght);
-// Detect file type and import accordingly
-static void* import_native(void* param)
-{
-	FILE* file = fopen(((ImportParam*)param)->filename, "r");
+PRIVATE char buffer_str[512];
 
-	if(file != NULL)
-	{
-		char* user_name = NULL, *rid = NULL, *lm = NULL, *ntlm = NULL, *next_token = NULL;
-		int is_pwdump = FALSE;
-		int is_cachedump = FALSE;
-
-		// Get first line
-		while(true)
-		{
-			char* result = fgets(buffer_str, sizeof(buffer_str), file);
-
-			user_name = strtok_s(buffer_str , ":", &next_token);
-			rid       = strtok_s( NULL		, ":\n\r", &next_token);
-			lm        = strtok_s( NULL		, ":", &next_token);
-			ntlm      = strtok_s( NULL		, ":\n\r", &next_token);
-
-			if(user_name && rid && lm && ntlm && valid_hex_string((unsigned char*)ntlm, 32) && strlen(lm) == 32)
-				is_pwdump = TRUE;
-
-			if(user_name && rid && !ntlm && valid_hex_string((unsigned char*)rid, 32))
-				is_cachedump = TRUE;
-
-			if(is_cachedump || is_pwdump || !result)
-				break;
-		}
-		fclose(file);
-
-		if(is_cachedump)
-			importers[1].function((ImportParam*)param);
-		else
-			importers[0].function((ImportParam*)param);
-	}
-
-	return NULL;
-}
-
-static JavaVM* cached_jvm;
-static jclass cls = NULL;
-static jmethodID mid_finish_attack = NULL;
-static jmethodID mid_finish_batch = NULL;
-static void receive_message(int message)
+PRIVATE JavaVM* cached_jvm;
+PRIVATE jclass cls = NULL;
+PRIVATE jmethodID mid_finish_attack = NULL;
+PRIVATE jmethodID mid_finish_batch = NULL;
+PRIVATE jmethodID mid_attack_begin = NULL;
+PRIVATE int benchmark_init_complete = FALSE;
+PRIVATE void receive_message(int message)
 {
 	switch(message)
 	{
+	case MESSAGE_ATTACK_INIT_COMPLETE:
+		benchmark_init_complete = TRUE;
+		if(!is_benchmark)
+		{
+			JNIEnv *env = NULL;
+			cached_jvm->AttachCurrentThread(&env, NULL);
+			env->CallStaticVoidMethod(cls, mid_attack_begin);
+			cached_jvm->DetachCurrentThread();
+		}
+		break;
 	case MESSAGE_FINISH_BATCH:
 		if(!is_benchmark)
 		{
@@ -76,6 +50,9 @@ static void receive_message(int message)
 			env->DeleteGlobalRef(cls);
 			cls = NULL;
 			cached_jvm->DetachCurrentThread();
+#ifdef HS_TESTING
+			m_is_cracking = FALSE;
+#endif
 		}
 #ifdef HS_PROFILING
 		moncleanup();// End profiling
@@ -89,9 +66,6 @@ static void receive_message(int message)
 			env->CallStaticVoidMethod(cls, mid_finish_attack);
 			cached_jvm->DetachCurrentThread();
 		}
-		break;
-	case MESSAGE_ERROR_IN_DB:
-		//AfxGetApp()->GetMainWnd()->PostMessageA(WM_ERROR_IN_DB);
 		break;
 	}
 }
@@ -127,7 +101,7 @@ enum SortOption
 #define ITEM_DATA_MASK		0xFF
 
 // Constructs the query to retrieve accounts
-static int GetQuery2LoadHashes(sqlite3_stmt** m_select_hashes, int format_index, int filter_by_tag, char* tag, SearchOption search_option, char* search_word, int show_last_attack, int show_only_found,
+PRIVATE int GetQuery2LoadHashes(sqlite3_stmt** m_select_hashes, int format_index, int filter_by_tag, char* tag, SearchOption search_option, char* search_word, int show_last_attack, int show_only_found,
 		SortOption sort_option, int sort_index, int num_hashes_show, int offset)
 {
 	sqlite3_stmt* m_count_hashes;
@@ -137,9 +111,9 @@ static int GetQuery2LoadHashes(sqlite3_stmt** m_select_hashes, int format_index,
 
 	// If changed this string GOTO and change also the line:
 	if(format_index == LM_INDEX)// Give LM a special treatment
-		sprintf(buffer_query, "SELECT UserName,(Hash1.Hex || Hash2.Hex) AS Hex,(CASE WHEN FindHash1.ClearText NOTNULL THEN FindHash1.ClearText ELSE '????????????????' END || CASE WHEN FindHash2.ClearText NOTNULL THEN FindHash2.ClearText ELSE '????????????????' END) AS ClearText,Account.Fixed,Account.Privilege FROM ((((((AccountLM INNER JOIN Account ON AccountLM.ID==Account.ID INNER JOIN Hash AS Hash1 ON Hash1.ID==AccountLM.LM1) %s JOIN FindHash AS FindHash1 ON FindHash1.ID==Hash1.ID) INNER JOIN Hash AS Hash2 ON Hash2.ID==AccountLM.LM2 %s JOIN FindHash AS FindHash2 ON FindHash2.ID==Hash2.ID)", show_only_found?"INNER":"LEFT", show_only_found?"INNER":"LEFT");
+		sprintf(buffer_query, "SELECT UserName,(Hash1.Hex || Hash2.Hex) AS Hex,(CASE WHEN FindHash1.ClearText NOTNULL THEN FindHash1.ClearText ELSE \"????????????????\" END || CASE WHEN FindHash2.ClearText NOTNULL THEN FindHash2.ClearText ELSE \"????????????????\" END) AS ClearText,Account.Fixed,Account.Privilege FROM ((((((AccountLM INNER JOIN Account ON AccountLM.ID==Account.ID INNER JOIN Hash AS Hash1 ON Hash1.ID==AccountLM.LM1) %s JOIN FindHash AS FindHash1 ON FindHash1.ID==Hash1.ID) INNER JOIN Hash AS Hash2 ON Hash2.ID==AccountLM.LM2 %s JOIN FindHash AS FindHash2 ON FindHash2.ID==Hash2.ID)", show_only_found?"INNER":"LEFT", show_only_found?"INNER":"LEFT");
 	else
-		sprintf(buffer_query, "SELECT UserName,Hex,(CASE WHEN FindHash.ClearText NOTNULL THEN FindHash.ClearText ELSE '????????????????????????????????' END),Account.Fixed,Account.Privilege FROM (((((Hash INNER JOIN Account ON Account.Hash==Hash.ID) %s JOIN FindHash ON FindHash.ID==Hash.ID)", show_only_found?"INNER":"LEFT");
+		sprintf(buffer_query, "SELECT UserName,Hex,(CASE WHEN FindHash.ClearText NOTNULL THEN FindHash.ClearText ELSE \"????????????????????????????????\" END),Account.Fixed,Account.Privilege FROM (((((Hash INNER JOIN Account ON Account.Hash==Hash.ID) %s JOIN FindHash ON FindHash.ID==Hash.ID)", show_only_found?"INNER":"LEFT");
 
 	if(show_last_attack)
 	{
@@ -250,39 +224,81 @@ JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_initAll(JNIEnv* env
 }
 
 // In_Out
+PRIVATE ImportParam m_imp_param;
+PRIVATE jmethodID mid_select_format;
+PRIVATE int select_format(char* line, int* valid_formats)
+{
+	JNIEnv *env = NULL;
+	cached_jvm->AttachCurrentThread(&env, NULL);
+	jintArray valid_formats_obj = env->NewIntArray(num_formats);
+	env->SetIntArrayRegion(valid_formats_obj, 0, num_formats, valid_formats);
+	int result = env->CallStaticIntMethod(cls, mid_select_format, env->NewStringUTF(line), valid_formats_obj);
+	cached_jvm->DetachCurrentThread();
+
+	return result;
+}
+PRIVATE void* import_native(void* param)
+{
+	importers[0].function((ImportParam*)param);
+
+	return NULL;
+}
 JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_ImportHashes(JNIEnv* env, jclass, jstring file_path)
 {
 	m_imp_param.isEnded = FALSE;
 	const char* path = env->GetStringUTFChars(file_path, NULL);
 	strcpy(m_imp_param.filename, path);
 	env->ReleaseStringUTFChars(file_path, path);
+	m_imp_param.select_format = select_format;
+
+	if(!cls)
+	{
+		jclass localRefCls = env->FindClass("com/hashsuite/droid/MainActivity");
+		cls = (jclass)env->NewGlobalRef((jobject)localRefCls);// Create a global reference
+		env->DeleteLocalRef(localRefCls);// The local reference is no longer useful
+	}
+	mid_select_format = env->GetStaticMethodID(cls, "SelectConflictingFormat", "(Ljava/lang/String;[I)I");
 
 	pthread_t hs_pthread_id;
 	pthread_create(&hs_pthread_id, NULL, import_native, &m_imp_param);
 }
-JNIEXPORT jobject JNICALL Java_com_hashsuite_droid_MainActivity_GetImportResult(JNIEnv* env, jclass)
+
+#define IMPORT_IS_ENDED		0
+#define IMPORT_USERS_ADDED	1
+#define IMPORT_LINES_SKIPED 2
+#define IMPORT_COMPLETITION 3
+#define IMPORT_FORMATS_DATA 4
+JNIEXPORT jint JNICALL Java_com_hashsuite_droid_MainActivity_GetImportResultInt(JNIEnv* env, jclass, jint index)
 {
-	jclass complexClass = env->FindClass("com/hashsuite/droid/ImportResult");
-	jobject import_result = env->AllocObject(complexClass);
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "isEnded", "I"), m_imp_param.isEnded);
+	switch(index)
+	{
+	case IMPORT_IS_ENDED:
+		return m_imp_param.isEnded;
+	case IMPORT_USERS_ADDED:
+			return m_imp_param.result.num_users_added;
+	case IMPORT_LINES_SKIPED:
+			return m_imp_param.result.lines_skiped;
+	case IMPORT_COMPLETITION:
+			return m_imp_param.completition;
+	}
 
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "num_users_added", "I"), m_imp_param.result.num_users_added);
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "lines_skiped", "I"), m_imp_param.result.lines_skiped);
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "completition", "I"), m_imp_param.completition);
+	index -= IMPORT_FORMATS_DATA;
+	int format_index = index / 3;
+	if(index >= 0 && format_index < num_formats)
+	{
+		switch(index % 3)
+		{
+		case 0:
+			return m_imp_param.result.formats_stat[format_index].num_hash_added;
+		case 1:
+			return m_imp_param.result.formats_stat[format_index].num_hash_disable;
+		case 2:
+			return m_imp_param.result.formats_stat[format_index].num_hash_exist;
+		}
 
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "num_hash_added_lm"  , "I"), m_imp_param.result.formats_stat[LM_INDEX].num_hash_added);
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "num_hash_disable_lm", "I"), m_imp_param.result.formats_stat[LM_INDEX].num_hash_disable);
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "num_hash_exist_lm"  , "I"), m_imp_param.result.formats_stat[LM_INDEX].num_hash_exist);
+	}
 
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "num_hash_added_ntlm"  , "I"), m_imp_param.result.formats_stat[NTLM_INDEX].num_hash_added);
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "num_hash_disable_ntlm", "I"), m_imp_param.result.formats_stat[NTLM_INDEX].num_hash_disable);
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "num_hash_exist_ntlm"  , "I"), m_imp_param.result.formats_stat[NTLM_INDEX].num_hash_exist);
-
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "num_hash_added_dcc"  , "I"), m_imp_param.result.formats_stat[DCC_INDEX].num_hash_added);
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "num_hash_disable_dcc", "I"), m_imp_param.result.formats_stat[DCC_INDEX].num_hash_disable);
-	env->SetIntField(import_result, env->GetFieldID(complexClass, "num_hash_exist_dcc"  , "I"), m_imp_param.result.formats_stat[DCC_INDEX].num_hash_exist);
-
-	return import_result;
+	return -1;
 }
 JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_ImportHashesStop(JNIEnv* env, jclass)
 {
@@ -309,12 +325,54 @@ JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_Export(JNIEnv* env,
 }
 
 // Hashes stats
-static int num_matches = 0;
+PRIVATE int num_matches = 0;
 // Set a field and delete the local reference
-static void setObjectField_ReleaseLocalRef(JNIEnv* env, jobject obj, jfieldID fieldID, jobject value)
+PRIVATE void setObjectField_ReleaseLocalRef(JNIEnv* env, jobject obj, jfieldID fieldID, jobject value)
 {
 	env->SetObjectField(obj, fieldID, value);
 	env->DeleteLocalRef(value);
+}
+JNIEXPORT jobjectArray JNICALL Java_com_hashsuite_droid_HashesFragment_GetFormats(JNIEnv* env, jclass)
+{
+	jobjectArray result = env->NewObjectArray(num_formats, env->FindClass("java/lang/String"), NULL);
+
+	for (int i = 0; i < num_formats; ++i)
+		env->SetObjectArrayElement(result, i, env->NewStringUTF(formats[i].name));
+
+	return result;
+}
+
+JNIEXPORT jobjectArray JNICALL Java_com_hashsuite_droid_GPUInfo_GetGpusInfo(JNIEnv* env, jclass complexClass)
+{
+	jfieldID fid_name = env->GetFieldID(complexClass, "name", "Ljava/lang/String;");
+	jfieldID fid_driver_version = env->GetFieldID(complexClass, "driver_version", "Ljava/lang/String;");
+	jfieldID fid_cores = env->GetFieldID(complexClass, "cores", "I");
+	jfieldID fid_frequency = env->GetFieldID(complexClass, "frequency", "I");
+	jfieldID fid_vendor_icon = env->GetFieldID(complexClass, "vendor_icon", "I");
+
+	jobjectArray result = env->NewObjectArray(num_gpu_devices, complexClass, NULL);
+
+	for (int i = 0; i < num_gpu_devices; ++i)
+	{
+		jobject gpu_obj = env->AllocObject(complexClass);
+
+		setObjectField_ReleaseLocalRef(env, gpu_obj, fid_name, env->NewStringUTF(gpu_devices[i].name));
+		setObjectField_ReleaseLocalRef(env, gpu_obj, fid_driver_version, env->NewStringUTF(gpu_devices[i].driver_version));
+		env->SetIntField(gpu_obj, fid_cores, gpu_devices[i].cores);
+		env->SetIntField(gpu_obj, fid_frequency, gpu_devices[i].max_clock_frequency);
+		env->SetIntField(gpu_obj, fid_vendor_icon, gpu_devices[i].vendor_icon);
+
+		env->SetObjectArrayElement(result, i, gpu_obj);
+	}
+
+	return result;
+}
+PRIVATE jchar* ascii_to_jchar(jchar* out , char* str, size_t len)
+{
+	for (unsigned int i = 0; i < len; ++i)
+		out[i] = str[i];
+
+	return out;
 }
 JNIEXPORT jobjectArray JNICALL Java_com_hashsuite_droid_Account_GetHashes(JNIEnv* env, jclass complexClass, jint format_index, jint num_hashes_show, jint offset)
 {
@@ -332,7 +390,8 @@ JNIEXPORT jobjectArray JNICALL Java_com_hashsuite_droid_Account_GetHashes(JNIEnv
 	{
 		accounts_objs[index] = env->AllocObject(complexClass);
 
-		setObjectField_ReleaseLocalRef(env, accounts_objs[index], fid_username, env->NewStringUTF((const char*)sqlite3_column_text(m_select_hashes, 0)));
+		size_t username_len = strlen((const char*)sqlite3_column_text(m_select_hashes, 0));
+		setObjectField_ReleaseLocalRef(env, accounts_objs[index], fid_username, env->NewString(ascii_to_jchar((jchar*)buffer_str, (char*)sqlite3_column_text(m_select_hashes, 0), username_len), username_len));
 		//setObjectField_ReleaseLocalRef(env, accounts_objs[index], fid_hash, env->NewStringUTF((const char*)sqlite3_column_text(m_select_hashes, 1)));
 
 		strcpy(buffer_str, (char*)sqlite3_column_text(m_select_hashes, 2));
@@ -351,7 +410,8 @@ JNIEXPORT jobjectArray JNICALL Java_com_hashsuite_droid_Account_GetHashes(JNIEnv
 			_item_data = PARTIAL_CLEARTEXT;
 
 		env->SetIntField(accounts_objs[index], fid_flag, _item_data | (_privilege << PRIV_BITS_SHIFT));
-		setObjectField_ReleaseLocalRef(env, accounts_objs[index], fid_cleartext, env->NewStringUTF(buffer_str));
+		size_t cleartext_len = strlen(buffer_str);
+		setObjectField_ReleaseLocalRef(env, accounts_objs[index], fid_cleartext, env->NewString(ascii_to_jchar((jchar*)(buffer_str+32), buffer_str, cleartext_len), cleartext_len));
 
 		index++;
 	}
@@ -400,20 +460,25 @@ JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_clearAllAccounts(JN
 }
 
 // Attacks management
-static jfieldID fid_num_passwords_loaded;
-static jfieldID fid_key_served;
-static jfieldID fid_key_space_batch;
-static jfieldID fid_progress;
+PRIVATE jfieldID fid_num_passwords_loaded;
+PRIVATE jfieldID fid_key_served;
+PRIVATE jfieldID fid_key_space_batch;
+PRIVATE jfieldID fid_progress;
 
-static jfieldID fid_password_per_sec;
-static jfieldID fid_time_begin;
-static jfieldID fid_time_total;
-static jfieldID fid_work_done;
-static jfieldID fid_finish_time;
+PRIVATE jfieldID fid_password_per_sec;
+PRIVATE jfieldID fid_time_begin;
+PRIVATE jfieldID fid_time_total;
+PRIVATE jfieldID fid_work_done;
+PRIVATE jfieldID fid_finish_time;
 
-static void start_attack_cache(JNIEnv* env, int num_threads)
+PRIVATE void start_attack_cache(JNIEnv* env, int num_threads, jint gpus_used)
 {
 	app_num_threads = num_threads;
+	for (int i = 0;  i < num_gpu_devices; ++i)
+		if((gpus_used >> i) & 1)
+			gpu_devices[i].flags |= GPU_FLAG_IS_USED;
+		else
+			GPU_SET_FLAG_DISABLE(gpu_devices[i].flags, GPU_FLAG_IS_USED);
 
 	jclass complexClass = env->FindClass("com/hashsuite/droid/AttackStatusData");
 	fid_progress = env->GetFieldID(complexClass, "progress", "I");
@@ -428,29 +493,87 @@ static void start_attack_cache(JNIEnv* env, int num_threads)
 	fid_work_done = env->GetFieldID(complexClass, "work_done", "Ljava/lang/String;");
 	fid_finish_time = env->GetFieldID(complexClass, "finish_time", "Ljava/lang/String;");
 
-	jclass localRefCls = env->FindClass("com/hashsuite/droid/MainActivity");
-	cls = (jclass)env->NewGlobalRef((jobject)localRefCls);// Create a global reference
-	env->DeleteLocalRef(localRefCls);// The local reference is no longer useful
+	if(!cls)
+	{
+		jclass localRefCls = env->FindClass("com/hashsuite/droid/MainActivity");
+		cls = (jclass)env->NewGlobalRef((jobject)localRefCls);// Create a global reference
+		env->DeleteLocalRef(localRefCls);// The local reference is no longer useful
+	}
 	mid_finish_attack = env->GetStaticMethodID(cls, "ChangeCurrentAttackCallBack", "()V");
 	mid_finish_batch = env->GetStaticMethodID(cls, "FinishBatchCallBack", "()V");
+	mid_attack_begin = env->GetStaticMethodID(cls, "AttackBeginCallBack", "()V");
 }
-JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_StartAttack(JNIEnv* env, jclass, jint format_index, jint provider_index, jint num_threads, jint min_size, jint max_size, jstring param, jint use_rules, jint rules_on)
+#include "../../../Hash_Suite/gui_utils.h"
+JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_StartAttack(JNIEnv* env, jclass, jint format_index, jint provider_index, jint num_threads, jint min_size, jint max_size, jstring param, jint use_rules, jint rules_on, jint gpus_used)
 {
-	start_attack_cache(env, num_threads);
+	start_attack_cache(env, num_threads, gpus_used);
 
+#ifdef HS_TESTING
+	if(is_testing)
+		use_rules = testing_use_rules;
+	else if(use_rules)
+		for (int i = 0;  i < num_rules; ++i)
+			rules[i].checked = (rules_on >> i) & 1;
+#else
 	if(use_rules)
 		for (int i = 0;  i < num_rules; ++i)
 			rules[i].checked = (rules_on >> i) & 1;
+#endif
 
 	if(provider_index == CHARSET_INDEX || provider_index == KEYBOARD_INDEX)
 	{
+#ifdef HS_TESTING
+		if(is_testing)
+		{
+			switch (provider_index)
+			{
+				case CHARSET_INDEX:
+					strcpy(buffer_str, test_param);
+					if(check_only_lenght < 0)
+					{
+						min_size = 0;
+						max_size = (formats[format_index].salt_size ? 3 : 4) - 1;
+					}
+					else
+					{
+						min_size = check_only_lenght;
+						max_size = check_only_lenght;
+					}
+					break;
+				default:
+					break;
+			}
+			//MAX_NUM_PASWORDS_LOADED = 1;
+		}
+#endif
 		new_crack(format_index, provider_index, min_size, max_size, buffer_str, &receive_message, use_rules);
 	}
 	else
 	{
+#ifdef HS_TESTING
+		if(is_testing)
+		{
+			switch (provider_index)
+			{
+				case WORDLIST_INDEX:
+					sprintf(buffer_str, "%lli", wordlist_id);
+					break;
+				default:
+					break;
+			}
+			new_crack(format_index, provider_index, min_size, max_size, buffer_str, &receive_message, use_rules);
+		}
+		else
+		{
+			char* c_param = (char*)env->GetStringUTFChars(param, NULL);
+			new_crack(format_index, provider_index, min_size, max_size, c_param, &receive_message, use_rules);
+			env->ReleaseStringUTFChars(param, c_param);
+		}
+#else
 		char* c_param = (char*)env->GetStringUTFChars(param, NULL);
 		new_crack(format_index, provider_index, min_size, max_size, c_param, &receive_message, use_rules);
 		env->ReleaseStringUTFChars(param, c_param);
+#endif
 	}
 
 #ifdef HS_PROFILING
@@ -459,9 +582,37 @@ JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_StartAttack(JNIEnv*
 	monstartup("libHashSuiteNative.so");
 #endif
 }
-JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_ResumeAttack(JNIEnv* env, jclass, jlong db_id, jint num_threads)
+// Used to check state of OpenCL Rules compilation
+extern OpenCL_Param** ocl_crypt_ptr_params;
+JNIEXPORT jint JNICALL Java_com_hashsuite_droid_MainActivity_GetRulesGPUStatus(JNIEnv* env, jclass)
 {
-	start_attack_cache(env, num_threads);
+	int kernel_sizes = 0;
+	int current_compiled_at = 0;
+	int in_use_devices = 0;
+
+	if(ocl_crypt_ptr_params)
+		for (int i = 0;  i < num_gpu_devices; ++i)
+			if(ocl_crypt_ptr_params[i])
+			{
+				in_use_devices++;
+				for (int j = 0; j <= 27; ++j)
+				{
+					if(ocl_crypt_ptr_params[i]->rules.binaries_size[j])
+					{
+						kernel_sizes += (int)(ocl_crypt_ptr_params[i]->rules.binaries_size[j]/1024);
+						current_compiled_at++;
+					}
+					else
+						break;
+				}
+			}
+
+	int percent = in_use_devices ? (current_compiled_at*100/(in_use_devices*28)) : 0;
+	return kernel_sizes + (percent<<24);
+}
+JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_ResumeAttack(JNIEnv* env, jclass, jlong db_id, jint num_threads, jint gpus_used)
+{
+	start_attack_cache(env, num_threads, gpus_used);
 
 	resume_crack(db_id, receive_message);
 }
@@ -480,6 +631,7 @@ JNIEXPORT jstring JNICALL Java_com_hashsuite_droid_MainActivity_GetAttackDescrip
 JNIEXPORT void JNICALL Java_com_hashsuite_droid_AttackStatusData_UpdateStatus(JNIEnv* env, jobject status)
 {
 	int progress = 0;
+	char tmp_buffer[16];
 
 	int64_t _key_served = get_num_keys_served();
 	int64_t _key_space = get_key_space_batch();
@@ -508,7 +660,7 @@ JNIEXPORT void JNICALL Java_com_hashsuite_droid_AttackStatusData_UpdateStatus(JN
 	}
 	env->SetObjectField(status, fid_key_space_batch, env->NewStringUTF(buffer_str));
 
-	env->SetObjectField(status, fid_password_per_sec, env->NewStringUTF(password_per_sec()));
+	env->SetObjectField(status, fid_password_per_sec, env->NewStringUTF(password_per_sec(tmp_buffer)));
 	env->SetObjectField(status, fid_time_begin, env->NewStringUTF(get_time_from_begin(FALSE)));
 	env->SetObjectField(status, fid_time_total, env->NewStringUTF(get_time_from_begin(TRUE)));
 	env->SetObjectField(status, fid_work_done, env->NewStringUTF(get_work_done()));
@@ -579,53 +731,37 @@ JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_SaveSettingsToDB(JN
 }
 
 // Benchmark
-static int performing_bench;
+PRIVATE unsigned int bench_thread(JNIEnv* env, jclass my_class, jclass thread_cls, jmethodID thread_sleep, jmethodID SetBenchData_id, jmethodID complete_benchmark_id);
+
+JNIEXPORT jint JNICALL Java_com_hashsuite_droid_MainActivity_GetBenchmarkDuration(JNIEnv* env, jclass)
+{
+	int duration = 0;
+
+	for(int format_index = 0; format_index < num_formats; format_index++)
+		for(int i = 0; i < formats[format_index].lenght_bench_values; i++)
+			duration++;
+
+	return duration * m_benchmark_time * (1+num_gpu_devices);
+}
+JNIEXPORT jintArray JNICALL Java_com_hashsuite_droid_MainActivity_GetBenchmarkValues(JNIEnv* env, jclass, jint format_index)
+{
+	jintArray bench_balues = env->NewIntArray(formats[format_index].lenght_bench_values);
+	env->SetIntArrayRegion(bench_balues, 0, formats[format_index].lenght_bench_values, formats[format_index].bench_values);
+
+	return bench_balues;
+}
 JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_Benchmark(JNIEnv* env, jclass my_class)
 {
-	// Params to benchmark
-	char all_chars[] = "qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM 0123456789!@#$%^&*()-_+=~`[]{}|:;\"'<>,.?/\\";
-	const int key_lenght = 7;
-
 	performing_bench = TRUE;
-	app_num_threads = current_cpu.logical_processors;
 	is_benchmark = TRUE;
 
 	jclass thread_cls = env->FindClass("java/lang/Thread");
 	jmethodID thread_sleep = env->GetStaticMethodID(thread_cls, "sleep", "(J)V");
-	jmethodID SetBenchData_id = env->GetStaticMethodID(my_class, "SetBenchData", "(Ljava/lang/String;I)V");
+	jmethodID SetBenchData_id = env->GetStaticMethodID(my_class, "SetBenchData", "(Ljava/lang/String;II)V");
 	jmethodID complete_benchmark_id = env->GetStaticMethodID(my_class, "OnCompleteBenchmark", "()V");
 
-	// Calculate the max number of values
-	int max_lenght_bench_values = 0;
-	for(int i = 0; i < num_formats; i++)
-		if( max_lenght_bench_values < formats[i].lenght_bench_values)
-			max_lenght_bench_values = formats[i].lenght_bench_values;
+	bench_thread(env, my_class, thread_cls, thread_sleep, SetBenchData_id, complete_benchmark_id);
 
-	// Benchmark for all data
-	for(int i = 0; i < max_lenght_bench_values && performing_bench; i++)
-		for(int bench_format_index = 0; bench_format_index < num_formats && performing_bench; bench_format_index++)
-		{
-			if(i >= formats[bench_format_index].lenght_bench_values)
-				break;// TODO: Only works if it is the last
-			// Benchmark CPU cores
-			MAX_NUM_PASWORDS_LOADED = formats[bench_format_index].bench_values[i];
-			// Benchmark
-			new_crack(bench_format_index, CHARSET_INDEX, key_lenght, key_lenght, all_chars, &receive_message, FALSE);
-			// Wait a time to obtain the benchmark
-			for(int j = 0; j < 5 && performing_bench; j++)
-				env->CallStaticVoidMethod(thread_cls, thread_sleep, 1000ll);
-
-			// Show data to user
-			env->CallStaticVoidMethod(my_class, SetBenchData_id, env->NewStringUTF(password_per_sec()), i);
-
-			// Stop attack
-			continue_attack = FALSE;
-			while(num_threads > 0) env->CallStaticVoidMethod(thread_cls, thread_sleep, 200ll);
-			env->CallStaticVoidMethod(thread_cls, thread_sleep, 200ll);// wait a little for attack to stop
-		}
-
-	if(performing_bench)
-		env->CallStaticVoidMethod(my_class, complete_benchmark_id);
 	MAX_NUM_PASWORDS_LOADED = 9999999;
 	is_benchmark = FALSE;
 }
@@ -634,7 +770,7 @@ JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_BenchmarkStop(JNIEn
 	performing_bench = FALSE;
 }
 
-// Wordlist management
+// Wordlist
 #define WORDLIST_NORMAL			0
 #define WORDLIST_TO_DOWNLOAD	1
 #define WORDLIST_DOWNLOADING	2
@@ -765,7 +901,7 @@ JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_setPhrasesMaxWords(
 }
 
 // Charset
-static jobjectArray get_nameid_arrays(JNIEnv* env, jclass complexClass, const char* table)
+PRIVATE jobjectArray get_nameid_arrays(JNIEnv* env, jclass complexClass, const char* table)
 {
 	sqlite3_stmt* _select_charsets;
 	sprintf(buffer_str, "SELECT Name,ID FROM %s ORDER BY ID;", table);

@@ -1,12 +1,42 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2014 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2014-2015 by Alain Espinosa. See LICENSE.
+
+#include "compilation_flags.h"
+
+#define HS_OCL_CURRENT_KEY_AS_REGISTERS
 
 #ifdef ANDROID
-
+	
 	#define HS_ARM
+	#define HS_USE_COMPRESS_WORDLISTS
+	#define HS_OPENCL_SUPPORT
 	#define PATH_SEPARATOR '/'
 	#define __forceinline inline
 	#define HS_ALIGN(x) __attribute__ ((aligned(x)))
+	// OpenCL support------------------------------------------
+	// TODO: Check this
+	#define HS_SET_PRIORITY_GPU_THREAD	//nice(10)
+	#define HS_DLL_HANDLE void*
+	#define OPENCL_DLL "libOpenCL.so"
+	#define GetProcAddress(handle, func_name) dlsym(handle, func_name)
+	#define LoadLibrary(x)				dlopen(x, RTLD_NOW)
+	#define OCL_NORMAL_KERNEL_TIME		40
+	#define HS_OCL_REDUCE_REGISTER_USE
+	#define OCL_MIN_WORKGROUP_SIZE		32
+	// Log support------------------------------------------
+	#include <android/log.h>
+
+	#define HS_LOG_DEBUG		ANDROID_LOG_DEBUG
+	#define HS_LOG_INFO			ANDROID_LOG_INFO
+	#define HS_LOG_WARNING		ANDROID_LOG_WARN
+	#define HS_LOG_ERROR		ANDROID_LOG_ERROR
+
+#ifdef HS_TESTING
+	#define hs_log __android_log_print
+#else
+	#define hs_log(priority, tag, format_message, ...)
+#endif
+	// -----------------------------------------------------
 
 	#define __max(a,b)  		(((a) > (b)) ? (a) : (b))
 	#define __min(a,b)  		(((a) < (b)) ? (a) : (b))
@@ -16,7 +46,7 @@
 	#define _aligned_free(x)					free(x)
 	#define _aligned_realloc(x,size,align)		realloc(x,size)
 
-	#define HS_NEW_THREAD(function, param) {pthread_t hs_pthread_id;pthread_create(&hs_pthread_id, NULL, function, param);}
+	#define HS_NEW_THREAD(function, param) {pthread_t hs_pthread_id;pthread_create(&hs_pthread_id, NULL, (void* (*)(void*))function, (void*)(param));}
 
 	#define HS_MUTEX			pthread_mutex_t
 	#define HS_CREATE_MUTEX(x)	pthread_mutex_init(x, NULL)
@@ -26,9 +56,32 @@
 
 #elif defined(_WIN32)// Windows OS
 
-	#define HS_ALIGN(x) __declspec(align(x))
 	#define HS_USE_COMPRESS_WORDLISTS
 	#define PATH_SEPARATOR '\\'
+	#define HS_ALIGN(x) __declspec(align(x))
+	// OpenCL support------------------------------------------
+	#define HS_SET_PRIORITY_GPU_THREAD		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL)
+	#define HS_DLL_HANDLE HMODULE
+	#define OPENCL_DLL "OpenCL.dll"
+	#define OCL_NORMAL_KERNEL_TIME 50
+	#define OCL_MIN_WORKGROUP_SIZE 64
+	#define OCL_RULES_ALL_IN_GPU
+	// Log support------------------------------------------
+	#define HS_LOG_DEBUG		0
+	#define HS_LOG_INFO			1
+	#define HS_LOG_WARNING		2
+	#define HS_LOG_ERROR		3
+
+#ifdef HS_TESTING
+
+#ifdef __cplusplus
+extern "C"
+#endif
+	 void hs_log(int priority, const char* tag, char* format_message, ...);
+#else
+	#define hs_log(priority, tag, format_message, ...)
+#endif
+	// -----------------------------------------------------
 
 #ifdef _M_ARM// Win Phone 8
 	#define HS_ARM

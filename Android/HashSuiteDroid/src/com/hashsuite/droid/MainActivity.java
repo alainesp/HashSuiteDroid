@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2014 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2014-2015 by Alain Espinosa. See LICENSE.
 
 package com.hashsuite.droid;
 
@@ -34,6 +34,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.database.Cursor;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Build;
@@ -48,6 +49,7 @@ import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
@@ -55,6 +57,8 @@ import android.widget.AdapterView.OnItemSelectedListener;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
 import android.widget.ProgressBar;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.TableLayout;
 import android.widget.TableRow;
 import android.widget.TextView;
@@ -65,8 +69,8 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 {
 	// Formats constants
 	static final int LM_INDEX = 0;
-	private static final int NTLM_INDEX = 1;
-	private static final int DCC_INDEX = 2;
+	//private static final int NTLM_INDEX = 1;
+	//private static final int DCC_INDEX = 2;
 
 	// Key-providers constants
 	static final int CHARSET_INDEX = 0;
@@ -75,14 +79,14 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	static final int PHRASES_INDEX = 3;
 	static final int DB_INFO_INDEX = 4;
 	static final int LM2NTLM_INDEX = 5;
-	private static final int FAST_LM_INDEX = 6;
-	private static final int RULES_INDEX = 7;
+	//private static final int FAST_LM_INDEX = 6;
+	//private static final int RULES_INDEX = 7;
 
 	// Native methods
 	private static native void initAll(String files_path);
 	// In_Out
 	private static native void ImportHashes(String file_path);
-	private static native ImportResult GetImportResult();
+	private static native int GetImportResultInt(int index);
 	private static native void ImportHashesStop();
 	private static native void ImportDB(String file_path);
 	private static native void Export(String dir_path, int index);
@@ -94,14 +98,17 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	private static native void clearAllAccounts();
 
 	// Attacks
-	private static native void StartAttack(int format_index, int provider_index, int num_threads, int min_size, int max_size, String param, int use_rules, int rules_on);
-	private static native void ResumeAttack(long db_id, int num_threads);
+	private static native void StartAttack(int format_index, int provider_index, int num_threads, int min_size, int max_size, String param, int use_rules, int rules_on, int gpus_used);
+	private static native void ResumeAttack(long db_id, int num_threads, int gpus_used);
 	private static native void StopAttack();
 	private static native long GetAttackID();
 	private static native void SaveAttackState();
 	private static native String GetAttackDescription();
 	private static native void Benchmark();
 	private static native void BenchmarkStop();
+	private static native int GetBenchmarkDuration();
+	private static native int[] GetBenchmarkValues(int format_index);
+	private static native int GetRulesGPUStatus();
 
 	// Wordlist
 	public static native long SaveWordlist(String path, String name, long file_lenght);
@@ -138,7 +145,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	HashesFragment tab_main;
 	StatusFragment tab_status;
 	private MenuItem action_menu;
-	private static int screen_width_dp;
+	static int screen_width_dp;
 	private static float display_density;
 	private static int display_width;
 	
@@ -333,8 +340,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 				onImportHashesDialog(savedInstanceState.getString(IMPORT_FILENAME));
 				break;
 			case APP_STATE_CRACKING:
-				ResumeAttack(savedInstanceState.getLong(ATTACK_ID), ParamsFragment.getNumThreads());
-				onStartAttackCommon();
+				ResumeAttack(savedInstanceState.getLong(ATTACK_ID), ParamsFragment.getNumThreads(), ParamsFragment.getGPUsUsed());
 				break;
 			default:
 				if(!isTabletUI())
@@ -456,39 +462,82 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		stats_dialog.show();
 		stats_dialog.getWindow().setLayout(calculateDialogWidth(420), WindowManager.LayoutParams.WRAP_CONTENT);
 		stats_dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+		final TableLayout formats_table = (TableLayout)stats_dialog.findViewById(R.id.import_table);
+		final String[] format_names = HashesFragment.GetFormats();
+		final int[] format_remaped = new int[format_names.length];
+		for (int i = 0; i < format_remaped.length; i++)
+			format_remaped[i] = -1;
 		
 		import_timer.schedule(new TimerTask()
 		{
+			private static final int IMPORT_IS_ENDED = 0;
+			private static final int IMPORT_USERS_ADDED = 1;
+			private static final int IMPORT_LINES_SKIPED = 2;
+			private static final int IMPORT_COMPLETITION = 3;
+			private static final int IMPORT_FORMATS_DATA = 4;
 			@Override
 			public void run()
 			{
-				final ImportResult importer_stats = GetImportResult();
-				if (importer_stats.isEnded != 0)
+				final int isEnded = GetImportResultInt(IMPORT_IS_ENDED);
+				if (isEnded != 0)
 					import_timer.cancel();
 				// Update the UI
 				MainActivity.my_activity.runOnUiThread(new Runnable()
 				{
+					private TextView CreateTextView(TextView first_child)
+					{
+						TextView name = new TextView(my_activity);
+						name.setGravity(Gravity.CENTER_HORIZONTAL);
+						name.setPadding(10, 0, 0, 0);
+						name.setTextSize(first_child.getTextSize()/display_density);
+						name.setTextColor(first_child.getTextColors());
+						
+						return name;
+					}
 					@Override
 					public void run()
 					{
-						((TextView) stats_dialog.findViewById(R.id.user_added)).setText("Users Added: " + importer_stats.num_users_added);
-						((TextView) stats_dialog.findViewById(R.id.lines_skipped)).setText("Lines Skipped: " + importer_stats.lines_skiped);
+						((TextView) stats_dialog.findViewById(R.id.user_added)).setText("Users Added: " + GetImportResultInt(IMPORT_USERS_ADDED));
+						((TextView) stats_dialog.findViewById(R.id.lines_skipped)).setText("Lines Skipped: " + GetImportResultInt(IMPORT_LINES_SKIPED));
+						((ProgressBar) stats_dialog.findViewById(R.id.status_completition)).setProgress(GetImportResultInt(IMPORT_COMPLETITION));
 
-						((TextView) stats_dialog.findViewById(R.id.lm_added)).setText("" + importer_stats.num_hash_added_lm);
-						((TextView) stats_dialog.findViewById(R.id.lm_disable)).setText("" + importer_stats.num_hash_disable_lm);
-						((TextView) stats_dialog.findViewById(R.id.lm_exist)).setText("" + importer_stats.num_hash_exist_lm);
+						for (int i = 0; i < format_names.length; i++)
+						{
+							int num_users_added 	= GetImportResultInt(3*i+IMPORT_FORMATS_DATA+0);
+							int num_users_disabled 	= GetImportResultInt(3*i+IMPORT_FORMATS_DATA+1);
+							int num_users_exist 	= GetImportResultInt(3*i+IMPORT_FORMATS_DATA+2);
+							
+							if(num_users_added > 0 || num_users_disabled > 0 || num_users_exist > 0)
+							{
+								// Not showed yet
+								if(format_remaped[i] < 0)
+								{
+									TextView first_child = (TextView)((TableRow)formats_table.getChildAt(0)).getChildAt(0);
+									
+									TableRow row = new TableRow(my_activity);
+									TextView name = CreateTextView(first_child);
+									name.setText(format_names[i]);
+									name.setGravity(Gravity.LEFT);
+									row.addView(name);
+									
+									row.addView(CreateTextView(first_child));
+									row.addView(CreateTextView(first_child));
+									row.addView(CreateTextView(first_child));
+									
+									format_remaped[i] = formats_table.getChildCount();
+									
+									formats_table.addView(row);
+								}
 
-						((TextView) stats_dialog.findViewById(R.id.ntlm_added)).setText("" + importer_stats.num_hash_added_ntlm);
-						((TextView) stats_dialog.findViewById(R.id.ntlm_disable)).setText("" + importer_stats.num_hash_disable_ntlm);
-						((TextView) stats_dialog.findViewById(R.id.ntlm_exist)).setText("" + importer_stats.num_hash_exist_ntlm);
+								// Update value
+								TableRow row = (TableRow) formats_table.getChildAt(format_remaped[i]);
+								((TextView)row.getChildAt(1)).setText(""+num_users_added);
+								((TextView)row.getChildAt(2)).setText(""+num_users_disabled);
+								((TextView)row.getChildAt(3)).setText(""+num_users_exist);
+							}
+						}
 
-						((TextView) stats_dialog.findViewById(R.id.dcc_added)).setText("" + importer_stats.num_hash_added_dcc);
-						((TextView) stats_dialog.findViewById(R.id.dcc_disable)).setText("" + importer_stats.num_hash_disable_dcc);
-						((TextView) stats_dialog.findViewById(R.id.dcc_exist)).setText("" + importer_stats.num_hash_exist_dcc);
-
-						((ProgressBar) stats_dialog.findViewById(R.id.status_completition)).setProgress(importer_stats.completition);
-
-						if (importer_stats.isEnded != 0)
+						if (isEnded != 0)
 						{
 							stats_dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
 							stats_dialog.setTitle("Import complete");
@@ -502,10 +551,10 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	private void onImportFile()
 	{
 		// Create the dialog.
-		FileChooserDialog dialog = new FileChooserDialog(this, "Select file to import (pwdump | cachedump | .db)", getLayoutInflater());
+		FileChooserDialog dialog = new FileChooserDialog(this, "Select file to import (pwdump | cachedump | .db | .pcap | ...)", getLayoutInflater());
 
 		// Define the filter
-		dialog.setFilter(".*txt|.*db");
+		dialog.setFilter(".*txt|.*db|.*pcap|.*cap");
 
 		// Assign listener for the select event.
 		dialog.addListener(new FileChooserDialog.OnFileSelectedListener()
@@ -546,9 +595,89 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		// Show the dialog.
 		dialog.show();
 	}
+	private static int conflict_format_result;
+	private static RadioGroup rb_formats;
+	public static int SelectConflictingFormat(final String line, final int[] valid_formats)
+	{
+		conflict_format_result = -2;
+		my_activity.runOnUiThread(new Runnable()
+		{
+			@Override
+			public void run()
+			{
+				LayoutInflater inflater = MainActivity.my_activity.getLayoutInflater();
+				// Instantiate an AlertDialog.Builder with its constructor
+				
+				AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.my_activity).setPositiveButton("OK", new DialogInterface.OnClickListener()
+				{
+					public void onClick(DialogInterface dialog, int id)
+					{
+						// Found the selected format
+						int selected_format_id = rb_formats.getCheckedRadioButtonId();
+						for (int i = 0; i < rb_formats.getChildCount(); i++)
+							if(rb_formats.getChildAt(i).getId() == selected_format_id)
+							{
+								int num_formats_added = 0;
+								for (int j = 0; j < valid_formats.length; j++)
+									if(valid_formats[j] != 0)
+									{
+										if(num_formats_added == i)
+										{
+											conflict_format_result = j;
+											break;
+										}
+										num_formats_added++;
+									}
+								break;
+							}
+						
+						if(conflict_format_result < 0)
+							conflict_format_result = -1;
+						dialog.dismiss();
+					}
+				}).setCancelable(false).setTitle("Conflicting formats over line of text").setView(inflater.inflate(R.layout.select_format, null));
+				
+				AlertDialog formats_dialog = builder.create();
+				formats_dialog.show();
+				//formats_dialog.getWindow().setLayout(calculateDialogWidth(420), WindowManager.LayoutParams.WRAP_CONTENT);
+				
+				TextView conflict_line = (TextView)formats_dialog.findViewById(R.id.conflict_line);
+				conflict_line.setText(line);
+				
+				rb_formats = (RadioGroup)formats_dialog.findViewById(R.id.conflicting_formats_rb);
+				rb_formats.clearCheck();
+				int num_formats_added = 0;
+				String[] format_names = HashesFragment.GetFormats();
+				
+				// Add the formats to select
+				for (int i = 0; i < valid_formats.length; i++)
+					if(valid_formats[i] != 0)
+					{
+						RadioButton rb = new RadioButton(my_activity);
+						rb.setText(format_names[i]);
+						rb_formats.addView(rb, num_formats_added);
+						if(num_formats_added==0)
+							rb_formats.check(rb.getId());
+						num_formats_added++;
+					}
+			}
+		});	
+		
+		while(conflict_format_result < -1)
+		{
+			try
+			{
+				Thread.sleep(300);
+			}
+			catch (InterruptedException e)
+			{}
+		}
+		return conflict_format_result;
+	}
 
 	// Attacks
 	private int attack_counter;
+	private static AlertDialog rules_dialog = null;
 	private boolean checkBattery(String fail_message)
 	{
 		IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
@@ -564,6 +693,26 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		{
 			StopAttack();
 			Toast.makeText(my_activity, fail_message, Toast.LENGTH_LONG).show();
+			return false;
+		}
+		// Protect battery
+		int health = batteryStatus.getIntExtra(BatteryManager.EXTRA_HEALTH, -1);
+		if(health==BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE)
+		{
+			StopAttack();
+			Toast.makeText(my_activity, "Battery over-voltage.", Toast.LENGTH_LONG).show();
+			return false;
+		}
+		if(health==BatteryManager.BATTERY_HEALTH_OVERHEAT)
+		{
+			StopAttack();
+			Toast.makeText(my_activity, "Battery overheat.", Toast.LENGTH_LONG).show();
+			return false;
+		}
+		if(health==BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE)
+		{
+			StopAttack();
+			Toast.makeText(my_activity, "Battery had an unknow problem.", Toast.LENGTH_LONG).show();
 			return false;
 		}
 		
@@ -595,7 +744,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 					public void run()
 					{
 						// Check battery status
-						if((attack_counter % 16) == 15)
+						if((attack_counter % 8) == 7)
 							checkBattery("Battery limit reached, stopping attack.");
 						
 						tab_status.UpdateStatus(status);
@@ -656,6 +805,30 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			}
 		});
 	}
+	private static void AttackBeginCallBack()
+	{
+		my_activity.runOnUiThread(new Runnable()
+		{
+			@Override
+			public void run()
+			{
+				if(rules_dialog != null)
+				{
+					rules_dialog.dismiss();
+					rules_dialog = null;
+					
+					if(attack_timer != null)
+					{
+						attack_timer.cancel();
+						attack_timer = null;
+					}
+					if(timer_update_gui != null)
+						timer_update_gui = null;
+				}
+				my_activity.onStartAttackCommon();
+			}
+		});
+	}
 	
 	private static void alignTopRight(AlertDialog dialog)
 	{
@@ -673,6 +846,29 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
     	dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
 	}
 
+	// TODO: Test Suite code---------------------------------------------------------------
+//	private static native void TestSuite();
+//	public static void TestSuiteAttack(final int pformat_index, final int pkey_index)
+//	{
+//		my_activity.runOnUiThread(new Runnable()
+//		{
+//			@Override
+//			public void run()
+//			{
+//				//if(!isTabletUI())
+//				//	my_activity.getActionBar().setSelectedNavigationItem(0);
+//				
+//				my_activity.tab_main.SetProviderSelection(pkey_index);
+//				//if(MainActivity.format_index == pformat_index)
+//				//	my_activity.tab_main.SetFormatSelection(pformat_index + (pformat_index==0 ? 1 : -1));
+//				my_activity.tab_main.SetFormatSelection(pformat_index);
+//				my_activity.tab_main.LoadHashes();
+//				
+//				my_activity.onOptionsItemSelected(my_activity.action_menu);
+//			}
+//		});
+//	}
+	//-----------------------------------------------------------------------------------
 	@Override
 	public boolean onOptionsItemSelected(MenuItem item)
 	{
@@ -687,9 +883,67 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 				{
 					if(checkBattery("Battery low, can not start the attack."))
 					{
-						StartAttack(format_index, key_provider_index, ParamsFragment.getNumThreads(), ParamsFragment.getMin(format_index, key_provider_index), ParamsFragment.getMax(format_index, key_provider_index),
-								ParamsFragment.getParam(key_provider_index), ParamsFragment.getUseRules(format_index, key_provider_index), ParamsFragment.getRulesOn());
-						onStartAttackCommon();
+						int num_threads = ParamsFragment.getNumThreads();
+						int gpus_used = ParamsFragment.getGPUsUsed();
+						if(num_threads > 0 || gpus_used > 0)
+						{
+							int use_rules = ParamsFragment.getUseRules(format_index, key_provider_index);
+							int rules_mask_on = ParamsFragment.getRulesOn();
+							
+							if(use_rules!=0 && rules_mask_on==0)
+								Toast.makeText(this, "No rule selected", Toast.LENGTH_SHORT).show();
+							else
+							{
+								StartAttack(format_index, key_provider_index, num_threads, ParamsFragment.getMin(format_index, key_provider_index), ParamsFragment.getMax(format_index, key_provider_index),
+									ParamsFragment.getParam(key_provider_index), use_rules, rules_mask_on, gpus_used);
+								//onStartAttackCommon();
+								if(gpus_used!=0 && use_rules!=0)
+								{
+									LayoutInflater inflater = my_activity.getLayoutInflater();
+									builder = new AlertDialog.Builder(my_activity)
+										.setTitle("Compiling rules to device...")
+										.setView(inflater.inflate(R.layout.rules_compilation, null))
+										//.setIcon(R.drawable.ic_action_alarms)
+										.setCancelable(false);
+						
+									// Get the AlertDialog from create()
+									rules_dialog = builder.create();
+									rules_dialog.show();
+									//rules_dialog.getWindow().setLayout(calculateDialogWidth(560), WindowManager.LayoutParams.WRAP_CONTENT);
+									
+									timer_update_gui = new TimerTask()
+									{
+										@Override
+										public void run()
+										{
+											// Update the UI
+											my_activity.runOnUiThread(new Runnable()
+											{
+												@Override
+												public void run()
+												{
+													TextView kernel_memory = (TextView) rules_dialog.findViewById(R.id.rules_compilation_memory);
+													ProgressBar rules_compilation_status = (ProgressBar) rules_dialog.findViewById(R.id.rules_compilation_status);
+													
+													int status = GetRulesGPUStatus();
+													
+													kernel_memory.setText("Using "+(status&0xffffff)+" KB for kernels");
+													rules_compilation_status.setProgress(status>>24);
+												}
+											});
+										}
+									};
+									attack_timer = new Timer();
+									attack_timer.schedule(timer_update_gui, 1000, 1000);
+								}
+							}
+						}
+						else
+						{
+							if(!isTabletUI())
+								my_activity.getActionBar().setSelectedNavigationItem(2);
+							Toast.makeText(this, "No hardware selected", Toast.LENGTH_SHORT).show();
+						}
 					}
 				}
 				else
@@ -786,8 +1040,19 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 							public void onItemClick(AdapterView<?> parent, View view, int position, long id)
 							{
 								resume_dialog.dismiss();
-								ResumeAttack(((ResumeAttackData)parent.getItemAtPosition(position)).id, ParamsFragment.getNumThreads());
-								onStartAttackCommon();
+								int num_threads = ParamsFragment.getNumThreads();
+								int gpus_used = ParamsFragment.getGPUsUsed();
+								if(num_threads > 0 || gpus_used > 0)
+								{
+									ResumeAttack(((ResumeAttackData)parent.getItemAtPosition(position)).id, num_threads, gpus_used);
+									//onStartAttackCommon();
+								}
+								else
+								{
+									if(!isTabletUI())
+										my_activity.getActionBar().setSelectedNavigationItem(2);
+									Toast.makeText(my_activity, "No hardware selected", Toast.LENGTH_SHORT).show();
+								}
 							}
 						});
 					}
@@ -886,10 +1151,11 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			{
 				if (!is_cracking)
 				{
-					benchmark_secs = 5 * (8*2+4);
-					LayoutInflater inflater = MainActivity.my_activity.getLayoutInflater();
-					builder = new AlertDialog.Builder(MainActivity.my_activity)
-						.setTitle("Benchmark end in " + benchmark_secs + " sec")
+					benchmark_secs = GetBenchmarkDuration();
+					String title = (benchmark_secs>60) ? "Benchmark end in " + Math.round(benchmark_secs/60.) + " min" : "Benchmark end in " + benchmark_secs + " sec";
+					LayoutInflater inflater = my_activity.getLayoutInflater();
+					builder = new AlertDialog.Builder(my_activity)
+						.setTitle(title)
 						.setView(inflater.inflate(R.layout.benchmark, null))
 						//.setIcon(R.drawable.ic_action_alarms)
 						.setOnCancelListener(new OnCancelListener()
@@ -905,9 +1171,175 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 					// Get the AlertDialog from create()
 					benchmark_dialog = builder.create();
 					benchmark_dialog.show();
-					benchmark_dialog.getWindow().setLayout(calculateDialogWidth(330), WindowManager.LayoutParams.WRAP_CONTENT);
+					benchmark_dialog.getWindow().setLayout(calculateDialogWidth(560), WindowManager.LayoutParams.WRAP_CONTENT);
 					
 					bench_table = (TableLayout)benchmark_dialog.findViewById(R.id.benchmark_table);
+					// Hardware
+					TableLayout hardware_table = (TableLayout)benchmark_dialog.findViewById(R.id.benchmark_hardware);
+					TextView first_child = (TextView)((TableRow)hardware_table.getChildAt(0)).getChildAt(0);
+					
+					TableRow row_cpu = new TableRow(my_activity);
+					TextView cpu_name = new TextView(my_activity);
+					cpu_name.setTextSize(first_child.getTextSize()/display_density);
+					cpu_name.setTextColor(first_child.getTextColors());
+					cpu_name.setText("CPU");
+					cpu_name.setGravity(Gravity.LEFT);
+					row_cpu.addView(cpu_name);
+					
+					cpu_name = new TextView(my_activity);
+					cpu_name.setTextSize(first_child.getTextSize()/display_density);
+					cpu_name.setTextColor(first_child.getTextColors());
+					cpu_name.setText(""+Runtime.getRuntime().availableProcessors());
+					cpu_name.setGravity(Gravity.CENTER_HORIZONTAL);
+					row_cpu.addView(cpu_name);
+					
+					cpu_name = new TextView(my_activity);
+					cpu_name.setTextSize(first_child.getTextSize()/display_density);
+					cpu_name.setTextColor(first_child.getTextColors());
+					long cpu_clock = get_cpu_clock();
+					if(cpu_clock >= 1000)
+						cpu_name.setText(String.format("%.2fGHz", (cpu_clock/1000.0)));
+					else
+						cpu_name.setText(""+cpu_clock+"MHz");
+					cpu_name.setGravity(Gravity.CENTER_HORIZONTAL);
+					row_cpu.addView(cpu_name);
+					
+					cpu_name = new TextView(my_activity);
+					cpu_name.setTextSize(first_child.getTextSize()/display_density);
+					cpu_name.setTextColor(first_child.getTextColors());
+					cpu_name.setPadding(10, 0, 0, 0);
+					cpu_name.setText("Android " + Build.VERSION.RELEASE);
+					cpu_name.setGravity(Gravity.CENTER_HORIZONTAL);
+					row_cpu.addView(cpu_name);
+					
+					hardware_table.addView(row_cpu);
+					//GPU
+					GPUInfo[] gpus_info = GPUInfo.GetGpusInfo();
+					for (int i = 0; i < gpus_info.length; i++)
+					{
+						TableRow row_gpu = new TableRow(my_activity);
+						TextView gpu_name = new TextView(my_activity);
+						gpu_name.setTextSize(first_child.getTextSize()/display_density);
+						gpu_name.setTextColor(Color.rgb(0, 150, 0));
+						//gpu_name.setBackgroundColor(Color.rgb(240, 255, 240));
+						gpu_name.setText(gpus_info[i].name);
+						gpu_name.setGravity(Gravity.LEFT);
+						row_gpu.addView(gpu_name);
+						
+						gpu_name = new TextView(my_activity);
+						gpu_name.setTextSize(first_child.getTextSize()/display_density);
+						gpu_name.setTextColor(Color.rgb(0, 150, 0));
+						//gpu_name.setBackgroundColor(Color.rgb(240, 255, 240));
+						gpu_name.setText(""+gpus_info[i].cores);
+						gpu_name.setGravity(Gravity.CENTER_HORIZONTAL);
+						row_gpu.addView(gpu_name);
+						
+						gpu_name = new TextView(my_activity);
+						gpu_name.setTextSize(first_child.getTextSize()/display_density);
+						gpu_name.setTextColor(Color.rgb(0, 150, 0));
+						//gpu_name.setBackgroundColor(Color.rgb(240, 255, 240));
+						if(gpus_info[i].frequency >= 1000)
+							gpu_name.setText(String.format("%.2fGHz", (gpus_info[i].frequency/1000.0)));
+						else
+							gpu_name.setText(""+gpus_info[i].frequency+"MHz");
+						gpu_name.setGravity(Gravity.CENTER_HORIZONTAL);
+						row_gpu.addView(gpu_name);
+						
+						gpu_name = new TextView(my_activity);
+						gpu_name.setTextSize(first_child.getTextSize()/display_density);
+						gpu_name.setTextColor(Color.rgb(0, 150, 0));
+						//gpu_name.setBackgroundColor(Color.rgb(240, 255, 240));
+						gpu_name.setPadding(10, 0, 0, 0);
+						gpu_name.setText(gpus_info[i].driver_version);
+						gpu_name.setGravity(Gravity.CENTER_HORIZONTAL);
+						row_gpu.addView(gpu_name);
+						
+						hardware_table.addView(row_gpu);
+					}
+					
+					// Bench table
+					String[] format_names = HashesFragment.GetFormats();
+					TableRow first_row = ((TableRow)bench_table.getChildAt(0));
+					first_child = (TextView)first_row.getChildAt(0);
+					int[] last_bench_values = GetBenchmarkValues(0);
+					int num_gpus = gpus_info.length;
+					
+					for (int j = 0; j < last_bench_values.length; j++)
+					{
+						TextView data = new TextView(my_activity);
+						if(last_bench_values[j] <= 1000)
+						{
+							data.setText(""+last_bench_values[j]);
+						}
+						else
+						{
+							if(last_bench_values[j]==65536)
+								data.setText("2^16");
+							else
+								data.setText("10^"+((int)Math.log10(last_bench_values[j])));
+						}
+						data.setPadding(10, 0, 0, 0);	
+						data.setTextSize(first_child.getTextSize()/display_density);
+						data.setTextColor(first_child.getTextColors());
+						data.setGravity(Gravity.CENTER_HORIZONTAL);
+						first_row.addView(data);
+					}
+					
+					for (int j = 0; j < format_names.length; j++)
+					{
+						TableRow row = new TableRow(my_activity);
+						row.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+						
+						int[] current_bench_value = GetBenchmarkValues(j);
+						if(current_bench_value.length != last_bench_values.length)
+						{
+							row.addView(new TextView(my_activity));
+							
+							for (int i = 0; i < current_bench_value.length; i++)
+							{
+								TextView data = new TextView(my_activity);
+								data.setText(""+current_bench_value[i]);
+								data.setPadding(10, 0, 0, 0);		
+								data.setTextSize(first_child.getTextSize()/display_density);
+								data.setTextColor(first_child.getTextColors());
+								data.setGravity(Gravity.CENTER_HORIZONTAL);
+								row.addView(data);
+							}
+							
+							for (int i = current_bench_value.length; i < Math.max(current_bench_value.length, last_bench_values.length); i++)
+								row.addView(new TextView(my_activity));
+								
+							bench_table.addView(row);
+							
+							row = new TableRow(my_activity);
+							row.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+						}
+						last_bench_values = current_bench_value;
+						// Format name
+						TextView name = new TextView(my_activity);
+						name.setTextSize(first_child.getTextSize()/display_density);
+						name.setTextColor(first_child.getTextColors());
+						name.setText(format_names[j]);
+						name.setGravity(Gravity.LEFT);
+						row.addView(name);
+						bench_table.addView(row);
+						
+						for (int i = 0; i < num_gpus; i++)
+						{
+							row = new TableRow(my_activity);
+							row.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+							
+							name = new TextView(my_activity);
+							name.setTextSize(first_child.getTextSize()/display_density);
+							name.setTextColor(Color.rgb(0, 150, 0));
+							//name.setBackgroundColor(Color.rgb(230, 255, 230));
+							//name.setText("GPU"+i);
+							//name.setGravity(Gravity.CENTER_HORIZONTAL);
+							row.addView(name);
+							bench_table.addView(row);
+						}
+					}
+					
 					is_complete_benchmark = false;
 					new Thread(new Runnable()
 					{
@@ -922,6 +1354,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			}
 			return true;
 		case R.id.about:
+			//TestSuite();
 			builder = new AlertDialog.Builder(MainActivity.my_activity)
 				.setTitle("About")
 				//.setIcon(R.drawable.ic_action_about)
@@ -957,15 +1390,36 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			return super.onOptionsItemSelected(item);
 		}
 	}
-	
+	private static long get_cpu_clock()
+	{
+		// Find CPU clock speed
+		long cpu_clock = 0;
+		File cpu_clock_file = new File("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq");
+		if (cpu_clock_file.exists())
+		{
+			 try
+			 {
+				 BufferedReader br = new BufferedReader(new FileReader(cpu_clock_file));
+				 cpu_clock = Long.parseLong(br.readLine());
+				 br.close();
+			 }
+			 catch (IOException e)
+			 {}
+		}
+		cpu_clock = Math.round(cpu_clock/1000.);
+		
+		return cpu_clock;
+	}
+
 	// Benchmark
 	static AlertDialog benchmark_dialog = null;
 	static TableLayout bench_table = null;
 	static int benchmark_secs;
 	private static int[] bench_dcc_values = new int[]{1,4,16,64}; 
 	private static boolean is_complete_benchmark;
-	static void SetBenchData(final String bench_data, final int row_index)
+	static void SetBenchData(final String bench_data, final int row_index, int time_spend)
 	{
+		benchmark_secs -= time_spend;
 		my_activity.runOnUiThread(new Runnable()
 		{
 			@Override
@@ -973,32 +1427,47 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			{
 				if(bench_table != null)
 				{
-					TextView data = new TextView(my_activity);
-					data.setText(bench_data);
-					data.setPadding(10, 0, 0, 0);
-	
 					TableRow row = (TableRow)bench_table.getChildAt(2+row_index);
 					TextView first_child = ((TextView)row.getChildAt(0));
 					
-					// Add DCC numbers
-					if(row.getChildCount() == 3)
-					{
-						TextView num = new TextView(my_activity);
-						num.setText(""+bench_dcc_values[row_index]);
-						num.setPadding(10, 0, 0, 0);
-						num.setTextSize(first_child.getTextSize()/display_density);
-						num.setTextColor(first_child.getTextColors());
-						row.addView(num);
-					}
-					
+					TextView data = new TextView(my_activity);
+					data.setText(bench_data);
+					data.setPadding(10, 0, 0, 0);		
 					data.setTextSize(first_child.getTextSize()/display_density);
 					data.setTextColor(first_child.getTextColors());
+					data.setGravity(Gravity.CENTER_HORIZONTAL);
 					row.addView(data);
-					benchmark_secs -= 5;
-					benchmark_dialog.setTitle("Benchmark end in " + benchmark_secs + " sec");
+					
+					if(benchmark_secs > 60)
+						benchmark_dialog.setTitle("Benchmark end in " + Math.round(benchmark_secs/60.) + " min");
+					else
+						benchmark_dialog.setTitle("Benchmark end in " + benchmark_secs + " sec");
 				}
 			}
 		});
+	}
+	private static void SaveDataTable(TableLayout table, OutputStreamWriter writer) throws IOException
+	{
+		writer.write('\n');
+		// Save benchmark table data
+		for (int i = 0; i < table.getChildCount(); i++)
+		{
+			View child = table.getChildAt(i);
+			if(child != null && child instanceof TableRow)
+			{
+				TableRow row = (TableRow)child;
+				for (int j = 0; j < row.getChildCount(); j++)
+				{
+					View text_view = row.getChildAt(j);
+					if(text_view instanceof TextView)
+					{
+						writer.write(((TextView)row.getChildAt(j)).getText().toString().replace(',', ' '));
+						writer.write(',');
+					}
+				}
+				writer.write('\n');
+			}
+		}
 	}
 	static void OnCompleteBenchmark()
 	{
@@ -1022,55 +1491,19 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 						FileOutputStream file = new FileOutputStream(bench_file.getAbsolutePath(), true);
 						OutputStreamWriter writer = new OutputStreamWriter(file);
 						
-						// Find CPU clock speed
-						long cpu_clock = 0;
-						File cpu_clock_file = new File("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq");
-						if (cpu_clock_file.exists())
-						{
-							 try
-							 {
-								 BufferedReader br = new BufferedReader(new FileReader(cpu_clock_file));
-								 cpu_clock = Long.parseLong(br.readLine());
-								 br.close();
-							 }
-							 catch (IOException e)
-							 {}
-						}
-						cpu_clock = Math.round(cpu_clock/1000.);
 						String app_version = my_activity.getPackageManager().getPackageInfo(my_activity.getPackageName(), 0).versionName;
 						
 						// Save benchmark header
 						writer.write("/////////////////////////////////////////////////////////////////////////////////\n");
 						writer.write("Hash Suite Droid "+app_version);
-						if(Runtime.getRuntime().availableProcessors() == 1)
-							writer.write(",1 core at "+cpu_clock+"MHz");
-						else
-							writer.write(","+Runtime.getRuntime().availableProcessors() +" cores at "+cpu_clock+"MHz");
 						writer.write(","+Build.MANUFACTURER);
 						writer.write(" "+Build.PRODUCT);
 						writer.write(" "+Build.MODEL);
-						writer.write(",Android OS "+Build.VERSION.RELEASE);
 						writer.write(","+new Date().toString()+"\n");
 						
 						// Save benchmark table data
-						for (int i = 0; i < bench_table.getChildCount(); i++)
-						{
-							View child = bench_table.getChildAt(i);
-							if(child != null && child instanceof TableRow)
-							{
-								TableRow row = (TableRow)child;
-								for (int j = 0; j < row.getChildCount(); j++)
-								{
-									View text_view = row.getChildAt(j);
-									if(text_view instanceof TextView)
-									{
-										writer.write(((TextView)row.getChildAt(j)).getText().toString().replace(',', ' '));
-										writer.write(',');
-									}
-								}
-								writer.write('\n');
-							}
-						}
+						SaveDataTable((TableLayout)benchmark_dialog.findViewById(R.id.benchmark_hardware), writer);
+						SaveDataTable(bench_table, writer);
 				
 						writer.close();
 						file.close();
@@ -1175,27 +1608,6 @@ class WordlistDownloadingData
 	}
 }
 
-class ImportResult
-{
-	public int isEnded;
-
-	public int completition;
-	public int num_users_added;
-	public int lines_skiped;
-
-	public int num_hash_added_lm;
-	public int num_hash_disable_lm;
-	public int num_hash_exist_lm;
-
-	public int num_hash_added_ntlm;
-	public int num_hash_disable_ntlm;
-	public int num_hash_exist_ntlm;
-
-	public int num_hash_added_dcc;
-	public int num_hash_disable_dcc;
-	public int num_hash_exist_dcc;
-}
-
 class ResumeAttackData
 {
 	public String name;
@@ -1234,5 +1646,16 @@ class AttackStatusData
 
 	public int progress;
 	public native void UpdateStatus();
+}
+
+class GPUInfo
+{
+	public String name;
+	public int cores;
+	public int frequency;
+	public String driver_version;
+	public int vendor_icon;
+	
+	public static native GPUInfo[] GetGpusInfo();
 }
 

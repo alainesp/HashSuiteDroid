@@ -1,18 +1,48 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2013 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2013, 2015 by Alain Espinosa. See LICENSE.
 
-#define CREATE_SCHEMA											\
-"CREATE TABLE IF NOT EXISTS Account (							\
-    ID INTEGER PRIMARY KEY,								        \
-    UserName TEXT NOT NULL,										\
-    Hash INTEGER,                                               \
-	Fixed INTEGER NOT NULL DEFAULT 0,							\
-	Privilege INTEGER NOT NULL DEFAULT 1,						\
-	FOREIGN KEY(Hash) REFERENCES Hash(ID),					    \
-	UNIQUE(UserName,Hash)										\
-);																\
-																\
-CREATE TABLE IF NOT EXISTS AccountLM (							\
+#ifdef HS_TESTING
+	#define CREATE_ACCOUNT_HASH									 \
+	"CREATE TABLE IF NOT EXISTS Account (						 \
+		ID INTEGER PRIMARY KEY,								     \
+		UserName TEXT NOT NULL,									 \
+		Hash INTEGER,                                            \
+		Fixed INTEGER NOT NULL DEFAULT 0,						 \
+		Privilege INTEGER NOT NULL DEFAULT 1,					 \
+		FOREIGN KEY(Hash) REFERENCES Hash(ID)					 \
+	);															 \
+																 \
+	CREATE TABLE IF NOT EXISTS Hash (							 \
+		ID INTEGER PRIMARY KEY,									 \
+		Hex TEXT NOT NULL,									     \
+		DateInserted DATETIME NOT NULL DEFAULT (datetime('now')),\
+		Type INTEGER NOT NULL,									 \
+		FOREIGN KEY(Type) REFERENCES Format(ID)				     \
+	);"		
+#else
+	#define CREATE_ACCOUNT_HASH									 \
+	"CREATE TABLE IF NOT EXISTS Account (						 \
+		ID INTEGER PRIMARY KEY,								     \
+		UserName TEXT NOT NULL,									 \
+		Hash INTEGER,                                            \
+		Fixed INTEGER NOT NULL DEFAULT 0,						 \
+		Privilege INTEGER NOT NULL DEFAULT 1,					 \
+		FOREIGN KEY(Hash) REFERENCES Hash(ID),					 \
+		UNIQUE(UserName,Hash)									 \
+	);															 \
+																 \
+	CREATE TABLE IF NOT EXISTS Hash (							 \
+		ID INTEGER PRIMARY KEY,									 \
+		Hex TEXT NOT NULL,									     \
+		DateInserted DATETIME NOT NULL DEFAULT (datetime('now')),\
+		Type INTEGER NOT NULL,									 \
+		FOREIGN KEY(Type) REFERENCES Format(ID),				 \
+		UNIQUE(Hex,Type)                                         \
+	);"												
+#endif
+
+#define CREATE_OTHER_SCHEMA										\
+"CREATE TABLE IF NOT EXISTS AccountLM (							\
     ID INTEGER PRIMARY KEY,								        \
 	LM1 INTEGER,												\
 	LM2 INTEGER,												\
@@ -38,15 +68,6 @@ CREATE TABLE IF NOT EXISTS Format (								\
     ID INTEGER PRIMARY KEY,								        \
     Name TEXT NOT NULL UNIQUE,									\
 	Description TEXT											\
-);																\
-																\
-CREATE TABLE IF NOT EXISTS Hash (								\
-    ID INTEGER PRIMARY KEY,									    \
-    Hex TEXT NOT NULL,									        \
-	DateInserted DATETIME NOT NULL DEFAULT (datetime('now')),	\
-	Type INTEGER NOT NULL,										\
-	FOREIGN KEY(Type) REFERENCES Format(ID),				    \
-	UNIQUE(Hex,Type)                                            \
 );																\
 																\
 CREATE TABLE IF NOT EXISTS KeyProvider (						\
@@ -120,14 +141,14 @@ INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category
 INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (7, 'L33t_Dict_Full.7z',							'7', 'http://gdataonline.com/downloads/L33t_Dict/L33t_Dict_Full.7z', 5368366, 1, 14);					\
 INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (8, 'porno.txt.bz2',								'8', 'http://downloads.skullsecurity.org/passwords/porno.txt.bz2', 7158285, 1, 14);						\
 INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (9, 'bible.txt.bz2',								'9', 'https://downloads.skullsecurity.org/passwords/bible.txt.bz2', 42208, 1, 14);						\
-																																																							\
-INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (10, 'english.zip',						'10', 'http://apasscracker.com/dictionaries/english.zip', 9295868, 1, 29);				\
-INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (11, 'english.txt.bz2',					'11', 'http://downloads.skullsecurity.org/passwords/english.txt.bz2', 1368101, 1, 29);	\
-INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (12, 'spanish.zip',						'12', 'http://apasscracker.com/dictionaries/spanish.zip', 914020, 1, 29);				\
-INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (13, 'russian.zip',						'13', 'http://apasscracker.com/dictionaries/russian.zip', 1873123, 1, 29);				\
-INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (14, 'french.zip',							'14', 'http://apasscracker.com/dictionaries/french.zip', 386989, 1, 29);				\
-INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (15, 'german.txt.bz2',						'15', 'http://downloads.skullsecurity.org/passwords/german.txt.bz2', 2371487, 1, 29);	\
-																																																							\
+																																																									\
+INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (10, 'english.zip',								'10', 'http://apasscracker.com/dictionaries/english.zip', 9295868, 1, 29);				\
+INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (11, 'english.txt.bz2',							'11', 'http://downloads.skullsecurity.org/passwords/english.txt.bz2', 1368101, 1, 29);	\
+INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (12, 'spanish.zip',								'12', 'http://apasscracker.com/dictionaries/spanish.zip', 914020, 1, 29);				\
+INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (13, 'russian.zip',								'13', 'http://apasscracker.com/dictionaries/russian.zip', 1873123, 1, 29);				\
+INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (14, 'french.zip',									'14', 'http://apasscracker.com/dictionaries/french.zip', 386989, 1, 29);				\
+INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category) VALUES (15, 'german.txt.bz2',								'15', 'http://downloads.skullsecurity.org/passwords/german.txt.bz2', 2371487, 1, 29);	\
+																\
 																\
 																\
 CREATE TABLE IF NOT EXISTS PhrasesWordList (					\

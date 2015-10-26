@@ -47,123 +47,6 @@ PRIVATE void cpuID(unsigned int i, unsigned int regs[4])
 	#endif
 }
 
-// Maps family and model to processor name
-PRIVATE void map_mname(int family, int model, const char *v_name, char *m_name)
-{
-	// Default to name not known
-	m_name[0] = '\0';
-
-	if (!strncmp("AuthenticAMD", v_name, 12))
-	{
-		switch (family)
-		{ // extract family code
-		case 4: // Am486/AM5x86
-			strcpy_s (m_name, sizeof(PROC_AMD_AM486), PROC_AMD_AM486);
-			break;
-
-		case 5: // K6
-			switch (model)
-			{ // extract model code
-			case 0: case 1: case 2: case 3:
-				strcpy_s (m_name, sizeof(PROC_AMD_K5), PROC_AMD_K5);
-				break;
-			case 6: case 7:
-				strcpy_s (m_name, sizeof(PROC_AMD_K6), PROC_AMD_K6);
-				break;
-			case 8:
-				strcpy_s (m_name, sizeof(PROC_AMD_K6_2), PROC_AMD_K6_2);
-				break;
-			case 9: case 10: case 11: case 12: case 13: case 14: case 15:
-				strcpy_s (m_name, sizeof(PROC_AMD_K6_3), PROC_AMD_K6_3);
-				break;
-			}
-			break;
-
-		case 6: // Athlon
-			// No model numbers are currently defined
-			strcpy_s (m_name, sizeof(PROC_AMD_ATHLON), PROC_AMD_ATHLON);
-			break;
-		}
-	}
-	else if (!strncmp("GenuineIntel", v_name, 12))
-	{
-		switch (family)
-		{ // extract family code
-		case 4:
-			switch (model)
-			{ // extract model code
-			case 0: case 1:
-				strcpy_s (m_name, sizeof(PROC_INTEL_486DX), PROC_INTEL_486DX);
-				break;
-			case 2:
-				strcpy_s (m_name, sizeof(PROC_INTEL_486SX), PROC_INTEL_486SX);
-				break;
-			case 3:
-				strcpy_s (m_name, sizeof(PROC_INTEL_486DX2), PROC_INTEL_486DX2);
-				break;
-			case 4:
-				strcpy_s (m_name, sizeof(PROC_INTEL_486SL), PROC_INTEL_486SL);
-				break;
-			case 5:
-				strcpy_s (m_name, sizeof(PROC_INTEL_486SX2), PROC_INTEL_486SX2);
-				break;
-			case 7:
-				strcpy_s (m_name, sizeof(PROC_INTEL_486DX2E), PROC_INTEL_486DX2E);
-				break;
-			case 8:
-				strcpy_s (m_name, sizeof(PROC_INTEL_486DX4), PROC_INTEL_486DX4);
-				break;
-			}
-			break;
-
-		case 5:
-			switch (model)
-			{ // extract model code
-			case 1: case 2: case 3:
-				strcpy_s (m_name, sizeof(PROC_INTEL_PENTIUM), PROC_INTEL_PENTIUM);
-				break;
-			case 4:
-				strcpy_s (m_name, sizeof(PROC_INTEL_PENTIUM_MMX), PROC_INTEL_PENTIUM_MMX);
-				break;
-			}
-			break;
-
-		case 6:
-			switch (model)
-			{ // extract model code
-			case 1:
-				strcpy_s (m_name, sizeof(PROC_INTEL_PENTIUM_PRO), PROC_INTEL_PENTIUM_PRO);
-				break;
-			case 3: case 5:
-				strcpy_s (m_name, sizeof(PROC_INTEL_PENTIUM_II), PROC_INTEL_PENTIUM_II);
-				break;  // actual differentiation depends on cache settings
-			case 6:
-				strcpy_s (m_name, sizeof(PROC_INTEL_CELERON), PROC_INTEL_CELERON);
-				break;
-			case 7: case 8: case 10:
-				strcpy_s (m_name, sizeof(PROC_INTEL_PENTIUM_III), PROC_INTEL_PENTIUM_III);
-				break;  // actual differentiation depends on cache settings
-			}
-			break;
-
-		case 15 | (0x00 << 4): // family 15, extended family 0x00
-			switch (model)
-			{
-			case 0:
-				strcpy_s (m_name, sizeof(PROC_INTEL_PENTIUM_4), PROC_INTEL_PENTIUM_4);
-				break;
-			}
-			break;
-		}
-	}
-	else if (!strncmp("CyrixInstead", v_name, 12))
-		strcpy_s (m_name, sizeof(PROC_CYRIX), PROC_CYRIX);
-	else if (!strncmp("CentaurHauls", v_name, 12))
-		strcpy_s (m_name, sizeof(PROC_CENTAUR), PROC_CENTAUR);
-
-	if (!m_name[0])
-		strcpy_s (m_name, sizeof(PROC_UNKNOWN), PROC_UNKNOWN);
-}
 /***
 * Checks if OS Supports the capability or not
 *
@@ -177,10 +60,6 @@ PRIVATE int os_support(int feature)
 {
 	switch (feature)
 	{
-	case CPU_CAP_MMX:
-	    return FALSE;
-	case CPU_CAP_SSE:
-		return TRUE;
 	case CPU_CAP_SSE2:
 		return TRUE;
 	case CPU_CAP_AVX:
@@ -199,19 +78,6 @@ PRIVATE int os_support(int feature)
 	   {
 	       switch (feature)
 		   {
-			case CPU_CAP_MMX:
-	           __asm
-			   {
-	               pxor mm0, mm0           // executing MMX instruction
-	               emms
-	           }
-	           break;
-	       case CPU_CAP_SSE:
-	           __asm
-			   {
-	               xorps xmm0, xmm0        // executing SSE instruction
-	           }
-	           break;
 	       case CPU_CAP_SSE2:
 	           __asm
 			   {
@@ -484,7 +350,7 @@ PRIVATE void detect_logical_processor_info()
         {
         case RelationNumaNode:
             // Non-NUMA systems report a single record of this type.
-            current_cpu.numa_node_count++;
+            //current_cpu.numa_node_count++;
             break;
 
         case RelationProcessorCore:
@@ -498,7 +364,7 @@ PRIVATE void detect_logical_processor_info()
 
         case RelationProcessorPackage:
             // Logical processors share a physical package.
-            current_cpu.processor_package_count++;
+            //current_cpu.processor_package_count++;
             break;
 
         default:
@@ -564,32 +430,33 @@ PUBLIC void detect_hardware()
 	// Normal
 	cpuID(0, CPUInfo);
 	nIds = CPUInfo[0];
-	*((int*)current_cpu.cpu_string)		= CPUInfo[1];
-	*((int*)(current_cpu.cpu_string+4)) = CPUInfo[3];
-	*((int*)(current_cpu.cpu_string+8)) = CPUInfo[2];
+	//*((int*)current_cpu.cpu_string)		= CPUInfo[1];
+	//*((int*)(current_cpu.cpu_string+4)) = CPUInfo[3];
+	//*((int*)(current_cpu.cpu_string+8)) = CPUInfo[2];
 
 	// General capabilities
 	if(nIds >= 1)
 	{
 		cpuID(1, CPUInfo);
 
-		current_cpu.capabilites[CPU_CAP_MULTITHREADING]	=  (CPUInfo[3] >> 28) & 1;
-		current_cpu.capabilites[CPU_CAP_MMX]			= ((CPUInfo[3] >> 23) & 1) && os_support(CPU_CAP_MMX);
-		current_cpu.capabilites[CPU_CAP_SSE]			= ((CPUInfo[3] >> 25) & 1) && os_support(CPU_CAP_SSE);
+		//current_cpu.capabilites[CPU_CAP_HTT]	=  (CPUInfo[3] >> 28) & 1;
+		//current_cpu.capabilites[CPU_CAP_MMX]			= ((CPUInfo[3] >> 23) & 1) && os_support(CPU_CAP_MMX);
+		//current_cpu.capabilites[CPU_CAP_SSE]			= ((CPUInfo[3] >> 25) & 1) && os_support(CPU_CAP_SSE);
 		current_cpu.capabilites[CPU_CAP_SSE2]			= ((CPUInfo[3] >> 26) & 1) && os_support(CPU_CAP_SSE2);
 		current_cpu.capabilites[CPU_CAP_AVX]			= ((CPUInfo[2] >> 28) & 1) && os_support(CPU_CAP_AVX);
 
-		current_cpu.model  = (CPUInfo[0] >> 4) & 0xF;
-		current_cpu.family = (CPUInfo[0] >> 8) & 0xF;
+		//current_cpu.model  = (CPUInfo[0] >> 4) & 0xF;
+		//current_cpu.family = (CPUInfo[0] >> 8) & 0xF;
 	}
 	// At least one processor exist: needed for wine support
-	if(current_cpu.logical_processors <= 0 || current_cpu.cores <= 0)
+	if (current_cpu.logical_processors <= 0 || current_cpu.cores <= 0)
 	{
 		SYSTEM_INFO si;
 		GetNativeSystemInfo(&si);// Need XP
 		current_cpu.logical_processors = current_cpu.cores = si.dwNumberOfProcessors;
-		if(current_cpu.capabilites[CPU_CAP_MULTITHREADING]) current_cpu.cores/=2;
 	}
+
+	current_cpu.capabilites[CPU_CAP_HTT] = current_cpu.cores < current_cpu.logical_processors;
 	// Modern Cache information
 	if(nIds >= 4)
 	{
@@ -727,6 +594,7 @@ PUBLIC void detect_hardware()
 	{
 		__cpuidex(CPUInfo, 7, 0);
 		current_cpu.capabilites[CPU_CAP_AVX2] = ((CPUInfo[1] >> 5) & 1) && current_cpu.capabilites[CPU_CAP_AVX];
+		current_cpu.capabilites[CPU_CAP_BMI ] =  (CPUInfo[1] >> 8) & 1;
 	}
 
 	// Extended
@@ -774,15 +642,12 @@ PUBLIC void detect_hardware()
 				}
 			}
 	}
-	else
-		map_mname(current_cpu.family, current_cpu.model, current_cpu.cpu_string, current_cpu.brand);
-
 
 	if(strstr(current_cpu.brand, "Intel(R) Celeron(R)"))//checked
 		current_cpu.img_index = 1;
 	else if(strstr(current_cpu.brand, "Intel(R) Pentium(R) III"))//checked
 		current_cpu.img_index = 2;
-	else if(strstr(current_cpu.brand, "Intel(R) Core(R) Duo"))
+	else if(strstr(current_cpu.brand, "Intel(R) Core(TM) Duo"))
 		current_cpu.img_index = 3;
 	else if(strstr(current_cpu.brand, "Atom"))
 		current_cpu.img_index = 4;
@@ -800,101 +665,24 @@ PUBLIC void detect_hardware()
 		current_cpu.img_index = 10;
 	else if(strstr(current_cpu.brand, "Intel(R) Core(TM) i7"))
 		current_cpu.img_index = 11;
-	else if(strstr(current_cpu.brand, "Intel(R) Core(R) 2 Quad"))
+	else if(strstr(current_cpu.brand, "Intel(R) Core(TM)2 Quad"))
 		current_cpu.img_index = 12;
-	else if(strstr(current_cpu.brand, "Intel(R) Core(R) 2 Solo"))
+	else if(strstr(current_cpu.brand, "Intel(R) Core(TM)2 Solo"))
 		current_cpu.img_index = 13;
-	else if(strstr(current_cpu.brand, "Intel(R) Core(R) 2 Duo"))
+	else if(strstr(current_cpu.brand, "Intel(R) Core(TM)2 Duo"))//checked
 		current_cpu.img_index = 14;
-	else if(strstr(current_cpu.brand, "Intel(R) Core(R) 2 Extreme"))
+	else if(strstr(current_cpu.brand, "Intel(R) Core(TM)2 Extreme"))
 		current_cpu.img_index = 15;
 	// TODO: Add more and with better images
 
 	// Eliminate redundant words
-	{
-		char* to_del = strstr(current_cpu.brand, "processor");
-		if(to_del)
-		{
-			char* last = to_del + 9;// Data to overwrite the word 'processor'
-			if(*last == ' ') last++;// Skip spaces
-
-			// Move data from last to front
-			do *to_del++ = *last++;
-			while(*last);
-
-			*to_del = 0;// Null terminate the string to erase data
-		}
-		to_del = strstr(current_cpu.brand, "Processor");
-		if(to_del)
-		{
-			char* last = to_del + 9;// Data to overwrite the word 'Processor'
-			if(*last == ' ') last++;// Skip spaces
-
-			// Move data from last to front
-			do *to_del++ = *last++;
-			while(*last);
-
-			*to_del = 0;// Null terminate the string to erase data
-		}
-		to_del = strstr(current_cpu.brand, "CPU");
-		if(to_del)
-		{
-			char* last = to_del + 3;// Data to overwrite the word 'CPU'
-			if(*last == ' ') last++;// Skip spaces
-
-			// Move data from last to front
-			do *to_del++ = *last++;
-			while(*last);
-
-			*to_del = 0;// Null terminate the string to erase data
-		}
-		to_del = strstr(current_cpu.brand, "@");
-		if(to_del)
-		{
-			char* last = to_del + 1;// Data to overwrite the word '@'
-			if(*last == ' ') last++;// Skip spaces
-
-			// Move data from last to front
-			do *to_del++ = *last++;
-			while(*last);
-
-			*to_del = 0;// Null terminate the string to erase data
-		}
-		to_del = strstr(current_cpu.brand, "(R)");
-		while(to_del)
-		{
-			char* last = to_del + 3;// Data to overwrite the word '(R)'
-
-			// Move data from last to front
-			do *to_del++ = *last++;
-			while(*last);
-
-			*to_del = 0;// Null terminate the string to erase data
-			to_del = strstr(current_cpu.brand, "(R)");
-		}
-		to_del = strstr(current_cpu.brand, "(TM)");
-		if(to_del)
-		{
-			char* last = to_del + 4;// Data to overwrite the word '(TM)'
-
-			// Move data from last to front
-			do *to_del++ = *last++;
-			while(*last);
-
-			*to_del = 0;// Null terminate the string to erase data
-		}
-		to_del = strstr(current_cpu.brand, "(tm)");
-		if(to_del)
-		{
-			char* last = to_del + 4;// Data to overwrite the word '(TM)'
-
-			// Move data from last to front
-			do *to_del++ = *last++;
-			while(*last);
-
-			*to_del = 0;// Null terminate the string to erase data
-		}
-	}
+	remove_str(current_cpu.brand, "processor");
+	remove_str(current_cpu.brand, "Processor");
+	remove_str(current_cpu.brand, "CPU ");
+	remove_str(current_cpu.brand, "@ ");
+	remove_str(current_cpu.brand, "(R)");
+	remove_str(current_cpu.brand, "(TM)");
+	remove_str(current_cpu.brand, "(tm)");
 }
 #endif
 #endif

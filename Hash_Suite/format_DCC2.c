@@ -1,10 +1,8 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2013-2014 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2013-2015 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
-
-#ifdef INCLUDE_DCC2
 
 //Initial values
 #define INIT_A 0x67452301
@@ -21,9 +19,43 @@
 #define SALT_SIZE			(11*4)
 #define NT_NUM_KEYS		    64
 
-PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, unsigned int* salt)
+
+int dcc_line_is_valid(char* user_name, char* dcc, char* unused, char* unused1);
+void dcc_add_hash_from_line(ImportParam* param, char* user_name, char* dcc, sqlite3_int64 tag_id, int db_index);
+PRIVATE int dcc2_line_is_valid(char* user_name, char* dcc, char* unused, char* unused1)
+{
+	if (user_name && !memcmp(user_name, "$DCC2$10240#", 12))
+	{
+		char* hex = strchr(user_name + 12, '#');
+		int user_len = (int)(hex - user_name - 12);
+		if (hex && user_len <= 19 && user_len >= 1 && valid_hex_string(hex + 1, 32))
+			return TRUE;
+	}
+	return dcc_line_is_valid(user_name, dcc, unused, unused1);
+}
+PRIVATE void add_hash_from_line(ImportParam* param, char* user_name, char* dcc, char* unused, char* unused1, sqlite3_int64 tag_id)
+{
+	if (user_name && !memcmp(user_name, "$DCC2$10240#", 12))
+	{
+		char* hex = strchr(user_name + 12, '#');
+		int user_len = (int)(hex - user_name - 12);
+		if (hex && user_len <= 19 && user_len >= 1 && valid_hex_string(hex + 1, 32))
+		{
+			hex[0] = 0;
+			char user[20];
+			strcpy(user, user_name + 12);
+			hex[0] = ':';
+			// Insert hash and account
+			insert_hash_account(param, _strlwr(user), user_name + 12, DCC2_INDEX, tag_id);
+		}
+	}
+	dcc_add_hash_from_line(param, user_name, dcc, tag_id, DCC2_INDEX);
+}
+
+PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, void* salt_void)
 {
 	unsigned int* out = (unsigned int*)binary;
+	unsigned int* salt = (unsigned int*)salt_void;
 	unsigned int i = 0;
 	unsigned int temp;
 	unsigned int salt_lenght = 0;
@@ -65,242 +97,85 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, u
 	return out[0];
 }
 
-#define LOAD_BIG_ENDIAN(x, data) x = rotate(data, 16U); x = ((x & 0x00FF00FF) << 8) + ((x >> 8) & 0x00FF00FF);
-#define DCC2_R(w0, w1, w2, w3)	(W[w0*simd_with+i] = rotate((W[w0*simd_with+i] ^ W[w1*simd_with+i] ^ W[w2*simd_with+i] ^ W[w3*simd_with+i]), 1))
-PRIVATE void sha1_process( unsigned int* state, unsigned int* W, unsigned int simd_with )
-{
-	for (unsigned int i = 0; i < simd_with; i++)
-	{
-		unsigned int A = state[i+0*simd_with];
-		unsigned int B = state[i+1*simd_with];
-		unsigned int C = state[i+2*simd_with];
-		unsigned int D = state[i+3*simd_with];
-		unsigned int E = state[i+4*simd_with];
-
-		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[0 *simd_with+i]; B = rotate(B, 30);
-		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[1 *simd_with+i]; A = rotate(A, 30);
-		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[2 *simd_with+i]; E = rotate(E, 30);
-		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[3 *simd_with+i]; D = rotate(D, 30);
-		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[4 *simd_with+i]; C = rotate(C, 30);
-		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[5 *simd_with+i]; B = rotate(B, 30);
-		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[6 *simd_with+i]; A = rotate(A, 30);
-		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[7 *simd_with+i]; E = rotate(E, 30);
-		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[8 *simd_with+i]; D = rotate(D, 30);
-		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[9 *simd_with+i]; C = rotate(C, 30);
-		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[10*simd_with+i]; B = rotate(B, 30);
-		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[11*simd_with+i]; A = rotate(A, 30);
-		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[12*simd_with+i]; E = rotate(E, 30);
-		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[13*simd_with+i]; D = rotate(D, 30);
-		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[14*simd_with+i]; C = rotate(C, 30);
-		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[15*simd_with+i]; B = rotate(B, 30);
-		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + DCC2_R(0, 13,  8, 2); A = rotate(A, 30);
-		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + DCC2_R(1, 14,  9, 3); E = rotate(E, 30);
-		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + DCC2_R(2, 15, 10, 4); D = rotate(D, 30);
-		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + DCC2_R(3,  0, 11, 5); C = rotate(C, 30);
-
-		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + DCC2_R(4 , 1 , 12, 6); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + DCC2_R(5 , 2 , 13, 7); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(6 , 3 , 14, 8); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(7 , 4 , 15, 9); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(8 , 5 , 0, 10); C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + DCC2_R(9 , 6 , 1, 11); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + DCC2_R(10, 7 , 2, 12); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(11, 8 , 3, 13); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(12, 9 , 4, 14); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(13, 10, 5, 15); C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + DCC2_R(14, 11, 6,  0); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + DCC2_R(15, 12, 7,  1); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(0 , 13, 8,  2) ; E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(1 , 14, 9,  3); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(2 , 15, 10, 4); C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + DCC2_R(3 ,  0, 11, 5); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + DCC2_R(4 ,  1, 12, 6); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(5 ,  2, 13, 7); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(6 ,  3, 14, 8); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(7 ,  4, 15, 9); C = rotate(C, 30);
-
-		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(8, 5, 0, 10); B = rotate(B, 30);
-		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(9, 6, 1, 11); A = rotate(A, 30);
-		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(10, 7, 2, 12); E = rotate(E, 30);
-		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(11, 8, 3, 13); D = rotate(D, 30);
-		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(12, 9, 4, 14); C = rotate(C, 30);
-		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(13, 10, 5, 15); B = rotate(B, 30);
-		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(14, 11, 6, 0); A = rotate(A, 30);
-		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(15, 12, 7, 1); E = rotate(E, 30);
-		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(0, 13, 8, 2) ; D = rotate(D, 30);
-		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(1, 14, 9, 3); C = rotate(C, 30);
-		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(2, 15, 10, 4); B = rotate(B, 30);
-		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(3, 0, 11, 5); A = rotate(A, 30);
-		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(4, 1, 12, 6); E = rotate(E, 30);
-		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(5, 2, 13, 7); D = rotate(D, 30);
-		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(6, 3, 14, 8); C = rotate(C, 30);
-		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(7, 4, 15, 9); B = rotate(B, 30);
-		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(8, 5, 0, 10); A = rotate(A, 30);
-		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(9, 6, 1, 11); E = rotate(E, 30);
-		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(10, 7, 2, 12); D = rotate(D, 30);
-		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(11, 8, 3, 13); C = rotate(C, 30);
-																   
-		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(12, 9, 4, 14); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(13, 10, 5, 15); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(14, 11, 6, 0); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(15, 12, 7, 1); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(0, 13, 8, 2) ; C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(1, 14, 9, 3); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(2, 15, 10, 4); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(3, 0, 11, 5); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(4, 1, 12, 6); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(5, 2, 13, 7); C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(6, 3, 14, 8); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(7, 4, 15, 9); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(8, 5, 0, 10); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(9, 6, 1, 11); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(10, 7, 2, 12); C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(11, 8, 3, 13); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(12, 9, 4, 14); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(13, 10, 5, 15); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(14, 11, 6, 0); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(15, 12, 7, 1); C = rotate(C, 30);
-
-		state[i+0*simd_with] += A;
-		state[i+1*simd_with] += B;
-		state[i+2*simd_with] += C;
-		state[i+3*simd_with] += D;
-		state[i+4*simd_with] += E;
-	}
-}
-
+void sha1_process_block_simd(unsigned int* state, unsigned int* W, unsigned int simd_with);
+void sha1_process_block_hmac_sha1(const unsigned int state[5], unsigned int sha1_hash[5], unsigned int W[16]);
+void hmac_sha1_init_simd(uint32_t* key, uint32_t* key_lenghts, uint32_t simd_with, uint32_t multiplier, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W);
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // C Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-#ifndef _M_X64
-// Calculate W in each iteration
-#define Q0  ( W[0 ] = rotate((sha1_hash[2 ] ^ sha1_hash[0 ]), 1) )
-#define Q1  ( W[1 ] = rotate((sha1_hash[3 ] ^ sha1_hash[1 ]), 1) )
-#define Q2  ( W[2 ] = rotate((0x2A0 ^ sha1_hash[4 ] ^ sha1_hash[2 ]), 1) )
-#define Q3  ( W[3 ] = rotate((W[0 ] ^ 0x80000000 ^ sha1_hash[3 ]), 1) )
-#define Q4  ( W[4 ] = rotate((W[1 ] ^ sha1_hash[4 ]), 1) )
-#define Q5  ( W[5 ] = rotate((W[2 ] ^ 0x80000000), 1) )
-#define Q6  ( W[6 ] = rotate((W[3 ] ), 1) )
-#define Q7  ( W[7 ] = rotate((W[4 ] ^ 0x2A0), 1) )
-#define Q8  ( W[8 ] = rotate((W[5 ] ^ W[0 ]), 1) )
-#define Q9  ( W[9 ] = rotate((W[6 ] ^ W[1 ]), 1) )
-#define Q10 ( W[10] = rotate((W[7 ] ^ W[2 ]), 1) )
-#define Q11 ( W[11] = rotate((W[8 ] ^ W[3 ]), 1) )
-#define Q12 ( W[12] = rotate((W[9 ] ^ W[4 ]), 1) )
-#define Q13 ( W[13] = rotate((W[10] ^ W[5 ] ^ 0x2A0), 1) )
-#define Q14 ( W[14] = rotate((W[11] ^ W[6 ] ^ W[0 ]), 1) )
-#define Q15 ( W[15] = rotate((W[12] ^ W[7 ] ^ W[1 ] ^ 0x2A0), 1) )
-
-#undef DCC2_R
-#define DCC2_R(w0, w1, w2, w3)	(W[w0] = rotate((W[w0] ^ W[w1] ^ W[w2] ^ W[w3]), 1))
-
-PRIVATE void sha1_process_sha1(const unsigned int state[5], unsigned int sha1_hash[5], unsigned int W[16] )
-{
-    unsigned int A = state[0];
-    unsigned int B = state[1];
-    unsigned int C = state[2];
-    unsigned int D = state[3];
-    unsigned int E = state[4];
-
-    E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + sha1_hash[0]; B = rotate(B, 30);
-    D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + sha1_hash[1]; A = rotate(A, 30);
-    C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + sha1_hash[2]; E = rotate(E, 30);
-    B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + sha1_hash[3]; D = rotate(D, 30);
-    A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + sha1_hash[4]; C = rotate(C, 30);
-    E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + 0x80000000  ; B = rotate(B, 30);
-    D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2		       ; A = rotate(A, 30);
-    C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2		       ; E = rotate(E, 30);
-    B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2		       ; D = rotate(D, 30);
-    A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2		       ; C = rotate(C, 30);
-    E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2		       ; B = rotate(B, 30);
-    D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2		       ; A = rotate(A, 30);
-    C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2		       ; E = rotate(E, 30);
-    B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2		       ; D = rotate(D, 30);
-    A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2		       ; C = rotate(C, 30);
-    E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + 0x2A0	   ; B = rotate(B, 30);
-    D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 +  Q0		   ; A = rotate(A, 30);
-    C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 +  Q1		   ; E = rotate(E, 30);
-    B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 +  Q2		   ; D = rotate(D, 30);
-    A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 +  Q3		   ; C = rotate(C, 30);
-
-    E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + Q4 ; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + Q5 ; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + Q6 ; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + Q7 ; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + Q8 ; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + Q9 ; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + Q10; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + Q11; E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + Q12; D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + Q13; C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + Q14; B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + Q15; A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(0, 13, 8 , 2); E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(1, 14, 9 , 3); D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(2, 15, 10, 4); C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + DCC2_R(3, 0 , 11, 5); B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + DCC2_R(4, 1 , 12, 6); A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + DCC2_R(5, 2 , 13, 7); E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + DCC2_R(6, 3 , 14, 8); D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + DCC2_R(7, 4 , 15, 9); C = rotate(C, 30);
-
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(8 , 5 , 0 , 10); B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(9 , 6 , 1 , 11); A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(10, 7 , 2 , 12); E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(11, 8 , 3 , 13); D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(12, 9 , 4 , 14); C = rotate(C, 30);
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(13, 10, 5 , 15); B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(14, 11, 6 , 0 ); A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(15, 12, 7 , 1 ); E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(0 , 13, 8 , 2 ); D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(1 , 14, 9 , 3 ); C = rotate(C, 30);
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(2 , 15, 10, 4 ); B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(3 , 0 , 11, 5 ); A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(4 , 1 , 12, 6 ); E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(5 , 2 , 13, 7 ); D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(6 , 3 , 14, 8 ); C = rotate(C, 30);
-    E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + DCC2_R(7 , 4 , 15, 9 ); B = rotate(B, 30);
-    D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + DCC2_R(8 , 5 , 0 , 10); A = rotate(A, 30);
-    C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + DCC2_R(9 , 6 , 1 , 11); E = rotate(E, 30);
-    B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + DCC2_R(10, 7 , 2 , 12); D = rotate(D, 30);
-    A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + DCC2_R(11, 8 , 3 , 13); C = rotate(C, 30);
-																   
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(12, 9 , 4 , 14); B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(13, 10, 5 , 15); A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(14, 11, 6 , 0 ); E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(15, 12, 7 , 1 ); D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(0 , 13, 8 , 2 ); C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(1 , 14, 9 , 3 ); B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(2 , 15, 10, 4 ); A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(3 , 0 , 11, 5 ); E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(4 , 1 , 12, 6 ); D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(5 , 2 , 13, 7 ); C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(6 , 3 , 14, 8 ); B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(7 , 4 , 15, 9 ); A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(8 , 5 , 0 , 10); E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(9 , 6 , 1 , 11); D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(10, 7 , 2 , 12); C = rotate(C, 30);
-    E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + DCC2_R(11, 8 , 3 , 13); B = rotate(B, 30);
-    D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + DCC2_R(12, 9 , 4 , 14); A = rotate(A, 30);
-    C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + DCC2_R(13, 10, 5 , 15); E = rotate(E, 30);
-    B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + DCC2_R(14, 11, 6 , 0 ); D = rotate(D, 30);
-    A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + DCC2_R(15, 12, 7 , 1 ); C = rotate(C, 30);
-
-    sha1_hash[0] = state[0] + A;
-    sha1_hash[1] = state[1] + B;
-    sha1_hash[2] = state[2] + C;
-    sha1_hash[3] = state[3] + D;
-    sha1_hash[4] = state[4] + E;
-}
-
-void dcc_ntlm_part_c_code(unsigned int* nt_buffer, unsigned int* crypt_result);
 void dcc_salt_part_c_code(unsigned int* salt_buffer, unsigned int* crypt_result);
+#ifndef HS_TESTING
+PRIVATE
+#endif
+void dcc2_body_c_code(unsigned int* salt_buffer, unsigned int* crypt_result, unsigned int* sha1_hash, unsigned int* opad_state, unsigned int* ipad_state, unsigned int* W)
+{
+	unsigned int a = crypt_result[8 + 0];
+	unsigned int b = crypt_result[8 + 1];
+	unsigned int c = crypt_result[8 + 2];
+	unsigned int d = crypt_result[8 + 3];
+
+	d = rotate(d + SQRT_3, 9);
+	c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = rotate(c, 11);
+	b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = rotate(b, 15);
+
+	a += (b ^ c ^ d) + crypt_result[3] + SQRT_3; a = rotate(a, 3);
+	d += (a ^ b ^ c) + salt_buffer[7] + SQRT_3; d = rotate(d, 9);
+	c += (d ^ a ^ b) + salt_buffer[3] + SQRT_3; c = rotate(c, 11);
+	b += (c ^ d ^ a) + SQRT_3; b = rotate(b, 15);
+
+	a += INIT_A;
+	b += INIT_B;
+	c += INIT_C;
+	d += INIT_D;
+
+	//pbkdf2
+	unsigned int salt_len = (salt_buffer[10] >> 3) - 16;
+	SWAP_ENDIANNESS(a, a);
+	SWAP_ENDIANNESS(b, b);
+	SWAP_ENDIANNESS(c, c);
+	SWAP_ENDIANNESS(d, d);
+
+	sha1_hash[0] = a;
+	sha1_hash[1] = b;
+	sha1_hash[2] = c;
+	sha1_hash[3] = d;
+	unsigned int len = 4;
+	hmac_sha1_init_simd(sha1_hash, &len, 1, 1, opad_state, ipad_state, W);
+
+	memcpy(sha1_hash, ipad_state, 5 * sizeof(unsigned int));
+
+	// Process the salt
+	memcpy(W, salt_buffer, salt_len);
+	memcpy(((unsigned char*)W) + salt_len, "\x0\x0\x0\x1\x80", 5);
+	memset(((unsigned char*)W) + salt_len + 5, 0, 60 - (salt_len + 5));
+	W[15] = (64 + salt_len + 4) << 3;
+	swap_endianness_array(W, 14);
+	sha1_process_block_simd(sha1_hash, W, 1);
+
+	sha1_process_block_hmac_sha1(opad_state, sha1_hash, W);
+	// Only copy first 16 bytes, since that is ALL this format uses
+	memcpy(crypt_result + 8, sha1_hash, 4 * sizeof(unsigned int));
+
+	for (unsigned int k = 1; k < 10240; k++)
+	{
+		sha1_process_block_hmac_sha1(ipad_state, sha1_hash, W);
+		sha1_process_block_hmac_sha1(opad_state, sha1_hash, W);
+
+		// Only XOR first 16 bytes, since that is ALL this format uses
+		crypt_result[8 + 0] ^= sha1_hash[0];
+		crypt_result[8 + 1] ^= sha1_hash[1];
+		crypt_result[8 + 2] ^= sha1_hash[2];
+		crypt_result[8 + 3] ^= sha1_hash[3];
+	}
+}
+#ifndef _M_X64
+void dcc_ntlm_part_c_code(unsigned int* nt_buffer, unsigned int* crypt_result);
 PRIVATE void crypt_ntlm_protocol_c_code(CryptParam* param)
 {
 	unsigned int * nt_buffer = (unsigned int* )calloc(16*NT_NUM_KEYS, sizeof(unsigned int));
-	unsigned char* key       = (unsigned char*)calloc(MAX_KEY_LENGHT, sizeof(unsigned char));
+	unsigned char* key       = (unsigned char*)calloc(MAX_KEY_LENGHT_SMALL, sizeof(unsigned char));
 
-	unsigned int crypt_result[12],sha1_hash[5], opad_state[5], ipad_state[5], W[16];
+	unsigned int crypt_result[12], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
 	{
@@ -313,89 +188,7 @@ PRIVATE void crypt_ntlm_protocol_c_code(CryptParam* param)
 			for(unsigned int j = 0; continue_attack && j < num_diff_salts; j++, salt_buffer += 11)
 			{
 				dcc_salt_part_c_code(salt_buffer, crypt_result);
-				
-				unsigned int a = crypt_result[8+0];
-				unsigned int b = crypt_result[8+1];
-				unsigned int c = crypt_result[8+2];
-				unsigned int d = crypt_result[8+3];
-
-				d = rotate(d + SQRT_3, 9);
-				c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = rotate(c, 11);
-				b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = rotate(b, 15);
-													
-				a += (b ^ c ^ d) +crypt_result[3] + SQRT_3; a = rotate(a, 3);
-				d += (a ^ b ^ c) + salt_buffer[7] + SQRT_3; d = rotate(d, 9);
-				c += (d ^ a ^ b) + salt_buffer[3] + SQRT_3; c = rotate(c, 11);
-				b += (c ^ d ^ a)				  + SQRT_3; b = rotate(b, 15);
-
-				a += INIT_A;
-				b += INIT_B;
-				c += INIT_C;
-				d += INIT_D;
-
-				//pbkdf2
-				unsigned int salt_len = (salt_buffer[10] >> 3) - 16;
-				LOAD_BIG_ENDIAN(a, a);
-				LOAD_BIG_ENDIAN(b, b);
-				LOAD_BIG_ENDIAN(c, c);
-				LOAD_BIG_ENDIAN(d, d);
-
-				// ipad_state
-				W[0] = a ^ 0x36363636;
-				W[1] = b ^ 0x36363636;
-				W[2] = c ^ 0x36363636;
-				W[3] = d ^ 0x36363636;
-				memset(&W[4], 0x36, (16-4)*sizeof(unsigned int));
-
-				ipad_state[0] = INIT_A;
-				ipad_state[1] = INIT_B;
-				ipad_state[2] = INIT_C;
-				ipad_state[3] = INIT_D;
-				ipad_state[4] = INIT_E;
-				sha1_process( ipad_state, W, 1 );
-
-				// opad_state
-				W[0] = a ^ 0x5C5C5C5C;
-				W[1] = b ^ 0x5C5C5C5C;
-				W[2] = c ^ 0x5C5C5C5C;
-				W[3] = d ^ 0x5C5C5C5C;
-				memset(&W[4], 0x5C, (16-4)*sizeof(unsigned int));
-
-				opad_state[0] = INIT_A;
-				opad_state[1] = INIT_B;
-				opad_state[2] = INIT_C;
-				opad_state[3] = INIT_D;
-				opad_state[4] = INIT_E;
-				sha1_process( opad_state, W, 1 );
-
-				memcpy(&sha1_hash, &ipad_state, 5*sizeof(unsigned int));
-
-				// Process the salt
-				memcpy(W, salt_buffer, salt_len);
-				memcpy(((unsigned char*)W)+salt_len, "\x0\x0\x0\x1\x80", 5);
-				memset(((unsigned char*)W)+salt_len+5, 0, 60 - (salt_len+5));
-				W[15] = (64+salt_len+4) << 3;
-				for (unsigned int k = 0; k < 14; k++)
-				{
-					LOAD_BIG_ENDIAN(W[k], W[k]);
-				}
-				sha1_process( sha1_hash, W, 1 );
-
-				sha1_process_sha1( opad_state, sha1_hash, W);
-				// Only copy first 16 bytes, since that is ALL this format uses
-				memcpy(crypt_result+8, sha1_hash, 4*sizeof(unsigned int));
-
-				for(unsigned int k = 1; k < 10240; k++)
-				{
-					sha1_process_sha1( ipad_state, sha1_hash, W);
-					sha1_process_sha1( opad_state, sha1_hash, W);
-
-					// Only XOR first 16 bytes, since that is ALL this format uses
-					crypt_result[8+0] ^= sha1_hash[0];
-					crypt_result[8+1] ^= sha1_hash[1];
-					crypt_result[8+2] ^= sha1_hash[2];
-					crypt_result[8+3] ^= sha1_hash[3];
-				}
+				dcc2_body_c_code(salt_buffer, crypt_result, sha1_hash, opad_state, ipad_state, W);
 
 				// Search for a match
 				unsigned int index = salt_index[j];
@@ -412,6 +205,8 @@ PRIVATE void crypt_ntlm_protocol_c_code(CryptParam* param)
 					index = same_salt_next[index];
 				}
 			}
+
+			report_keys_processed(1);
 		}
 	}
 
@@ -424,28 +219,105 @@ PRIVATE void crypt_ntlm_protocol_c_code(CryptParam* param)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // SSE2 Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#include "arch_simd.h"
+
+//#ifdef HS_X86
+#define LOAD_BIG_ENDIAN_V128(x) x = V128_OR(V128_SL(x, 16), V128_SR(x, 16)); x = V128_ADD(V128_SL(V128_AND(x, V128_CONST(0x00FF00FF)), 8), V128_AND(V128_SR(x, 8), V128_CONST(0x00FF00FF)));
+//#endif
+
+// Note: This code give errors in Neon
+//#ifdef HS_ARM
+//#define LOAD_BIG_ENDIAN_V128(x) vrev32q_u8(vreinterpretq_u8_u32(x))
+//#endif
+
+PRIVATE void dcc2_body_v128(V128_WORD* crypt_result, unsigned int* salt_buffer, int mul, int index)
+{
+	V128_WORD* sha1_hash = crypt_result + 12 * mul + 5 * index;
+	V128_WORD* opad_state = sha1_hash + 5 * mul;
+	V128_WORD* ipad_state = opad_state + 5 * mul;
+	V128_WORD* W = ipad_state + 5 * mul + (16 - 5)*index;
+
+	V128_WORD a = crypt_result[(8 + 0)*mul + index];
+	V128_WORD b = crypt_result[(8 + 1)*mul + index];
+	V128_WORD c = crypt_result[(8 + 2)*mul + index];
+	V128_WORD d = crypt_result[(8 + 3)*mul + index];
+	V128_WORD const_sse2 = V128_CONST(SQRT_3);
+
+	d = V128_ADD(d, const_sse2); d = V128_ROTATE(d, 9);
+	c = V128_4ADD(c, V128_3XOR(d, a, b), V128_CONST(salt_buffer[1]), const_sse2); c = V128_ROTATE(c, 11);
+	b = V128_4ADD(b, V128_3XOR(c, d, a), V128_CONST(salt_buffer[9]), const_sse2); b = V128_ROTATE(b, 15);
+
+	a = V128_4ADD(a, V128_3XOR(b, c, d), crypt_result[3 * mul + index], const_sse2); a = V128_ROTATE(a, 3);
+	d = V128_4ADD(d, V128_3XOR(a, b, c), V128_CONST(salt_buffer[7]), const_sse2); d = V128_ROTATE(d, 9);
+	c = V128_4ADD(c, V128_3XOR(d, a, b), V128_CONST(salt_buffer[3]), const_sse2); c = V128_ROTATE(c, 11);
+	b = V128_3ADD(b, V128_3XOR(c, d, a), const_sse2); b = V128_ROTATE(b, 15);
+
+	a = V128_ADD(a, V128_CONST(INIT_A));
+	b = V128_ADD(b, V128_CONST(INIT_B));
+	c = V128_ADD(c, V128_CONST(INIT_C));
+	d = V128_ADD(d, V128_CONST(INIT_D));
+
+	//pbkdf2
+	unsigned int salt_len = (salt_buffer[10] >> 3) - 16;
+	LOAD_BIG_ENDIAN_V128(a);
+	LOAD_BIG_ENDIAN_V128(b);
+	LOAD_BIG_ENDIAN_V128(c);
+	LOAD_BIG_ENDIAN_V128(d);
+
+	// ipad_state
+	const_sse2 = V128_CONST(0x36363636);
+	W[0] = V128_XOR(a, const_sse2);
+	W[1] = V128_XOR(b, const_sse2);
+	W[2] = V128_XOR(c, const_sse2);
+	W[3] = V128_XOR(d, const_sse2);
+	memset(W + 4, 0x36, (16 - 4)*sizeof(V128_WORD));
+
+	ipad_state[0] = V128_CONST(INIT_A);
+	ipad_state[1] = V128_CONST(INIT_B);
+	ipad_state[2] = V128_CONST(INIT_C);
+	ipad_state[3] = V128_CONST(INIT_D);
+	ipad_state[4] = V128_CONST(INIT_E);
+	sha1_process_block_simd((unsigned int*)ipad_state, (unsigned int*)W, 4);
+
+	// opad_state
+	const_sse2 = V128_CONST(0x5C5C5C5C);
+	W[0] = V128_XOR(a, const_sse2);
+	W[1] = V128_XOR(b, const_sse2);
+	W[2] = V128_XOR(c, const_sse2);
+	W[3] = V128_XOR(d, const_sse2);
+	memset(W + 4, 0x5C, (16 - 4)*sizeof(V128_WORD));
+
+	opad_state[0] = V128_CONST(INIT_A);
+	opad_state[1] = V128_CONST(INIT_B);
+	opad_state[2] = V128_CONST(INIT_C);
+	opad_state[3] = V128_CONST(INIT_D);
+	opad_state[4] = V128_CONST(INIT_E);
+	sha1_process_block_simd((unsigned int*)opad_state, (unsigned int*)W, 4);
+
+	memcpy(sha1_hash, ipad_state, 5 * sizeof(V128_WORD));
+
+	// Process the salt
+	memcpy(W, salt_buffer, salt_len);
+	memcpy(((unsigned char*)W) + salt_len, "\x0\x0\x0\x1\x80", 5);
+	memset(((unsigned char*)W) + salt_len + 5, 0, 60 - (salt_len + 5));
+	W[14] = V128_CONST(0);
+	W[15] = V128_CONST((64 + salt_len + 4) << 3);
+	for (int k = 13; k >= 0; k--)
+	{
+		// Convert to BIG_ENDIAN
+		unsigned int x = rotate(((unsigned int*)W)[k], 16U);
+		x = ((x & 0x00FF00FF) << 8) + ((x >> 8) & 0x00FF00FF);
+		W[k] = V128_CONST(x);
+	}
+	sha1_process_block_simd((unsigned int*)sha1_hash, (unsigned int*)W, 4);
+}
+
 #ifdef HS_X86
-#include <emmintrin.h>
-
-#define SSE2_AND(a,b)	_mm_and_si128(a,b)
-#define SSE2_OR(a,b)	_mm_or_si128(a,b)
-#define SSE2_XOR(a,b)	_mm_xor_si128(a,b)
-#define SSE2_ADD(a,b)	_mm_add_epi32(a,b)
-
-#define SSE2_3XOR(a,b,c)		SSE2_XOR(SSE2_XOR(a,b),c)
-#define SSE2_4XOR(a,b,c,d)		SSE2_XOR(SSE2_XOR(a,b),SSE2_XOR(c,d))
-#define SSE2_3ADD(a,b,c)		SSE2_ADD(SSE2_ADD(a,b),c)
-#define SSE2_4ADD(a,b,c,d)		SSE2_ADD(SSE2_ADD(a,b),SSE2_ADD(c,d))
-#define SSE2_5ADD(a,b,c,d,e)	SSE2_ADD(SSE2_ADD(SSE2_ADD(a,b),SSE2_ADD(c,d)),e)
-
-#define SSE2_ROTATE(a,rot)	SSE2_OR(_mm_slli_epi32(a, rot), _mm_srli_epi32(a, 32-rot))
-
-#define LOAD_BIG_ENDIAN_SSE2(x) x = SSE2_OR(_mm_slli_epi32(x, 16), _mm_srli_epi32(x, 16)); x = SSE2_ADD(_mm_slli_epi32(SSE2_AND(x, _mm_set1_epi32(0x00FF00FF)), 8), SSE2_AND(_mm_srli_epi32(x, 8), _mm_set1_epi32(0x00FF00FF)));
 // Calculate W in each iteration
 #undef DCC2_R
 #define DCC2_R(w0, w1, w2, w3)	W[w0] = SSE2_ROTATE(SSE2_4XOR(W[w0], W[w1], W[w2], W[w3]), 1)
 
-PRIVATE void sha1_process_sha1_sse2(const __m128i* state, __m128i* sha1_hash, __m128i* W)
+PUBLIC void sha1_process_sha1_sse2(const __m128i* state, __m128i* sha1_hash, __m128i* W)
 {
     __m128i A = state[0];
     __m128i B = state[1];
@@ -550,99 +422,11 @@ PRIVATE void sha1_process_sha1_sse2(const __m128i* state, __m128i* sha1_hash, __
 
 void dcc_ntlm_part_sse2(__m128i* nt_buffer, __m128i* crypt_result);
 void dcc_salt_part_sse2(unsigned int* salt_buffer, __m128i* crypt_result);
-PRIVATE void dcc2_body_sse2(__m128i* crypt_result, unsigned int* salt_buffer, int mul, int index)
-{
-	__m128i* sha1_hash = crypt_result + 12*mul + 5*index;
-	__m128i* opad_state = sha1_hash + 5*mul;
-	__m128i* ipad_state = opad_state + 5*mul;
-	__m128i* W = ipad_state + 5*mul + (16-5)*index;
 
-
-	__m128i a = crypt_result[(8+0)*mul+index];
-	__m128i b = crypt_result[(8+1)*mul+index];
-	__m128i c = crypt_result[(8+2)*mul+index];
-	__m128i d = crypt_result[(8+3)*mul+index];
-	__m128i const_sse2 = _mm_set1_epi32(SQRT_3);
-
-	d = SSE2_ADD(d, const_sse2); d = SSE2_ROTATE(d, 9);
-	c = SSE2_4ADD(c, SSE2_3XOR(d, a, b), _mm_set1_epi32(salt_buffer[1]), const_sse2); c = SSE2_ROTATE(c, 11);
-	b = SSE2_4ADD(b, SSE2_3XOR(c, d, a), _mm_set1_epi32(salt_buffer[9]), const_sse2); b = SSE2_ROTATE(b, 15);
-
-	a = SSE2_4ADD(a, SSE2_3XOR(b, c, d),	crypt_result[3*mul+index]  , const_sse2); a = SSE2_ROTATE(a, 3);
-	d = SSE2_4ADD(d, SSE2_3XOR(a, b, c), _mm_set1_epi32(salt_buffer[7]), const_sse2); d = SSE2_ROTATE(d, 9);
-	c = SSE2_4ADD(c, SSE2_3XOR(d, a, b), _mm_set1_epi32(salt_buffer[3]), const_sse2); c = SSE2_ROTATE(c, 11);
-	b = SSE2_3ADD(b, SSE2_3XOR(c, d, a)								   , const_sse2); b = SSE2_ROTATE(b, 15);
-
-	a = SSE2_ADD(a, _mm_set1_epi32(INIT_A));
-	b = SSE2_ADD(b, _mm_set1_epi32(INIT_B));
-	c = SSE2_ADD(c, _mm_set1_epi32(INIT_C));
-	d = SSE2_ADD(d, _mm_set1_epi32(INIT_D));
-
-	//pbkdf2
-	unsigned int salt_len = (salt_buffer[10] >> 3) - 16;
-	LOAD_BIG_ENDIAN_SSE2(a);
-	LOAD_BIG_ENDIAN_SSE2(b);
-	LOAD_BIG_ENDIAN_SSE2(c);
-	LOAD_BIG_ENDIAN_SSE2(d);
-
-	// ipad_state
-	const_sse2 = _mm_set1_epi32(0x36363636);
-	W[0] = SSE2_XOR(a, const_sse2);
-	W[1] = SSE2_XOR(b, const_sse2);
-	W[2] = SSE2_XOR(c, const_sse2);
-	W[3] = SSE2_XOR(d, const_sse2);
-	memset(W+4, 0x36, (16-4)*sizeof(__m128i));
-
-	ipad_state[0] = _mm_set1_epi32(INIT_A);
-	ipad_state[1] = _mm_set1_epi32(INIT_B);
-	ipad_state[2] = _mm_set1_epi32(INIT_C);
-	ipad_state[3] = _mm_set1_epi32(INIT_D);
-	ipad_state[4] = _mm_set1_epi32(INIT_E);
-	sha1_process( (unsigned int*)ipad_state, (unsigned int*)W, 4 );
-
-	// opad_state
-	const_sse2 = _mm_set1_epi32(0x5C5C5C5C);
-	W[0] = SSE2_XOR(a, const_sse2);
-	W[1] = SSE2_XOR(b, const_sse2);
-	W[2] = SSE2_XOR(c, const_sse2);
-	W[3] = SSE2_XOR(d, const_sse2);
-	memset(W+4, 0x5C, (16-4)*sizeof(__m128i));
-
-	opad_state[0] = _mm_set1_epi32(INIT_A);
-	opad_state[1] = _mm_set1_epi32(INIT_B);
-	opad_state[2] = _mm_set1_epi32(INIT_C);
-	opad_state[3] = _mm_set1_epi32(INIT_D);
-	opad_state[4] = _mm_set1_epi32(INIT_E);
-	sha1_process( (unsigned int*)opad_state, (unsigned int*)W, 4 );
-
-	memcpy(sha1_hash, ipad_state, 5*sizeof(__m128i));
-
-	// Process the salt
-	memcpy(W, salt_buffer, salt_len);
-	memcpy(((unsigned char*)W)+salt_len, "\x0\x0\x0\x1\x80", 5);
-	memset(((unsigned char*)W)+salt_len+5, 0, 60 - (salt_len+5));
-	W[14] = _mm_set1_epi32(0);
-	W[15] = _mm_set1_epi32((64+salt_len+4) << 3);
-	for (int k = 13; k >= 0; k--)
-	{
-		// Convert to BIG_ENDIAN
-		unsigned int x = rotate(((unsigned int*)W)[k], 16U);
-		x = ((x & 0x00FF00FF) << 8) + ((x >> 8) & 0x00FF00FF);
-		W[k] = _mm_set1_epi32(x);
-	}
-	sha1_process( (unsigned int*)sha1_hash, (unsigned int*)W, 4 );
-
-	sha1_process_sha1_sse2( opad_state, sha1_hash, W);
-	// Only copy first 4 elements, since that is ALL this format uses
-	crypt_result[(8+0)*mul+index] = sha1_hash[0];
-	crypt_result[(8+1)*mul+index] = sha1_hash[1];
-	crypt_result[(8+2)*mul+index] = sha1_hash[2];
-	crypt_result[(8+3)*mul+index] = sha1_hash[3];
-}
 PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
 {
 	__m128i* nt_buffer = (__m128i*)_aligned_malloc(16*4*NT_NUM_KEYS, 16);
-	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT, sizeof(unsigned char));
+	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT_SMALL, sizeof(unsigned char));
 	__m128i* crypt_result = (__m128i*)_aligned_malloc(sizeof(__m128i)*(12+5+5+5+16), 16);
 
 	__m128i* sha1_hash = crypt_result + 12;
@@ -664,7 +448,13 @@ PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
 			{
 				dcc_salt_part_sse2(salt_buffer, crypt_result);
 				
-				dcc2_body_sse2(crypt_result, salt_buffer, 1, 0);
+				dcc2_body_v128(crypt_result, salt_buffer, 1, 0);
+				sha1_process_sha1_sse2(opad_state, sha1_hash, W);
+				// Only copy first 4 elements, since that is ALL this format uses
+				crypt_result[(8 + 0)*1 + 0] = sha1_hash[0];
+				crypt_result[(8 + 1)*1 + 0] = sha1_hash[1];
+				crypt_result[(8 + 2)*1 + 0] = sha1_hash[2];
+				crypt_result[(8 + 3)*1 + 0] = sha1_hash[3];
 
 				for(unsigned int k = 1; k < 10240; k++)
 				{
@@ -695,6 +485,7 @@ PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
 					}
 				}
 			}
+			report_keys_processed(4);
 		}
 	}
 
@@ -706,24 +497,42 @@ PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
 #endif
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// AVX Implementation
+// V128 Implementation (AVX and Neon)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_X86
-void dcc_ntlm_part_avx(void* nt_buffer, __m128i* crypt_result);
-void dcc_salt_part_avx(void* salt_buffer, __m128i* crypt_result);
+void dcc_ntlm_part_avx(void* nt_buffer, void* crypt_result);
+void dcc_salt_part_avx(void* salt_buffer, void* crypt_result);
 void sha1_process_sha1_avx(const void* state, void* sha1_hash, void* W);
+
 #define NT_NUM_KEYS_AVX 256
+#define crypt_ntlm_protocol_v128 crypt_ntlm_protocol_avx
+#define dcc_ntlm_part_v128 dcc_ntlm_part_avx
+#define dcc_salt_part_v128 dcc_salt_part_avx
+#define sha1_process_sha1_v128 sha1_process_sha1_avx
+#endif
 
-PRIVATE void crypt_ntlm_protocol_avx(CryptParam* param)
+#ifdef HS_ARM
+void dcc_ntlm_part_neon(void* nt_buffer, void* crypt_result);
+void dcc_salt_part_neon13(void* salt_buffer, void* crypt_result);
+void sha1_process_sha1_neon(const void* state, void* sha1_hash, void* W);
+
+#define NT_NUM_KEYS_AVX 64
+#define crypt_ntlm_protocol_v128 crypt_ntlm_protocol_neon
+#define dcc_ntlm_part_v128 dcc_ntlm_part_neon
+#define dcc_salt_part_v128 dcc_salt_part_neon13
+#define sha1_process_sha1_v128 sha1_process_sha1_neon
+#endif
+
+PRIVATE void crypt_ntlm_protocol_v128(CryptParam* param)
 {
-	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT, sizeof(unsigned char));
+	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT_SMALL, sizeof(unsigned char));
 	unsigned int* nt_buffer	= (unsigned int*)_aligned_malloc(16*4*NT_NUM_KEYS_AVX, 32);
-	__m128i* crypt_result = (__m128i*)_aligned_malloc(sizeof(__m128i)*2*(12+5+5+5+16), 32);
+	V128_WORD* crypt_result = (V128_WORD*)_aligned_malloc(sizeof(V128_WORD)* 2 * (12 + 5 + 5 + 5 + 16), 32);
 
-	__m128i* sha1_hash = crypt_result + 24;
-	__m128i* opad_state = sha1_hash + 10;
-	__m128i* ipad_state = opad_state + 10;
-	__m128i* W = ipad_state + 10;
+	V128_WORD* sha1_hash = crypt_result + 24;
+	V128_WORD* opad_state = sha1_hash + 10;
+	V128_WORD* ipad_state = opad_state + 10;
+	V128_WORD* W = ipad_state + 10;
 
 	memset(nt_buffer, 0, 16*4*NT_NUM_KEYS_AVX);
 
@@ -732,31 +541,43 @@ PRIVATE void crypt_ntlm_protocol_avx(CryptParam* param)
 		for(unsigned int i = 0; i < NT_NUM_KEYS_AVX/8; i++)
 		{
 			unsigned int* salt_buffer = (unsigned int*)salts_values;
-			dcc_ntlm_part_avx(nt_buffer+8*i, crypt_result);
+			dcc_ntlm_part_v128(nt_buffer + 8 * i, crypt_result);
 
 			// For all salts
 			for(unsigned int j = 0; continue_attack && j < num_diff_salts; j++, salt_buffer += 11)
 			{
-				dcc_salt_part_avx(salt_buffer, crypt_result);
+				dcc_salt_part_v128(salt_buffer, crypt_result);
 
-				dcc2_body_sse2(crypt_result, salt_buffer, 2, 0);
-				dcc2_body_sse2(crypt_result, salt_buffer, 2, 1);
+				dcc2_body_v128(crypt_result, salt_buffer, 2, 0);
+				dcc2_body_v128(crypt_result, salt_buffer, 2, 1);
+
+				sha1_process_sha1_v128(opad_state, sha1_hash, W);
+				// Only copy first 4 elements, since that is ALL this format uses
+				crypt_result[(8 + 0)*2 + 0] = sha1_hash[0];
+				crypt_result[(8 + 1)*2 + 0] = sha1_hash[1];
+				crypt_result[(8 + 2)*2 + 0] = sha1_hash[2];
+				crypt_result[(8 + 3)*2 + 0] = sha1_hash[3];
+
+				crypt_result[(8 + 0)*2 + 1] = sha1_hash[5];
+				crypt_result[(8 + 1)*2 + 1] = sha1_hash[6];
+				crypt_result[(8 + 2)*2 + 1] = sha1_hash[7];
+				crypt_result[(8 + 3)*2 + 1] = sha1_hash[8];
 
 				for(unsigned int k = 1; k < 10240; k++)
 				{
-					sha1_process_sha1_avx( ipad_state, sha1_hash, W);
-					sha1_process_sha1_avx( opad_state, sha1_hash, W);
+					sha1_process_sha1_v128(ipad_state, sha1_hash, W);
+					sha1_process_sha1_v128(opad_state, sha1_hash, W);
 
 					// Only XOR first 16 bytes, since that is ALL this format uses
-					crypt_result[(8+0)*2+0] = SSE2_XOR(crypt_result[(8+0)*2+0], sha1_hash[0]);
-					crypt_result[(8+1)*2+0] = SSE2_XOR(crypt_result[(8+1)*2+0], sha1_hash[1]);
-					crypt_result[(8+2)*2+0] = SSE2_XOR(crypt_result[(8+2)*2+0], sha1_hash[2]);
-					crypt_result[(8+3)*2+0] = SSE2_XOR(crypt_result[(8+3)*2+0], sha1_hash[3]);
+					crypt_result[(8+0)*2+0] = V128_XOR(crypt_result[(8+0)*2+0], sha1_hash[0]);
+					crypt_result[(8+1)*2+0] = V128_XOR(crypt_result[(8+1)*2+0], sha1_hash[1]);
+					crypt_result[(8+2)*2+0] = V128_XOR(crypt_result[(8+2)*2+0], sha1_hash[2]);
+					crypt_result[(8+3)*2+0] = V128_XOR(crypt_result[(8+3)*2+0], sha1_hash[3]);
 
-					crypt_result[(8+0)*2+1] = SSE2_XOR(crypt_result[(8+0)*2+1], sha1_hash[5]);
-					crypt_result[(8+1)*2+1] = SSE2_XOR(crypt_result[(8+1)*2+1], sha1_hash[6]);
-					crypt_result[(8+2)*2+1] = SSE2_XOR(crypt_result[(8+2)*2+1], sha1_hash[7]);
-					crypt_result[(8+3)*2+1] = SSE2_XOR(crypt_result[(8+3)*2+1], sha1_hash[8]);
+					crypt_result[(8+0)*2+1] = V128_XOR(crypt_result[(8+0)*2+1], sha1_hash[5]);
+					crypt_result[(8+1)*2+1] = V128_XOR(crypt_result[(8+1)*2+1], sha1_hash[6]);
+					crypt_result[(8+2)*2+1] = V128_XOR(crypt_result[(8+2)*2+1], sha1_hash[7]);
+					crypt_result[(8+3)*2+1] = V128_XOR(crypt_result[(8+3)*2+1], sha1_hash[8]);
 				}
 
 				for(unsigned int k = 0; k < 8; k++)
@@ -778,6 +599,7 @@ PRIVATE void crypt_ntlm_protocol_avx(CryptParam* param)
 					}
 				}
 			}
+			report_keys_processed(8);
 		}
 	}
 
@@ -788,7 +610,7 @@ PRIVATE void crypt_ntlm_protocol_avx(CryptParam* param)
 
 	finish_thread();
 }
-#endif
+
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AVX2 Implementation
@@ -860,7 +682,7 @@ PRIVATE void dcc2_body_avx2(__m256i* crypt_result, unsigned int* salt_buffer, in
 	ipad_state[2] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_C));
 	ipad_state[3] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_D));
 	ipad_state[4] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_E));
-	sha1_process( (unsigned int*)ipad_state, (unsigned int*)W, 8 );
+	sha1_process_block_simd( (unsigned int*)ipad_state, (unsigned int*)W, 8 );
 
 	// opad_state
 	for (size_t i = 0; i < 8; i++)
@@ -876,7 +698,7 @@ PRIVATE void dcc2_body_avx2(__m256i* crypt_result, unsigned int* salt_buffer, in
 	opad_state[2] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_C));
 	opad_state[3] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_D));
 	opad_state[4] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_E));
-	sha1_process( (unsigned int*)opad_state, (unsigned int*)W, 8 );
+	sha1_process_block_simd( (unsigned int*)opad_state, (unsigned int*)W, 8 );
 
 	memcpy(sha1_hash, ipad_state, 5*sizeof(__m256i));
 
@@ -884,6 +706,7 @@ PRIVATE void dcc2_body_avx2(__m256i* crypt_result, unsigned int* salt_buffer, in
 	memcpy(W, salt_buffer, salt_len);
 	memcpy(((unsigned char*)W)+salt_len, "\x0\x0\x0\x1\x80", 5);
 	memset(((unsigned char*)W)+salt_len+5, 0, 60 - (salt_len+5));
+
 	W[14] = _mm256_broadcastd_epi32(_mm_set1_epi32(0));
 	W[15] = _mm256_broadcastd_epi32(_mm_set1_epi32((64+salt_len+4) << 3));
 	for (int k = 13; k >= 0; k--)
@@ -893,12 +716,12 @@ PRIVATE void dcc2_body_avx2(__m256i* crypt_result, unsigned int* salt_buffer, in
 		x = ((x & 0x00FF00FF) << 8) + ((x >> 8) & 0x00FF00FF);
 		W[k] = _mm256_broadcastd_epi32(_mm_set1_epi32(x));
 	}
-	sha1_process( (unsigned int*)sha1_hash, (unsigned int*)W, 8 );
+	sha1_process_block_simd( (unsigned int*)sha1_hash, (unsigned int*)W, 8 );
 }
 
 PRIVATE void crypt_ntlm_protocol_avx2(CryptParam* param)
 {
-	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT, sizeof(unsigned char));
+	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT_SMALL, sizeof(unsigned char));
 	unsigned int* nt_buffer = (unsigned int*)_aligned_malloc(16 * 4 * NT_NUM_KEYS_AVX, 32);
 	__m256i* crypt_result = (__m256i*)_aligned_malloc(sizeof(__m256i)*2*(12+5+5+5+16), 32);
 
@@ -972,6 +795,7 @@ PRIVATE void crypt_ntlm_protocol_avx2(CryptParam* param)
 					}
 				}
 			}
+			report_keys_processed(16);
 		}
 	}
 
@@ -981,6 +805,877 @@ PRIVATE void crypt_ntlm_protocol_avx2(CryptParam* param)
 	_aligned_free(crypt_result);
 
 	finish_thread();
+}
+#endif
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// OpenCL Implementation
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#ifdef HS_OPENCL_SUPPORT
+
+#define KERNEL_INDEX_NTLM_PART					0
+#define KERNEL_INDEX_DCC_PART					1
+#define KERNEL_INDEX_DCC2_SHA1_OPAD				2
+#define KERNEL_INDEX_DCC2_COMPARE_RESULT		3
+#define KERNEL_INDEX_DCC2_SHA1_PAD_MASK			4
+#define KERNEL_INDEX_SHA1_PROCESS_SALT			5
+#define KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE		6
+#define KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE_VEC	7
+
+#define IPAD_STATE		0
+#define OPAD_STATE		5
+#define SHA1_HASH		10
+#define CRYPT_RESULT	15
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Common
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+PRIVATE void ocl_work_body(OpenCL_Param* param, int num_keys_filled, void* buffer, ocl_get_key* get_key)
+{
+	int64_t total_ks = num_diff_salts * 10239;
+	size_t num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(num_keys_filled, param->max_work_group_size);
+	pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_NTLM_PART], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+	int num_keys_reported = 0;
+
+	for (cl_uint current_salt_index = 0; continue_attack && current_salt_index < num_diff_salts; current_salt_index++)
+	{
+		// Body
+		pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC_PART], 3, sizeof(current_salt_index), (void*)&current_salt_index);
+		pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_DCC_PART], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+
+		// IPAD STATE
+		cl_uint state = IPAD_STATE;
+		cl_uint flag = 0x36363636;
+		pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_SHA1_PAD_MASK], 1, sizeof(state), (void*)&state);
+		pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_SHA1_PAD_MASK], 2, sizeof(flag), (void*)&flag);
+		pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_DCC2_SHA1_PAD_MASK], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+		pclFinish(param->queue);
+
+		// OPAD STATE
+		state = OPAD_STATE;
+		flag = 0x5C5C5C5C;
+		pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_SHA1_PAD_MASK], 1, sizeof(state), (void*)&state);
+		pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_SHA1_PAD_MASK], 2, sizeof(flag), (void*)&flag);
+		pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_DCC2_SHA1_PAD_MASK], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+
+		// Salt
+		pclSetKernelArg(param->kernels[KERNEL_INDEX_SHA1_PROCESS_SALT], 2, sizeof(current_salt_index), (void*)&current_salt_index);
+		pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_SHA1_PROCESS_SALT], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+
+		// Sha1 Opad
+		pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_DCC2_SHA1_OPAD], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+
+		// SHA1 cycle
+		state = OCL_SLOW_GET_CYCLE_PARAM(param->param0);
+		pclSetKernelArg(param->kernels[OCL_SLOW_GET_KERNEL_INDEX(param->param0)], 1, sizeof(state), (void*)&state);
+		size_t cycle_num_work_items = num_work_items;
+#ifndef HS_OCL_REDUCE_REGISTER_USE
+		if (OCL_SLOW_GET_KERNEL_INDEX(param->param0) == KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE_VEC)
+			cycle_num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(num_work_items / 2, param->max_work_group_size);
+#endif
+		for (cl_uint k = 0; k < 10239 / state; k++)
+		{
+			pclEnqueueNDRangeKernel(param->queue, param->kernels[OCL_SLOW_GET_KERNEL_INDEX(param->param0)], 1, NULL, &cycle_num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+			pclFinish(param->queue);
+			if (!continue_attack)
+				break;
+
+			// Report keys processed from time to time to maintain good Rate
+			int64_t processed_ks = current_salt_index * 10239 + k*state;
+			int num_keys_reported_add = (int)(num_keys_filled*processed_ks / total_ks) - num_keys_reported;
+			if (num_keys_reported_add > 0)
+			{
+				num_keys_reported += num_keys_reported_add;
+				report_keys_processed(num_keys_reported_add);
+			}
+		}
+		if (continue_attack)
+		{
+			cl_uint num_found;
+			state = OCL_SLOW_GET_CYCLE_PARAM(param->param0) - 1;
+			pclSetKernelArg(param->kernels[OCL_SLOW_GET_KERNEL_INDEX(param->param0)], 1, sizeof(state), (void*)&state);
+			pclEnqueueNDRangeKernel(param->queue, param->kernels[OCL_SLOW_GET_KERNEL_INDEX(param->param0)], 1, NULL, &cycle_num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+			// Compare results
+			pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_COMPARE_RESULT], 1, sizeof(current_salt_index), (void*)&current_salt_index);
+			pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_DCC2_COMPARE_RESULT], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+
+			// Find matches
+			pclEnqueueReadBuffer(param->queue, param->mems[GPU_OUTPUT], CL_FALSE, 0, 4, &num_found, 0, NULL, NULL);
+			pclFinish(param->queue);
+
+			// GPU found some passwords
+			if (num_found)
+				ocl_common_process_found(param, &num_found, get_key, buffer, num_work_items, num_keys_filled);
+		}
+	}
+
+	if (continue_attack)
+	{
+		num_keys_filled -= num_keys_reported;
+		if (num_keys_filled > 0)
+			report_keys_processed(num_keys_filled);
+	}
+	else
+		report_keys_processed(-num_keys_reported);
+}
+extern const char* sha1_array_body;
+extern const char* sha1_process_sha1_body;
+PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provider, OpenCL_Param* param, int multiplier)
+{
+	// Generate code
+	char* source = malloc(64 * 1024 * multiplier);
+	source[0] = 0;
+	// Header definitions
+	//if(num_passwords_loaded > 1 )
+		strcat(source, "#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable\n");
+
+	sprintf(source+strlen(source), "#define bs(c,b,a) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bitselect((c),(b),(a))" : "((c)^((a)&((b)^(c))))");
+#ifdef USE_MAJ_SELECTOR
+	switch (MAJ_SELECTOR)
+	{
+	case 0:
+		sprintf(source + strlen(source), "#define MAJ(b,c,d) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+		break;
+	case 1:
+		sprintf(source + strlen(source), "#define MAJ(b,d,c) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+		break;
+	case 2:
+		sprintf(source + strlen(source), "#define MAJ(c,b,d) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+		break;
+	case 3:
+		sprintf(source + strlen(source), "#define MAJ(c,d,b) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+		break;
+	case 4:
+		sprintf(source + strlen(source), "#define MAJ(d,b,c) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+		break;
+	case 5:
+		sprintf(source + strlen(source), "#define MAJ(d,c,b) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+		break;
+	}
+#else
+	sprintf(source + strlen(source), "#define MAJ(b,c,d) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+#endif
+	
+	//Initial values
+	sprintf(source+strlen(source),
+"#define INIT_A 0x67452301\n"
+"#define INIT_B 0xefcdab89\n"
+"#define INIT_C 0x98badcfe\n"
+"#define INIT_D 0x10325476\n"
+"#define INIT_E 0xC3D2E1F0\n"
+
+"#define SQRT_2 0x5a827999\n"
+"#define SQRT_3 0x6ed9eba1\n"
+"#define CONST3 0x8F1BBCDC\n"
+"#define CONST4 0xCA62C1D6\n"
+
+"#define LOAD_BIG_ENDIAN(x) x=rotate(x,16U);x=((x&0x00FF00FF)<<8U)+((x>>8U)&0x00FF00FF);\n"
+
+"#define IPAD_STATE		0\n"
+"#define OPAD_STATE		5\n"
+"#define SHA1_HASH		10\n"
+"#define CRYPT_RESULT	15\n"
+"#define GET_DATA(STATE,index) current_key[(STATE+index)*%uu+idx]\n"
+"#define NUM_KEYS_OPENCL %uu\n"
+, param->NUM_KEYS_OPENCL, param->NUM_KEYS_OPENCL);
+
+	sprintf(source+strlen(source),
+	"#ifdef __ENDIAN_LITTLE__\n"
+		//little-endian
+		"#define GET_1(x) ((((x)<<8u)&0xff0000)+((x)&0xff))\n"
+		"#define GET_2(x) ((((x)>>8u)&0xff0000)+(((x)>>16u)&0xff))\n"
+	"#else\n"
+		//big-endian
+		"#define GET_1(x) ((((x)>>8u)&0xff0000)+(((x)>>24u)&0xff))\n"
+		"#define GET_2(x) ((((x)<<16u)&0xff0000)+(((x)>>8u)&0xff))\n"
+	"#endif\n");
+
+	ocl_kernel_provider->gen_kernel(source, param->NUM_KEYS_OPENCL);
+
+	sprintf(source+strlen(source),
+	"\n#define DCC2_R(w0,w1,w2,w3)	W[w0]=rotate((W[w0]^W[w1]^W[w2]^W[w3]),1U)\n"
+"__kernel void dcc2_sha1_pad_mask(__global uint* current_key,uint state,uint flag)"
+"{"
+		"uint idx=get_global_id(0);"
+		"uint W[16];"
+
+		"W[0]=GET_DATA(CRYPT_RESULT,0)^flag;"
+		"W[1]=GET_DATA(CRYPT_RESULT,1)^flag;"
+		"W[2]=GET_DATA(CRYPT_RESULT,2)^flag;"
+		"W[3]=GET_DATA(CRYPT_RESULT,3)^flag;"
+		"for(uint i=4;i<16;i++)"
+			"W[i]=flag;"
+
+		"uint A=INIT_A;"
+		"uint B=INIT_B;"
+		"uint C=INIT_C;"
+		"uint D=INIT_D;"
+		"uint E=INIT_E;"
+
+		"%s"
+
+		"GET_DATA(state,0)=INIT_A+A;"
+		"GET_DATA(state,1)=INIT_B+B;"
+		"GET_DATA(state,2)=INIT_C+C;"
+		"GET_DATA(state,3)=INIT_D+D;"
+		"GET_DATA(state,4)=INIT_E+E;"
+"}", sha1_array_body);
+
+	sprintf(source+strlen(source),
+"\n__kernel void sha1_process_salt(__global uint* current_key,const __global uint* salt_values,uint current_salt_index)"
+"{"
+		"uint idx=get_global_id(0);"
+		"uint W[16];"
+
+		//memcpy(&sha1_hash, &ipad_state, 5*sizeof(unsigned int));
+		"uint A=GET_DATA(IPAD_STATE,0);"
+		"uint B=GET_DATA(IPAD_STATE,1);"
+		"uint C=GET_DATA(IPAD_STATE,2);"
+		"uint D=GET_DATA(IPAD_STATE,3);"
+		"uint E=GET_DATA(IPAD_STATE,4);"
+
+		"GET_DATA(SHA1_HASH,0)=A;"
+		"GET_DATA(SHA1_HASH,1)=B;"
+		"GET_DATA(SHA1_HASH,2)=C;"
+		"GET_DATA(SHA1_HASH,3)=D;"
+		"GET_DATA(SHA1_HASH,4)=E;"
+
+		// Process the salt
+		"uint salt_len=(salt_values[current_salt_index*11+10]>>3)-16;"
+		"for(uint i=0;i<16;i++)"
+			"W[i]=0;"
+				
+		//memcpy(W, salt_buffer, salt_len);
+		"uint i=0;"
+		"for(;i<salt_len/4;i++)"
+			"W[i]=salt_values[current_salt_index*11+i];"
+
+		//memcpy(((unsigned char*)W)+salt_len, "\x0\x0\x0\x1\x80", 5);
+		"if((salt_len&3)==0)"
+		"{"
+			"W[i]=0x1000000;"
+			"W[i+1]=0x80;"
+		"}else{"
+			"W[i]=salt_values[current_salt_index*11+i] & 0x0000FFFF;"
+			"W[i+1]=0x800100;"
+		"}"
+				
+		"W[15]=(64+salt_len+4)<<3;"
+		"for(i=0;i<14;i++)"
+		"{"
+			"LOAD_BIG_ENDIAN(W[i]);"
+		"}"
+
+		"%s"
+
+		"GET_DATA(SHA1_HASH,0)+=A;"
+		"GET_DATA(SHA1_HASH,1)+=B;"
+		"GET_DATA(SHA1_HASH,2)+=C;"
+		"GET_DATA(SHA1_HASH,3)+=D;"
+		"GET_DATA(SHA1_HASH,4)+=E;"
+"}", sha1_array_body);
+
+
+	// Function definition
+sprintf(source+strlen(source), "\n__kernel void ntlm_part(__global uint* current_key,__global uint* ntlm_values)"
+								"{"
+									"uint idx=get_global_id(0);"
+									"uint a,b,c,d,xx;"
+									"uint nt_buffer[16];");
+
+	// Convert the key into a nt_buffer
+sprintf(source + strlen(source),
+				"b=current_key[7u*%uU+idx]>>4;"
+				"if(b>27u)return;"
+				"for(xx=0;xx<(b/4+1);xx++)"
+				"{"
+					"a=current_key[idx+xx*%uu];"
+					"nt_buffer[2*xx]=GET_1(a);"
+					"nt_buffer[2*xx+1]=GET_2(a);"
+				"}", param->NUM_KEYS_OPENCL*multiplier, param->NUM_KEYS_OPENCL*multiplier);
+	// Fill with zeros
+sprintf(source + strlen(source), "xx*=2;"
+							"for(;xx<14;xx++)"
+								"nt_buffer[xx]=0;"
+							"nt_buffer[14]=b<<4;");
+
+		/* Round 1 */
+sprintf(source+strlen(source), 
+		"a=0xFFFFFFFF+nt_buffer[0];a<<=3u;"
+		"d=INIT_D+bs(INIT_C,INIT_B,a)+nt_buffer[1];d=rotate(d,7u);"
+		"c=INIT_C+bs(INIT_B,a,d)+nt_buffer[2];c=rotate(c,11u);"
+		"b=INIT_B+bs(a,d,c)+nt_buffer[3];b=rotate(b,19u);"
+
+		"a+=bs(d,c,b)+nt_buffer[4];a=rotate(a,3u);"
+		"d+=bs(c,b,a)+nt_buffer[5];d=rotate(d,7u);"
+		"c+=bs(b,a,d)+nt_buffer[6];c=rotate(c,11u);"
+		"b+=bs(a,d,c)+nt_buffer[7];b=rotate(b,19u);"
+
+		"a+=bs(d,c,b)+nt_buffer[8];a=rotate(a,3u);"
+		"d+=bs(c,b,a)+nt_buffer[9];d=rotate(d,7u);"
+		"c+=bs(b,a,d)+nt_buffer[10];c=rotate(c,11u);"
+		"b+=bs(a,d,c)+nt_buffer[11];b=rotate(b,19u);"
+
+		"a+=bs(d,c,b)+nt_buffer[12];a=rotate(a,3u);"
+		"d+=bs(c,b,a)+nt_buffer[13];d=rotate(d,7u);"
+		"c+=bs(b,a,d)+nt_buffer[14];c=rotate(c,11u);"
+		"b+=bs(a,d,c);b=rotate(b,19u);");
+
+		/* Round 2 */
+sprintf(source+strlen(source),
+		"a+=MAJ(b,c,d)+nt_buffer[0]+SQRT_2;a=rotate(a,3u);"
+		"d+=MAJ(a,b,c)+nt_buffer[4]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+nt_buffer[8]+SQRT_2;c=rotate(c,9u);"
+		"b+=MAJ(c,d,a)+nt_buffer[12]+SQRT_2;b=rotate(b,13u);"
+
+		"a+=MAJ(b,c,d)+nt_buffer[1]+SQRT_2;a=rotate(a,3u);"
+		"d+=MAJ(a,b,c)+nt_buffer[5]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+nt_buffer[9]+SQRT_2;c=rotate(c,9u);"
+		"b+=MAJ(c,d,a)+nt_buffer[13]+SQRT_2;b=rotate(b,13u);"
+
+		"a+=MAJ(b,c,d)+nt_buffer[2]+SQRT_2;a=rotate(a,3u);"
+		"d+=MAJ(a,b,c)+nt_buffer[6]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+nt_buffer[10]+SQRT_2;c=rotate(c,9u);"
+		"b+=MAJ(c,d,a)+nt_buffer[14]+SQRT_2;b=rotate(b,13u);"
+
+		"a+=MAJ(b,c,d)+nt_buffer[3]+SQRT_2;a=rotate(a,3u);"
+		"d+=MAJ(a,b,c)+nt_buffer[7]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+nt_buffer[11]+SQRT_2;c=rotate(c,9u);"
+		"b+=MAJ(c,d,a)+SQRT_2;b=rotate(b,13u);");
+
+		/* Round 3 */
+sprintf(source+strlen(source),
+		"xx=c^b;"
+		"a+=(d^xx)+nt_buffer[0]+SQRT_3;a=rotate(a,3u);"
+		"d+=(xx^a)+nt_buffer[8]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(b^xx)+nt_buffer[4]+SQRT_3;c=rotate(c,11u);"
+		"b+=(xx^c)+nt_buffer[12]+SQRT_3;b=rotate(b,15u);xx=c^b;"
+
+		"a+=(d^xx)+nt_buffer[2]+SQRT_3;a=rotate(a,3u);"
+		"d+=(xx^a)+nt_buffer[10]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(b^xx)+nt_buffer[6]+SQRT_3;c=rotate(c,11u);"
+		"b+=(xx^c)+nt_buffer[14]+SQRT_3;b=rotate(b,15u);xx=c^b;"
+
+		"a+=(d^xx)+nt_buffer[1]+SQRT_3;a=rotate(a,3u);"
+		"d+=(xx^a)+nt_buffer[9]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(b^xx)+nt_buffer[5]+SQRT_3;c=rotate(c,11u);"
+		"b+=(xx^c)+nt_buffer[13]+SQRT_3;b=rotate(b,15u);xx=c^b;"
+
+		"a+=(d^xx)+nt_buffer[3]+SQRT_3;a=rotate(a,3u);"
+		"d+=(xx^a)+nt_buffer[11]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(b^xx)+nt_buffer[7]+SQRT_3;c=rotate(c,11u);"
+		"b+=(xx^c)+SQRT_3;b=rotate(b,15u);");
+
+		// End key hashing
+sprintf(source+strlen(source),	"ntlm_values[0*NUM_KEYS_OPENCL+idx]=a+%uU;"
+								"ntlm_values[1*NUM_KEYS_OPENCL+idx]=b+%uU;"
+								"ntlm_values[2*NUM_KEYS_OPENCL+idx]=c+%uU;"
+								"ntlm_values[3*NUM_KEYS_OPENCL+idx]=d+%uU;"
+						"}", 0x67452300/*INIT_A+0xFFFFFFFF*/, INIT_B+INIT_D, 0x3175B9FC/*INIT_C+INIT_C*/, INIT_D+INIT_B);
+
+// Function definition
+sprintf(source + strlen(source), "\n__kernel void dcc_part(__global uint* current_key,const __global uint* ntlm_values,const __global uint* salt_values,uint current_salt_index)"
+	"{"
+		"uint idx=get_global_id(0);"
+		"uint a,b,c,d,xx;"
+		
+		"uint crypt_a=ntlm_values[0*NUM_KEYS_OPENCL+idx];"
+		"uint crypt_b=ntlm_values[1*NUM_KEYS_OPENCL+idx];"
+		"uint crypt_c=ntlm_values[2*NUM_KEYS_OPENCL+idx];"
+		"uint crypt_d=ntlm_values[3*NUM_KEYS_OPENCL+idx];");
+
+//Another MD4_crypt for the salt
+strcat(source,	"a=rotate(crypt_a,3u);"
+				"d=(INIT_C^(a&0x77777777))+crypt_b;d=rotate(d,7u);"
+				"c=bs(INIT_B,a,d)+crypt_c;c=rotate(c,11u);"
+				"b=bs(a,d,c)+crypt_d;b=rotate(b,19u);");
+
+		/* Round 1 */
+sprintf(source+strlen(source),
+		"a+=bs(d,c,b)+salt_values[current_salt_index*11+0];a=rotate(a,3u);"
+		"d+=bs(c,b,a)+salt_values[current_salt_index*11+1];d=rotate(d,7u);"
+		"c+=bs(b,a,d)+salt_values[current_salt_index*11+2];c=rotate(c,11u);"
+		"b+=bs(a,d,c)+salt_values[current_salt_index*11+3];b=rotate(b,19u);"
+
+		"a+=bs(d,c,b)+salt_values[current_salt_index*11+4];a=rotate(a,3u);"
+		"d+=bs(c,b,a)+salt_values[current_salt_index*11+5];d=rotate(d,7u);"
+		"c+=bs(b,a,d)+salt_values[current_salt_index*11+6];c=rotate(c,11u);"
+		"b+=bs(a,d,c)+salt_values[current_salt_index*11+7];b=rotate(b,19u);"
+
+		"a+=bs(d,c,b)+salt_values[current_salt_index*11+8];a=rotate(a,3u);"
+		"d+=bs(c,b,a)+salt_values[current_salt_index*11+9];d=rotate(d,7u);"
+		"c+=bs(b,a,d)+salt_values[current_salt_index*11+10];c=rotate(c,11u);"
+		"b+=bs(a,d,c);b=rotate(b,19u);");
+
+		/* Round 2 */
+sprintf(source+strlen(source),
+		"a+=MAJ(b,c,d)+crypt_a+%uU;a=rotate(a,3u);"
+		"d+=MAJ(a,b,c)+salt_values[current_salt_index*11+0]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+salt_values[current_salt_index*11+4]+SQRT_2;c=rotate(c,9u);"
+		"b+=MAJ(c,d,a)+salt_values[current_salt_index*11+8]+SQRT_2;b=rotate(b,13u);"
+
+		"a+=MAJ(b,c,d)+crypt_b+%uU;a=rotate(a,3u);"
+		"d+=MAJ(a,b,c)+salt_values[current_salt_index*11+1]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+salt_values[current_salt_index*11+5]+SQRT_2;c=rotate(c,9u);"
+		"b+=MAJ(c,d,a)+salt_values[current_salt_index*11+9]+SQRT_2;b=rotate(b,13u);"
+
+		"a+=MAJ(b,c,d)+crypt_c+%uU;a=rotate(a,3u);"
+		"d+=MAJ(a,b,c)+salt_values[current_salt_index*11+2]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+salt_values[current_salt_index*11+6]+SQRT_2;c=rotate(c,9u);"
+		"b+=MAJ(c,d,a)+salt_values[current_salt_index*11+10]+SQRT_2;b=rotate(b,13u);"
+
+		"a+=MAJ(b,c,d)+crypt_d+%uU;a=rotate(a,3u);"
+		"d+=MAJ(a,b,c)+salt_values[current_salt_index*11+3]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+salt_values[current_salt_index*11+7]+SQRT_2;c=rotate(c,9u);"
+		"b+=MAJ(c,d,a)+SQRT_2;b=rotate(b,13u);"
+		, SQRT_2-0xFFFFFFFF, SQRT_2-INIT_D, SQRT_2-INIT_C, SQRT_2-INIT_B);
+
+		/* Round 3 */
+sprintf(source+strlen(source),
+		"xx=c^b;"
+		"a+=(xx^d)+crypt_a+%uU;a=rotate(a,3u);"
+		"d+=(a^xx)+salt_values[current_salt_index*11+4]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(xx^b)+salt_values[current_salt_index*11+0]+SQRT_3;c=rotate(c,11u);"
+		"b+=(c^xx)+salt_values[current_salt_index*11+8]+SQRT_3;b=rotate(b,15u);xx=c^b;"
+
+		"a+=(xx^d)+crypt_c+%uU;a=rotate(a,3u);"
+		"d+=(a^xx)+salt_values[current_salt_index*11+6]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(xx^b)+salt_values[current_salt_index*11+2]+SQRT_3;c=rotate(c,11u);"
+		"b+=(c^xx)+salt_values[current_salt_index*11+10]+SQRT_3;b=rotate(b,15u);xx=c^b;"
+
+		"a+=(xx^d)+crypt_b+%uU;a=rotate(a,3u);"
+		"d+=(a^xx)+salt_values[current_salt_index*11+5]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(xx^b)+salt_values[current_salt_index*11+1]+SQRT_3;c=rotate(c,11u);"
+		"b+=(c^xx)+salt_values[current_salt_index*11+9]+SQRT_3;b=rotate(b,15u);xx=c^b;"
+
+		"a+=(xx^d)+crypt_d+%uU;a=rotate(a,3u);"
+		"d+=(a^xx)+salt_values[current_salt_index*11+7]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(xx^b)+salt_values[current_salt_index*11+3]+SQRT_3;c=rotate(c,11u);"
+		"b+=(c^xx)+SQRT_3;b=rotate(b,15u);xx=c^b;"
+													
+		"a+=INIT_A;"
+		"b+=INIT_B;"
+		"c+=INIT_C;"
+		"d+=INIT_D;"
+		, SQRT_3-0xFFFFFFFF, SQRT_3-INIT_C, SQRT_3-INIT_D, SQRT_3-INIT_B);
+
+sprintf(source+strlen(source),
+		"LOAD_BIG_ENDIAN(a);"
+		"LOAD_BIG_ENDIAN(b);"
+		"LOAD_BIG_ENDIAN(c);"
+		"LOAD_BIG_ENDIAN(d);"
+		
+		"GET_DATA(CRYPT_RESULT,0)=a;"
+		"GET_DATA(CRYPT_RESULT,1)=b;"
+		"GET_DATA(CRYPT_RESULT,2)=c;"
+		"GET_DATA(CRYPT_RESULT,3)=d;"
+	"}");
+
+sprintf(source + strlen(source), "\n#undef DCC2_R\n"
+	"#define DCC2_R(w0,w1,w2,w3)	(W ## w0)=rotate((W ## w0)^(W ## w1)^(W ## w2)^(W ## w3),1U)\n"
+	"\n__kernel void dcc2_sha1_opad(__global uint* current_key)"
+		"{"
+				"uint W0,W1,W2,W3,W4,W5,W6,W7,W8,W9,W10,W11,W12,W13,W14,W15;"
+				"uint idx=get_global_id(0);"
+
+				"W0=GET_DATA(SHA1_HASH,0);"
+				"W1=GET_DATA(SHA1_HASH,1);"
+				"W2=GET_DATA(SHA1_HASH,2);"
+				"W3=GET_DATA(SHA1_HASH,3);"
+				"W4=GET_DATA(SHA1_HASH,4);"
+
+				"uint A=GET_DATA(OPAD_STATE,0);"
+				"uint B=GET_DATA(OPAD_STATE,1);"
+				"uint C=GET_DATA(OPAD_STATE,2);"
+				"uint D=GET_DATA(OPAD_STATE,3);"
+				"uint E=GET_DATA(OPAD_STATE,4);"
+
+				"%s"
+
+				"A+=GET_DATA(OPAD_STATE,0);"
+				"B+=GET_DATA(OPAD_STATE,1);"
+				"C+=GET_DATA(OPAD_STATE,2);"
+				"D+=GET_DATA(OPAD_STATE,3);"
+				"E+=GET_DATA(OPAD_STATE,4);"
+
+				"GET_DATA(SHA1_HASH,0)=A;"
+				"GET_DATA(SHA1_HASH,1)=B;"
+				"GET_DATA(SHA1_HASH,2)=C;"
+				"GET_DATA(SHA1_HASH,3)=D;"
+				"GET_DATA(SHA1_HASH,4)=E;"
+
+				"GET_DATA(CRYPT_RESULT,0)=A;"
+				"GET_DATA(CRYPT_RESULT,1)=B;"
+				"GET_DATA(CRYPT_RESULT,2)=C;"
+				"GET_DATA(CRYPT_RESULT,3)=D;"
+		"}", sha1_process_sha1_body);
+
+sprintf(source + strlen(source), 
+	"\n__kernel void pbkdf2_hmac_sha1_cycle(__global uint* current_key,uint iter_count)"
+		"{"
+				"uint W0,W1,W2,W3,W4,W5,W6,W7,W8,W9,W10,W11,W12,W13,W14,W15;"
+				"uint idx=get_global_id(0);"
+
+				"W0=GET_DATA(SHA1_HASH,0);"
+				"W1=GET_DATA(SHA1_HASH,1);"
+				"W2=GET_DATA(SHA1_HASH,2);"
+				"W3=GET_DATA(SHA1_HASH,3);"
+				"W4=GET_DATA(SHA1_HASH,4);"
+
+				"uint ipad_state0=GET_DATA(IPAD_STATE,0);"
+				"uint ipad_state1=GET_DATA(IPAD_STATE,1);"
+				"uint ipad_state2=GET_DATA(IPAD_STATE,2);"
+				"uint ipad_state3=GET_DATA(IPAD_STATE,3);"
+				"uint ipad_state4=GET_DATA(IPAD_STATE,4);"
+
+				"uint opad_state0=GET_DATA(OPAD_STATE,0);"
+				"uint opad_state1=GET_DATA(OPAD_STATE,1);"
+				"uint opad_state2=GET_DATA(OPAD_STATE,2);"
+				"uint opad_state3=GET_DATA(OPAD_STATE,3);"
+				"uint opad_state4=GET_DATA(OPAD_STATE,4);"
+
+				"uint result0=GET_DATA(CRYPT_RESULT,0);"
+				"uint result1=GET_DATA(CRYPT_RESULT,1);"
+				"uint result2=GET_DATA(CRYPT_RESULT,2);"
+				"uint result3=GET_DATA(CRYPT_RESULT,3);"
+
+				"for(uint i=0;i<iter_count;i++){"
+
+					"uint A=ipad_state0;"
+					"uint B=ipad_state1;"
+					"uint C=ipad_state2;"
+					"uint D=ipad_state3;"
+					"uint E=ipad_state4;"
+
+					"%s"
+
+					"W0=ipad_state0+A;"
+					"W1=ipad_state1+B;"
+					"W2=ipad_state2+C;"
+					"W3=ipad_state3+D;"
+					"W4=ipad_state4+E;"
+
+					"A=opad_state0;"
+					"B=opad_state1;"
+					"C=opad_state2;"
+					"D=opad_state3;"
+					"E=opad_state4;"
+
+					"%s"
+
+					"W0=opad_state0+A;"
+					"W1=opad_state1+B;"
+					"W2=opad_state2+C;"
+					"W3=opad_state3+D;"
+					"W4=opad_state4+E;"
+
+					"result0^=W0;"
+					"result1^=W1;"
+					"result2^=W2;"
+					"result3^=W3;"
+				"}"
+
+				"GET_DATA(SHA1_HASH,0)=W0;"
+				"GET_DATA(SHA1_HASH,1)=W1;"
+				"GET_DATA(SHA1_HASH,2)=W2;"
+				"GET_DATA(SHA1_HASH,3)=W3;"
+				"GET_DATA(SHA1_HASH,4)=W4;"
+
+				"GET_DATA(CRYPT_RESULT,0)=result0;"
+				"GET_DATA(CRYPT_RESULT,1)=result1;"
+				"GET_DATA(CRYPT_RESULT,2)=result2;"
+				"GET_DATA(CRYPT_RESULT,3)=result3;"
+			"}\n", sha1_process_sha1_body, sha1_process_sha1_body);
+
+#ifndef HS_OCL_REDUCE_REGISTER_USE
+sprintf(source + strlen(source), 
+	"\n#define  GET_DATA_VEC(STATE,index) vload2((STATE+index)*NUM_KEYS_OPENCL/2+idx,current_key)\n"
+	"#define  SET_DATA_VEC(STATE,index,data) vstore2(data,(STATE+index)*NUM_KEYS_OPENCL/2+idx,current_key)\n"
+	"__kernel void pbkdf2_hmac_sha1_cycle_vec(__global uint* current_key,uint iter_count)"
+		"{"
+				"uint2 W0,W1,W2,W3,W4,W5,W6,W7,W8,W9,W10,W11,W12,W13,W14,W15;"
+				"uint idx=get_global_id(0);"
+
+				"W0=GET_DATA_VEC(SHA1_HASH,0);"
+				"W1=GET_DATA_VEC(SHA1_HASH,1);"
+				"W2=GET_DATA_VEC(SHA1_HASH,2);"
+				"W3=GET_DATA_VEC(SHA1_HASH,3);"
+				"W4=GET_DATA_VEC(SHA1_HASH,4);"
+
+				"uint2 ipad_state0=GET_DATA_VEC(IPAD_STATE,0);"
+				"uint2 ipad_state1=GET_DATA_VEC(IPAD_STATE,1);"
+				"uint2 ipad_state2=GET_DATA_VEC(IPAD_STATE,2);"
+				"uint2 ipad_state3=GET_DATA_VEC(IPAD_STATE,3);"
+				"uint2 ipad_state4=GET_DATA_VEC(IPAD_STATE,4);"
+
+				"uint2 opad_state0=GET_DATA_VEC(OPAD_STATE,0);"
+				"uint2 opad_state1=GET_DATA_VEC(OPAD_STATE,1);"
+				"uint2 opad_state2=GET_DATA_VEC(OPAD_STATE,2);"
+				"uint2 opad_state3=GET_DATA_VEC(OPAD_STATE,3);"
+				"uint2 opad_state4=GET_DATA_VEC(OPAD_STATE,4);"
+
+				"uint2 result0=GET_DATA_VEC(CRYPT_RESULT,0);"
+				"uint2 result1=GET_DATA_VEC(CRYPT_RESULT,1);"
+				"uint2 result2=GET_DATA_VEC(CRYPT_RESULT,2);"
+				"uint2 result3=GET_DATA_VEC(CRYPT_RESULT,3);"
+
+				"for(uint i=0;i<iter_count;i++){"
+
+					"uint2 A=ipad_state0;"
+					"uint2 B=ipad_state1;"
+					"uint2 C=ipad_state2;"
+					"uint2 D=ipad_state3;"
+					"uint2 E=ipad_state4;"
+
+					"%s"
+
+					"W0=ipad_state0+A;"
+					"W1=ipad_state1+B;"
+					"W2=ipad_state2+C;"
+					"W3=ipad_state3+D;"
+					"W4=ipad_state4+E;"
+
+					"A=opad_state0;"
+					"B=opad_state1;"
+					"C=opad_state2;"
+					"D=opad_state3;"
+					"E=opad_state4;"
+
+					"%s"
+
+					"W0=opad_state0+A;"
+					"W1=opad_state1+B;"
+					"W2=opad_state2+C;"
+					"W3=opad_state3+D;"
+					"W4=opad_state4+E;"
+
+					"result0^=W0;"
+					"result1^=W1;"
+					"result2^=W2;"
+					"result3^=W3;"
+				"}"
+
+				"SET_DATA_VEC(SHA1_HASH,0,W0);"
+				"SET_DATA_VEC(SHA1_HASH,1,W1);"
+				"SET_DATA_VEC(SHA1_HASH,2,W2);"
+				"SET_DATA_VEC(SHA1_HASH,3,W3);"
+				"SET_DATA_VEC(SHA1_HASH,4,W4);"
+
+				"SET_DATA_VEC(CRYPT_RESULT,0,result0);"
+				"SET_DATA_VEC(CRYPT_RESULT,1,result1);"
+				"SET_DATA_VEC(CRYPT_RESULT,2,result2);"
+				"SET_DATA_VEC(CRYPT_RESULT,3,result3);"
+			"}", sha1_process_sha1_body, sha1_process_sha1_body);
+#endif
+
+if (num_passwords_loaded == num_diff_salts)
+sprintf(source + strlen(source), "\n__kernel void dcc2_compare_result(__global uint* current_key,uint salt_index,__global uint* output,const __global uint* binary_values)"
+		"{"
+				"uint idx=get_global_id(0);"
+				"if(GET_DATA(CRYPT_RESULT,0)==binary_values[4*salt_index+0]&&GET_DATA(CRYPT_RESULT,1)==binary_values[4*salt_index+1]&&GET_DATA(CRYPT_RESULT,2)==binary_values[4*salt_index+2]&&GET_DATA(CRYPT_RESULT,3)==binary_values[4*salt_index+3])"
+				"{"
+						"uint found=atomic_inc(output);"
+						"output[2*found+1]=idx;"
+						"output[2*found+2]=salt_index;"
+				"}"
+		"}");
+else
+sprintf(source + strlen(source), "\n__kernel void dcc2_compare_result(__global uint* current_key,uint current_salt_index,__global uint* output,const __global uint* binary_values,const __global uint* salt_index,const __global uint* same_salt_next)"
+		"{\n"
+				"uint idx=get_global_id(0);"
+				"uint index=salt_index[current_salt_index];"
+				"while(index!=0xffffffff)"
+				"{"
+					"if(GET_DATA(CRYPT_RESULT,0)==binary_values[4*index+0]&&GET_DATA(CRYPT_RESULT,1)==binary_values[4*index+1]&&GET_DATA(CRYPT_RESULT,2)==binary_values[4*index+2]&&GET_DATA(CRYPT_RESULT,3)==binary_values[4*index+3])"
+					"{"
+							"uint found=atomic_inc(output);"
+							"output[2*found+1]=idx;"
+							"output[2*found+2]=index;"
+					"}"
+					"index=same_salt_next[index];"
+				"}"
+		"}");
+
+	return source;
+}
+PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules)
+{
+	// Only one hash
+	// For Intel HD 4600 best DIVIDER=1-2
+	//  1	3.32K
+	//	2	3.32K
+	//	4	3.28K
+	//	8	2.91K
+	//	16	2.42K
+	//	32	2.33K
+	// For AMD HD 7970 best DIVIDER=1-3
+	//  1	116K
+	//	2	115K
+	//	4	114K
+	//	8	111K
+	//	16	110K
+	//	32	105K
+	//	64	90.5K
+	// For Nvidia GTX 590 best DIVIDER=1-32
+	//  1	26.2K
+	//	2	26.1K
+	//	4	26.2K
+	//	8	26.1K
+	//	16	26.2K
+	//	32	26.2K
+	//	64	25.1K
+	//	128	14.3K
+	ocl_init_slow_hashes(param, gpu_index, gen, gpu_dcc2_crypt, ocl_kernel_provider, use_rules, 5 + 5 + 5 + 4, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 2);
+
+	// Crypt Kernels
+	create_kernel(param, KERNEL_INDEX_NTLM_PART					, "ntlm_part");
+	create_kernel(param, KERNEL_INDEX_DCC_PART					, "dcc_part");
+	create_kernel(param, KERNEL_INDEX_DCC2_SHA1_OPAD			, "dcc2_sha1_opad");
+	create_kernel(param, KERNEL_INDEX_DCC2_COMPARE_RESULT		, "dcc2_compare_result");
+	create_kernel(param, KERNEL_INDEX_DCC2_SHA1_PAD_MASK		, "dcc2_sha1_pad_mask");
+	create_kernel(param, KERNEL_INDEX_SHA1_PROCESS_SALT			, "sha1_process_salt");
+	create_kernel(param, KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE	, "pbkdf2_hmac_sha1_cycle");
+#ifndef HS_OCL_REDUCE_REGISTER_USE
+	create_kernel(param, KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE_VEC, "pbkdf2_hmac_sha1_cycle_vec");
+#endif
+	
+	create_opencl_mem(param, GPU_ORDERED_KEYS , CL_MEM_READ_WRITE, 4*sizeof(cl_uint)*param->NUM_KEYS_OPENCL, NULL);
+	if (num_diff_salts < num_passwords_loaded)
+	{
+		if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
+		{
+			create_opencl_mem(param, GPU_SALT_INDEX    , CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*num_passwords_loaded, salt_index);
+			create_opencl_mem(param, GPU_SAME_SALT_NEXT, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*num_passwords_loaded, same_salt_next);
+		}
+		else
+		{
+			create_opencl_mem(param, GPU_SALT_INDEX    , CL_MEM_READ_ONLY, sizeof(cl_uint)*num_passwords_loaded, NULL);
+			create_opencl_mem(param, GPU_SAME_SALT_NEXT, CL_MEM_READ_ONLY, sizeof(cl_uint)*num_passwords_loaded, NULL);
+		}
+	}
+
+	// Set OpenCL kernel params
+	int big_buffer_index = use_rules ? GPU_RULE_SLOW_BUFFER : GPU_CURRENT_KEY;
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_NTLM_PART], 0, sizeof(cl_mem), (void*)&param->mems[use_rules ? GPU_RULE_SLOW_TRANSFORMED_KEYS : big_buffer_index]);
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_NTLM_PART], 1, sizeof(cl_mem), (void*)&param->mems[GPU_ORDERED_KEYS]);
+
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC_PART], 0, sizeof(cl_mem), (void*)&param->mems[big_buffer_index]);
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC_PART], 1, sizeof(cl_mem), (void*)&param->mems[GPU_ORDERED_KEYS]);
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC_PART], 2, sizeof(cl_mem), (void*)&param->mems[GPU_SALT_VALUES]);
+
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_SHA1_PROCESS_SALT], 0, sizeof(cl_mem), (void*)&param->mems[big_buffer_index]);
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_SHA1_PROCESS_SALT], 1, sizeof(cl_mem), (void*)&param->mems[GPU_SALT_VALUES]);
+
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_SHA1_PAD_MASK]			, 0, sizeof(cl_mem), (void*)&param->mems[big_buffer_index]);
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_SHA1_OPAD]				, 0, sizeof(cl_mem), (void*)&param->mems[big_buffer_index]);
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE]		, 0, sizeof(cl_mem), (void*)&param->mems[big_buffer_index]);
+#ifndef HS_OCL_REDUCE_REGISTER_USE
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE_VEC] , 0, sizeof(cl_mem), (void*)&param->mems[big_buffer_index]);
+#endif
+
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_COMPARE_RESULT], 0, sizeof(cl_mem), (void*)&param->mems[big_buffer_index]);
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_COMPARE_RESULT], 2, sizeof(cl_mem), (void*)&param->mems[GPU_OUTPUT]);
+	pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_COMPARE_RESULT], 3, sizeof(cl_mem), (void*)&param->mems[GPU_BINARY_VALUES]);
+	if (num_diff_salts < num_passwords_loaded)
+	{
+		pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_COMPARE_RESULT], 4, sizeof(cl_mem), (void*)&param->mems[GPU_SALT_INDEX]);
+		pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_COMPARE_RESULT], 5, sizeof(cl_mem), (void*)&param->mems[GPU_SAME_SALT_NEXT]);
+	}
+	
+	if (!(gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY) && num_diff_salts < num_passwords_loaded)
+	{
+		pclEnqueueWriteBuffer(param->queue, param->mems[GPU_SALT_INDEX], CL_FALSE, 0, 4 * num_passwords_loaded, salt_index, 0, NULL, NULL);
+		pclEnqueueWriteBuffer(param->queue, param->mems[GPU_SAME_SALT_NEXT], CL_FALSE, 0, 4 * num_passwords_loaded, same_salt_next, 0, NULL, NULL);
+	}
+	pclFinish(param->queue);
+
+	// Select best params
+	ocl_best_workgroup_pbkdf2(param, KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE, KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE_VEC);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Charset
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+{
+	// Do not allow blank in GPU
+	if (current_key_lenght == 0)
+	{
+		current_key_lenght = 1;
+		report_keys_processed(1);
+
+		cl_uint crypt_result[12], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
+		cl_uint* salt_buffer = (cl_uint*)salts_values;
+
+		for (cl_uint i = 0; i < num_diff_salts; i++, salt_buffer += 11)
+		{
+			crypt_result[4] = 0x067eb187;
+			crypt_result[5] = 0x66ce2570;
+			crypt_result[6] = 0x9e29f7ff;
+			crypt_result[7] = 0x7456a070;
+
+			crypt_result[0] = 0xe0cfd631;
+			crypt_result[1] = 0x31e96ad1;
+			crypt_result[2] = 0xd7593cb7;
+			crypt_result[3] = 0xc089c0e0;
+
+			dcc_salt_part_c_code(salt_buffer, crypt_result);
+			dcc2_body_c_code(salt_buffer, crypt_result, sha1_hash, opad_state, ipad_state, W);
+
+			// Search for a match
+			cl_uint index = salt_index[i];
+
+			// Partial match
+			while (index != NO_ELEM)
+			{
+				cl_uint* bin = ((cl_uint*)binary_values) + index * 4;
+
+				// Total match
+				if (crypt_result[8 + 0] == bin[0] && crypt_result[8 + 1] == bin[1] && crypt_result[8 + 2] == bin[2] && crypt_result[8 + 3] == bin[3])
+					password_was_found(index, "");
+
+				index = same_salt_next[index];
+			}
+		}
+	}
+	ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + CHARSET_INDEX_IN_KERNELS, FALSE);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Phrases
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+PRIVATE void ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+{
+	ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + PHRASES_INDEX_IN_KERNELS, FALSE);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// UTF8
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+PRIVATE void ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+{
+	ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + UTF8_INDEX_IN_KERNELS, FALSE);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Rules
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+extern int provider_index;
+
+PRIVATE void ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+{
+	int i, kernel2common_index;
+
+	// Find a compatible generate_key_funtion function for a given key_provider
+	for (i = 0; i < LENGHT(key_providers[provider_index].impls); i++)
+		for (kernel2common_index = 0; kernel2common_index < (int)num_kernels2common; kernel2common_index++)
+			if (key_providers[provider_index].impls[i].protocol == kernels2common[kernel2common_index].protocol)
+			{
+				gen = key_providers[provider_index].impls[i].generate;
+				goto out;
+			}
+out:
+	ocl_protocol_common_init(param, gpu_device_index, gen, gpu_dcc2_crypt, kernels2common + kernel2common_index, TRUE);
 }
 #endif
 
@@ -995,12 +1690,19 @@ Format dcc2_format = {
 	bench_values,
 	LENGHT(bench_values),
 	get_binary,
+	dcc2_line_is_valid,
+	add_hash_from_line,
 #ifdef _M_X64
 	{{CPU_CAP_AVX2, PROTOCOL_NTLM, crypt_ntlm_protocol_avx2}, {CPU_CAP_AVX, PROTOCOL_NTLM, crypt_ntlm_protocol_avx}, {CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}},
 #else
-	{{CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}, {CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}, {CPU_CAP_C_CODE, PROTOCOL_NTLM, crypt_ntlm_protocol_c_code}},
+	#ifdef HS_ARM
+		{{CPU_CAP_NEON, PROTOCOL_NTLM, crypt_ntlm_protocol_neon}, {CPU_CAP_C_CODE, PROTOCOL_NTLM, crypt_ntlm_protocol_c_code}, {CPU_CAP_C_CODE, PROTOCOL_NTLM, crypt_ntlm_protocol_c_code}},
+	#else
+		{{CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}, {CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}, {CPU_CAP_C_CODE, PROTOCOL_NTLM, crypt_ntlm_protocol_c_code}},
+	#endif
 #endif
-	{{PROTOCOL_CHARSET_OCL, NULL}, {PROTOCOL_CHARSET_OCL, NULL}, {PROTOCOL_CHARSET_OCL, NULL}, {PROTOCOL_CHARSET_OCL, NULL}}
-};
 
+#ifdef HS_OPENCL_SUPPORT
+	{{PROTOCOL_CHARSET_OCL_NO_ALIGNED, ocl_protocol_charset_init}, {PROTOCOL_PHRASES_OPENCL, ocl_protocol_phrases_init}, {PROTOCOL_RULES_OPENCL, ocl_protocol_rules_init}, {PROTOCOL_UTF8, ocl_protocol_utf8_init}}
 #endif
+};

@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2014 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2015 by Alain Espinosa. See LICENSE.
 
 #include <string.h>
 #include <stdio.h>
@@ -26,18 +26,31 @@ void init_opencl();
 PUBLIC sqlite3* db = NULL;
 
 // Formats supported by the program
-extern Format ntlm_format;
-extern Format mscash_format;
 extern Format lm_format;
-#ifdef INCLUDE_DCC2
+extern Format ntlm_format;
+extern Format raw_md5_format;
+
+extern Format raw_sha1_format;
+extern Format raw_sha256_format;
+extern Format raw_sha512_format;
+
+extern Format dcc_format;
 extern Format dcc2_format;
+extern Format wpa_format;
+
+extern Format bcrypt_format;
+#ifdef INCLUDE_DEVELOPING_FORMAT
+extern Format <name>_format;
 #endif
+
 PUBLIC Format formats[MAX_NUM_FORMATS];
 PUBLIC int num_formats = 0;
 
 
 // Map to convert hexadecimal char into his corresponding value
 PUBLIC unsigned char hex_to_num[256];
+PUBLIC unsigned char base64_to_num[256];
+PRIVATE const char itoa64[64] = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 #ifndef _WIN32
 PUBLIC unsigned char* _strupr(unsigned char* string)
@@ -69,6 +82,11 @@ PUBLIC inline __attribute__((always_inline)) unsigned int _rotl(unsigned int v, 
 {
   return ((v<<sh) | (v>>(32-sh)));
 }
+
+PUBLIC inline __attribute__((always_inline)) uint64_t _rotl64(uint64_t v, unsigned int sh)
+{
+  return ((v<<sh) | (v>>(64-sh)));
+}
 PUBLIC void _BitScanReverse(unsigned int* index, unsigned int v)
 {
 	unsigned int r = 0; // r will be lg(v)
@@ -87,6 +105,33 @@ PUBLIC void _BitScanForward(unsigned int* index, unsigned int v)
 }
 
 #endif
+
+PUBLIC cl_uint is_power_2(cl_uint x)
+{
+	return (x && !(x & (x - 1)));
+}
+
+// Greatest power of 2 <= x
+PUBLIC cl_uint floor_power_2(cl_uint x)
+{
+	x |= x >> 1;
+	x |= x >> 2;
+	x |= x >> 4;
+	x |= x >> 8;
+	x |= x >> 16;
+	return x - (x >> 1);
+}
+// Small power of 2 >= x
+PUBLIC cl_uint ceil_power_2(cl_uint x)
+{
+	x--;
+	x |= x >> 1;
+	x |= x >> 2;
+	x |= x >> 4;
+	x |= x >> 8;
+	x |= x >> 16;
+	return x + 1;
+}
 
 // Conversion from division by a constant to a multiplication by a constant and a shift
 PUBLIC DivisionParams get_div_params(unsigned int divisor)
@@ -143,6 +188,15 @@ PUBLIC DivisionParams get_div_params(unsigned int divisor)
 //	}
 //	i++;
 //}
+PUBLIC void remove_str(char* data, const char* pattern)
+{
+	char* str_found = strstr(data, pattern);
+	if (str_found)
+	{
+		size_t len = strlen(pattern);
+		memmove(str_found, str_found + len, strlen(str_found) - len + 1);
+	}
+}
 
 // Path of the executable
 PRIVATE char full_path[FILENAME_MAX];
@@ -188,6 +242,15 @@ PUBLIC int find_key_provider_index(sqlite3_int64 db_id)
 
 	return -1;
 }
+PUBLIC void swap_endianness_array(uint32_t* data, int count)
+{
+	for (int i = 0; i < count; i++)
+	{
+		uint32_t tmp = data[i];
+		SWAP_ENDIANNESS(tmp, tmp);
+		data[i] = tmp;
+	}
+}
 PUBLIC unsigned char* ntlm2utf8_key(unsigned int* nt_buffer, unsigned char* key,unsigned int NUM_KEYS, unsigned int index)
 {
 	int lenght = nt_buffer[14*NUM_KEYS+index] >> 4;
@@ -200,15 +263,48 @@ PUBLIC unsigned char* ntlm2utf8_key(unsigned int* nt_buffer, unsigned char* key,
 
 	return key;
 }
+PUBLIC unsigned char* utf8_coalesc2utf8_key(unsigned int* nt_buffer, unsigned char* key, unsigned int NUM_KEYS, unsigned int index)
+{
+	unsigned int len = nt_buffer[7 * NUM_KEYS + index] >> 3;
+	for (unsigned int j = 0; j < (len / 4 + 1); j++)
+		((unsigned int*)key)[j] = nt_buffer[j * NUM_KEYS + index];
+
+	key[len] = 0;
+	return key;
+}
+extern unsigned int max_lenght;
+PUBLIC unsigned char* utf8_be_coalesc2utf8_key(unsigned int* nt_buffer, unsigned char* key, unsigned int NUM_KEYS, unsigned int index)
+{
+	unsigned int len_index = (max_lenght > 27) ? 16 : 7;
+	unsigned int len = nt_buffer[len_index * NUM_KEYS + index] >> 3;
+	for (unsigned int j = 0; j < (len / 4 + 1); j++)
+	{
+		unsigned int data = nt_buffer[j * NUM_KEYS + index];
+		SWAP_ENDIANNESS(data, data);
+		((unsigned int*)key)[j] = data;
+	}
+
+	key[len] = 0;
+	return key;
+}
 PUBLIC int valid_hex_string(unsigned char* ciphertext, int lenght)
 {
-    int pos = 0;
-
 	if(strlen((char*)ciphertext) != lenght)
 		return FALSE;
 
-    for (; pos < lenght; pos++)
+    for (int pos = 0; pos < lenght; pos++)
 		if(!isxdigit(ciphertext[pos]))
+			return FALSE;
+
+	return TRUE;
+}
+PUBLIC int valid_base64_string(unsigned char* ciphertext, int lenght)
+{
+	if(strlen((char*)ciphertext) != lenght)
+		return FALSE;
+
+    for (int pos = 0; pos < lenght; pos++)
+		if(base64_to_num[ciphertext[pos]] == NOT_HEX_CHAR)
 			return FALSE;
 
 	return TRUE;
@@ -236,7 +332,7 @@ PUBLIC char* get_full_path(char* filename)
 
 	return full_path;
 }
-PUBLIC int is_charset_consecutive(unsigned char* charset)
+PUBLIC unsigned int is_charset_consecutive(unsigned char* charset)
 {
 	unsigned char min_val = 255;
 	unsigned int i,j;
@@ -324,6 +420,10 @@ PRIVATE void hex_init()
 	hex_to_num['D'] = hex_to_num['d'] = 13;
 	hex_to_num['E'] = hex_to_num['e'] = 14;
 	hex_to_num['F'] = hex_to_num['f'] = 15;
+
+	memset(base64_to_num, NOT_HEX_CHAR, sizeof(base64_to_num));
+	for (unsigned int pos = 0; pos < 64; pos++)
+		base64_to_num[itoa64[pos]] = pos;
 }
 PRIVATE void formats_init(int db_already_initialize)
 {
@@ -331,10 +431,20 @@ PRIVATE void formats_init(int db_already_initialize)
 
 	formats[LM_INDEX] = lm_format;
 	formats[NTLM_INDEX] = ntlm_format;
-	formats[DCC_INDEX] = mscash_format;
-	num_formats = 3;
-#ifdef INCLUDE_DCC2
+	formats[MD5_INDEX] = raw_md5_format;
+
+	formats[SHA1_INDEX] = raw_sha1_format;
+	formats[SHA256_INDEX] = raw_sha256_format;
+	formats[SHA512_INDEX] = raw_sha512_format;
+
+	formats[DCC_INDEX] = dcc_format;
 	formats[DCC2_INDEX] = dcc2_format;
+	formats[WPA_INDEX] = wpa_format;
+
+	formats[BCRYPT_INDEX] = bcrypt_format;
+	num_formats = 10;
+#ifdef INCLUDE_DEVELOPING_FORMAT
+	formats[<name>_INDEX] = <name>_format;
 	num_formats++;
 #endif
 
@@ -349,8 +459,8 @@ PRIVATE void formats_init(int db_already_initialize)
 			// Ensures all formats are in the db
 			sqlite3_reset(insert);
 			sqlite3_bind_int64(insert, 1, formats[i].db_id);
-			sqlite3_bind_text(insert, 2, formats[i].name, -1, SQLITE_STATIC);
-			sqlite3_bind_text(insert, 3, formats[i].description, -1, SQLITE_STATIC);
+			sqlite3_bind_text (insert, 2, formats[i].name, -1, SQLITE_STATIC);
+			sqlite3_bind_text (insert, 3, formats[i].description, -1, SQLITE_STATIC);
 			sqlite3_step(insert);
 		}
 
@@ -389,12 +499,20 @@ PUBLIC void init_all(const char* program_exe_path)
 	}
 
 	// Database
+#ifdef ANDROID
 	sqlite3_open(db_path, &db);
+#else
+	#ifdef HS_TESTING
+		sqlite3_open(":memory:", &db);
+	#else
+		sqlite3_open(db_path, &db);
+	#endif
+#endif
 
 	BEGIN_TRANSACTION;
 
 	if (!db_already_exits)
-		sqlite3_exec(db, CREATE_SCHEMA, NULL, NULL, NULL);
+		sqlite3_exec(db, CREATE_ACCOUNT_HASH CREATE_OTHER_SCHEMA, NULL, NULL, NULL);
 
 	hex_init();
 	register_in_out();
@@ -464,7 +582,7 @@ PRIVATE char* format_time(int64_t seconds)
 }
 PUBLIC char* get_time_from_begin(int isTotal)
 {
-	return format_time(SECONDS_SINCE(start_time) + (isTotal ? batch[current_attack_index].secs_before_this_attack : 0));
+	return format_time(seconds_since_start(isTotal));
 }
 PUBLIC char* finish_time()
 {
@@ -473,6 +591,10 @@ PUBLIC char* finish_time()
 	else
 	{
 		double time_in_sec = (double)(clock() - save_time) / CLOCKS_PER_SEC;
+
+		int64_t num_keys_served_from_save, num_keys_served_from_start;
+		get_num_keys_served_ptr(&num_keys_served_from_save, &num_keys_served_from_start);
+
 		int64_t _secs = (int64_t)(num_keys_served_from_save ? 
 			((get_key_space_batch() - num_keys_served_from_start - num_keys_served_from_save) * time_in_sec / num_keys_served_from_save) : 
 			((get_key_space_batch() - num_keys_served_from_start - num_keys_served_from_save) * time_in_sec));
@@ -481,12 +603,14 @@ PUBLIC char* finish_time()
 
 	return buffer;
 }
-PUBLIC char* password_per_sec()
+PUBLIC char* password_per_sec(char* buffer)
 {
-	double time_in_sec = (double)(clock() - save_time) / CLOCKS_PER_SEC;
-	int64_t num_per_sec = (int64_t)(num_keys_served_from_save / time_in_sec);
+	double time_in_sec = ((double)(clock() - save_time)) / CLOCKS_PER_SEC;
+	int64_t num_per_sec = (int64_t)(get_num_keys_served_from_save() / time_in_sec);
 
-	if(num_per_sec >= 100000000000l)
+	if (num_per_sec < 0)
+		strcpy(buffer, "0");
+	else if(num_per_sec >= 100000000000l)
 		sprintf(buffer, "%.0fG", num_per_sec/1000000000.);
 	else if(num_per_sec >= 10000000000l)
 		sprintf(buffer, "%.1fG", num_per_sec/1000000000.);
@@ -611,7 +735,7 @@ PRIVATE void load_settings_from_db()
 {
 	sqlite3_stmt* _select_settings;
 
-	sqlite3_prepare_v2(db, "SELECT ID,Value FROM Settings;" , -1, &_select_settings, NULL);
+	sqlite3_prepare_v2(db, "SELECT ID,Value FROM Settings;", -1, &_select_settings, NULL);
 	
 	while(sqlite3_step(_select_settings) == SQLITE_ROW)
 		save_setting(sqlite3_column_int(_select_settings, 0), sqlite3_column_int(_select_settings, 1));
@@ -714,3 +838,28 @@ PUBLIC void clear_db_accounts()
 	memset(num_hashes_found_by_format, 0, num_formats*sizeof(int));
 	memset(num_user_by_formats, 0, num_formats*sizeof(int));
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Log
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#ifdef _WIN32
+#ifdef HS_TESTING
+#include <Windows.h>
+PUBLIC void hs_log(int priority, const char* tag, char* format_message, ...)
+{
+	va_list ap;
+	char log_buffer[128];
+
+	//if (priority == HS_LOG_ERROR)
+	{
+		//char* captions[] = { "DEBUG", "INFO", "WARNING", "ERROR" };
+		int icons[] = { MB_ICONINFORMATION, MB_ICONINFORMATION, MB_ICONWARNING, MB_ICONERROR };
+
+		va_start(ap, format_message);     /* Initialize variable arguments. */
+		vsprintf(log_buffer, format_message, ap);
+
+		MessageBox(NULL, log_buffer, tag, MB_OK | icons[priority]);
+	}
+}
+#endif
+#endif

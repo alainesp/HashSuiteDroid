@@ -4,6 +4,9 @@
 package com.hashsuite.droid;
 
 import android.app.Fragment;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.BatteryManager;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -28,6 +31,8 @@ public class StatusFragment extends Fragment
 	
 	private TextView current_attack;
 	private String current_attack_value;
+	
+	private TextView battery_temperature;
 
 	public StatusFragment()
 	{
@@ -55,6 +60,7 @@ public class StatusFragment extends Fragment
 			current_attack.setText(current_attack_value);
 
 		pb_attack = ((ProgressBar) rootView.findViewById(R.id.pb_attack));
+		battery_temperature = (TextView) rootView.findViewById(R.id.battery_temp);
 
 		return rootView;
 	}
@@ -72,6 +78,7 @@ public class StatusFragment extends Fragment
 		if(keys_tested != null) keys_tested.setText("---");
 		if(key_space != null)  key_space.setText("---");
 		if(pb_attack != null) {pb_attack.setIndeterminate(false); pb_attack.setProgress(1);}
+		if(battery_temperature != null) battery_temperature.setText("");
 	}
 	public void UpdateCurrentAttack(String attack_info)
 	{
@@ -103,6 +110,14 @@ public class StatusFragment extends Fragment
 			}
 			else
 				pb_attack.setIndeterminate(true);
+		}
+		
+		if(battery_temperature != null)
+		{
+			IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+			Intent batteryStatus = MainActivity.my_activity.registerReceiver(null, ifilter);
+			int battery_temp = batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1);
+			battery_temperature.setText(""+(battery_temp/10.)+"°C");
 		}
 	}
 }

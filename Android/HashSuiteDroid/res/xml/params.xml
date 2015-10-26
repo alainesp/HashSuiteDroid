@@ -1,16 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" >
     
-    <com.hashsuite.droid.RulesPreference
-        	android:key="pref_key_rules"
-        	android:defaultValue="32767"
-        	android:title="Active Rules"/>
-
-    <PreferenceCategory android:title="Hardware">
+    <PreferenceCategory
+        android:title="Hardware"
+        android:key="pref_key_hardware">
         
     <com.hashsuite.droid.ThreadsPreference
         android:key="pref_key_threads"
-        android:defaultValue="1"
         android:title="CPU Threads"
         android:icon="@drawable/ic_action_computer"
         android:dialogMessage="Please select the number of threads"/>
@@ -95,6 +91,14 @@
             android:title="Use rules"
             android:defaultValue="false"/>
         
+    </PreferenceCategory>
+    
+    <PreferenceCategory android:title="Rules">
+    <com.hashsuite.droid.RulesPreference
+        	android:key="pref_key_rules"
+        	android:defaultValue="32767"
+        	android:icon="@drawable/ic_rules"
+        	android:title="Active Rules"/>
     </PreferenceCategory>
 
 </PreferenceScreen>

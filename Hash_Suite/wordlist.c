@@ -56,8 +56,6 @@ PRIVATE __forceinline void COPY_GENERATE_KEY_PROTOCOL_NTLM_KEY(unsigned int* nt_
 												
 	for (j++; j < 14; j++)
 		nt_buffer[j*NUM_KEYS + index] = 0;
-
-	num_keys_served_from_save++;
 }
 
 PRIVATE int getline_uint0(unsigned int* buffer_in, unsigned int* buffer_out, unsigned int max_lenght)
@@ -243,7 +241,9 @@ PRIVATE void init_zip(const char* params, const char* resume_arg)
 	if(uf != NULL && resume_arg && strlen(resume_arg))
 	{
 		fpos_t pos = 0;
-		sscanf(resume_arg, "%lli", &current_pos);
+		int64_t tmp_pos;
+		sscanf(resume_arg, "%lli", &tmp_pos);
+		current_pos = tmp_pos;
 
 		while (pos < current_pos)
 		{
@@ -373,7 +373,9 @@ PRIVATE void init_gz(const char* params, const char* resume_arg)
 	if(gz_file != NULL && resume_arg && strlen(resume_arg))
 	{
 		fpos_t pos = 0;
-		sscanf(resume_arg, "%lli", &current_pos);
+		int64_t tmp_pos;
+		sscanf(resume_arg, "%lli", &tmp_pos);
+		current_pos = tmp_pos;
 
 		while (pos < current_pos)
 		{
@@ -502,7 +504,9 @@ PRIVATE void init_bz2(const char* params, const char* resume_arg)
 	if(wordlist != NULL && resume_arg && strlen(resume_arg))
 	{
 		fpos_t pos = 0;
-		sscanf(resume_arg, "%lli", &current_pos);
+		int64_t tmp_pos;
+		sscanf(resume_arg, "%lli", &tmp_pos);
+		current_pos = tmp_pos;
 
 		while (pos < current_pos)
 		{
@@ -610,7 +614,7 @@ PRIVATE UInt32 blockIndex_7z = 0xFFFFFFFF;		/* it can have any value before firs
 PRIVATE size_t offset = 0;
 PRIVATE size_t outBufferSize = 0;
 PRIVATE unsigned int file_index = 0;
-PRIVATE BOOL first_read_done;
+PRIVATE int first_read_done;
 
 PRIVATE void init_7zip(const char* params, const char* resume_arg)
 {
@@ -656,11 +660,13 @@ PRIVATE void init_7zip(const char* params, const char* resume_arg)
 	if(!end_of_file && resume_arg && strlen(resume_arg))
 	{
 		fpos_t pos = 0;
-		sscanf(resume_arg, "%lli", &current_pos);
+		int64_t tmp_pos;
+		sscanf(resume_arg, "%lli", &tmp_pos);
+		current_pos = tmp_pos;
 		
 		// Find the file
 		for(file_index = 0; file_index < db_7z.db.NumFiles; file_index++)
-			if ((pos + ((CSzFileItem*)(db_7z.db.Files + file_index))->Size) < (UINT64)current_pos)
+			if ((pos + ((CSzFileItem*)(db_7z.db.Files + file_index))->Size) < (UInt64)current_pos)
 				pos += ((CSzFileItem*)(db_7z.db.Files + file_index))->Size;
 			else
 				break;
@@ -761,7 +767,6 @@ PRIVATE void finish_7zip()
 /////////////////////////////////////////////////////////////////////////////////////
 // Common
 /////////////////////////////////////////////////////////////////////////////////////
-PRIVATE int wordlist_status;
 
 PUBLIC int is_wordlist_supported(const char* file_path, char* error_message)
 {
@@ -856,7 +861,6 @@ PRIVATE void wordlist_resume_common(int pmin_lenght, int pmax_lenght, char* para
 	sqlite3_step(_select_wordlists);
 	_filename = (const char*)sqlite3_column_text(_select_wordlists, 0);
 
-	wordlist_status = 0;
 	wordlist_lenght = 0;
 
 	max_lenght = pmax_lenght;
@@ -921,10 +925,12 @@ PUBLIC void wordlist_resume(int pmin_lenght, int pmax_lenght, char* params, cons
 	wordlist_resume_common(pmin_lenght, pmax_lenght, params, resume_arg, "SELECT FileName FROM WordList WHERE ID=?;");
 }
 
-PUBLIC int wordlist_generate_ntlm(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+void convert_utf8_2_coalesc(unsigned char* key, unsigned int* nt_buffer, unsigned int max_number, unsigned int len);
+
+PUBLIC int wordlist_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
 {
 	unsigned int i = 0;
-	int result = 1;
+	int result = max_number;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
@@ -944,21 +950,16 @@ PUBLIC int wordlist_generate_ntlm(unsigned int* nt_buffer, unsigned int max_numb
 	}
 
 	// Getting approximate key-space
-	wordlist_status++;
-	if(!result || wordlist_status >= 10)
-	{
-		wordlist_status = 0;
-		wordlist_func.calculate_completition();
-		num_key_space = (int64_t)(get_num_keys_served() * wordlist_completition);
-	}
+	wordlist_func.calculate_completition();
+	num_key_space = (int64_t)((get_num_keys_served() + result) * wordlist_completition);
 
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
 	return result;
 }
-PUBLIC int wordlist_generate_utf8_lm(unsigned char* keys, unsigned int max_number, int thread_id)
+PUBLIC int wordlist_gen_utf8_lm(unsigned char* keys, unsigned int max_number, int thread_id)
 {
 	unsigned int i = 0;
-	int result = 1;
+	int result = max_number;
 
 	memset(keys, 0, max_number*8);
 
@@ -977,41 +978,55 @@ PUBLIC int wordlist_generate_utf8_lm(unsigned char* keys, unsigned int max_numbe
 
 		current_key_lenght = line_lenght;
 		strncpy(keys, _strupr(current_key), max_lenght);
-		num_keys_served_from_save++;
 	}
 	// Getting approximate key-space
-	wordlist_status++;
-	if(!result || wordlist_status >= 10)
-	{
-		wordlist_status = 0;
-		wordlist_func.calculate_completition();
-		num_key_space = (int64_t)(get_num_keys_served() * wordlist_completition);
-	}
+	wordlist_func.calculate_completition();
+	num_key_space = (int64_t)((get_num_keys_served() + result) * wordlist_completition);
 
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
 	return result;
 }
-PUBLIC int wordlist_generate_utf8(unsigned char* keys, unsigned int max_number, int thread_id)
+PUBLIC int wordlist_gen_utf8(unsigned char* keys, unsigned int max_number, int thread_id)
 {
 	unsigned int i = 0;
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
 	thread_params[thread_id] = wordlist_func.get_position();
 
-	for(; i < max_number; i++, keys += MAX_KEY_LENGHT, num_keys_served_from_save++)
+	for(; i < max_number; i++, keys += MAX_KEY_LENGHT_SMALL)
 		if(wordlist_func.getline(keys, max_lenght) < 0)// All keys generated
 			break;
 
 	// Getting approximate key-space
-	wordlist_status++;
-	if(!i || wordlist_status >= 10)
-	{
-		wordlist_status = 0;
-		wordlist_func.calculate_completition();
-		num_key_space = (int64_t)(get_num_keys_served() * wordlist_completition);
-	}
+	wordlist_func.calculate_completition();
+	num_key_space = (int64_t)((get_num_keys_served()+i) * wordlist_completition);
 
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
+	return i;
+}
+PUBLIC int wordlist_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+{
+	unsigned int i = 0;
+	HS_ENTER_MUTEX(&key_provider_mutex);
+
+	thread_params[thread_id] = wordlist_func.get_position();
+
+	for (; i < max_number; i++)
+	{
+		int line_lenght = wordlist_func.getline(current_key, max_lenght);
+		// All keys generated
+		if (line_lenght < 0)
+			break;
+
+		// Copy key to nt_buffer
+		convert_utf8_2_coalesc(current_key, nt_buffer + i, max_number, line_lenght);
+	}
+
+	// Getting approximate key-space
+	wordlist_func.calculate_completition();
+	num_key_space = (int64_t)((get_num_keys_served() + i) * wordlist_completition);
+
+	HS_LEAVE_MUTEX(&key_provider_mutex);
 	return i;
 }
 
@@ -1035,7 +1050,7 @@ PUBLIC void wordlist_get_description(const char* provider_param, char* descripti
 PUBLIC unsigned int* word_pos = NULL;
 PUBLIC unsigned char* words = NULL;
 PUBLIC unsigned int num_words = 0;
-PRIVATE int current_sentence[MAX_KEY_LENGHT];
+PRIVATE int current_sentence[MAX_KEY_LENGHT_SMALL];
 PUBLIC unsigned int PHRASES_MAX_WORDS_READ = 410;
 
 #define WORD_POS_MASK		0x07ffffff
@@ -1048,8 +1063,6 @@ PUBLIC void sentence_resume(int pmin_lenght, int pmax_lenght, char* params, cons
 	int64_t pow_num;
 	int line_lenght;
 	unsigned char* last_word;
-	size_t num_word_pos_max;
-	size_t words_size_max;
 
 	wordlist_resume_common(pmin_lenght, pmax_lenght, params, NULL, "SELECT FileName FROM PhrasesWordList WHERE ID=?;");
 
@@ -1057,8 +1070,8 @@ PUBLIC void sentence_resume(int pmin_lenght, int pmax_lenght, char* params, cons
 	PHRASES_MAX_WORDS_READ = __min(PHRASES_MAX_WORDS_READ, WORD_POS_MASK-1);
 
 	// Calculate size
-	num_word_pos_max = __max(10 , __min(num_key_space  , PHRASES_MAX_WORDS_READ));
-	words_size_max	 = __max(270, __min(wordlist_lenght, PHRASES_MAX_WORDS_READ*12));
+	int64_t num_word_pos_max = __max(10, __min(num_key_space, PHRASES_MAX_WORDS_READ));
+	int64_t words_size_max = __max(270, __min(wordlist_lenght, PHRASES_MAX_WORDS_READ * 12));
 	// Create the wordlist in memory
 	word_pos = (unsigned int*)_aligned_malloc(num_word_pos_max*sizeof(unsigned int), 4096);
 	last_word = words = (unsigned char*)_aligned_malloc(words_size_max, 4096);
@@ -1075,7 +1088,7 @@ PUBLIC void sentence_resume(int pmin_lenght, int pmax_lenght, char* params, cons
 			current_sentence[current_key_lenght] = atoi(resume_pos);
 	}
 
-	line_lenght = wordlist_func.getline(last_word, 27);
+	line_lenght = wordlist_func.getline(last_word, formats[format_index].max_plaintext_lenght);
 	num_words = 0;
 
 	// Read line by line
@@ -1087,9 +1100,9 @@ PUBLIC void sentence_resume(int pmin_lenght, int pmax_lenght, char* params, cons
 			last_word += line_lenght + 1;
 			num_words++;
 			// Resize if overflow
-			if(((size_t)(last_word - words + 27)) >= words_size_max)
+			if((last_word - words + formats[format_index].max_plaintext_lenght) >= words_size_max)
 			{
-				words_size_max = (size_t)(words_size_max*1.3);
+				words_size_max = (int64_t)(words_size_max*1.3);
 				words = (unsigned char*)_aligned_realloc(words, words_size_max, 4096);
 				last_word = words + GET_WORD_POS(num_words-1) + line_lenght + 1;
 			}
@@ -1097,12 +1110,12 @@ PUBLIC void sentence_resume(int pmin_lenght, int pmax_lenght, char* params, cons
 			// Resize if overflow
 			if(num_words >= num_word_pos_max)
 			{
-				num_word_pos_max = (size_t)(num_words*1.3);
+				num_word_pos_max = (int64_t)(num_words*1.3);
 				word_pos = (unsigned int*)_aligned_realloc(word_pos, num_word_pos_max*sizeof(unsigned int), 4096);
 			}
 		}
 		// Next line
-		line_lenght = wordlist_func.getline(last_word, 27);
+		line_lenght = wordlist_func.getline(last_word, formats[format_index].max_plaintext_lenght);
 	}
 
 	key_providers[WORDLIST_INDEX].finish();
@@ -1141,15 +1154,15 @@ PUBLIC void sentence_resume(int pmin_lenght, int pmax_lenght, char* params, cons
 	//--------------------------------------------------------------------------
 }
 
-PUBLIC int sentence_generate_ntlm(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+PUBLIC int sentence_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
 {
 	unsigned int i, j;
 	int* save_sentence = ((int*)thread_params) + 32*thread_id;
-	unsigned char phrase[MAX_KEY_LENGHT+4];
-	unsigned char phrase_space[MAX_KEY_LENGHT+4];
+	unsigned char phrase[MAX_KEY_LENGHT_SMALL+4];
+	unsigned char phrase_space[MAX_KEY_LENGHT_SMALL+4];
 	unsigned int current_key_lenght1;
 	int my_max_number = max_number/2;
-	int current_sentence1[MAX_KEY_LENGHT];
+	int current_sentence1[MAX_KEY_LENGHT_SMALL];
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
@@ -1165,7 +1178,6 @@ PUBLIC int sentence_generate_ntlm(unsigned int* nt_buffer, unsigned int max_numb
 		save_sentence[31] = current_key_lenght;
 		memcpy(save_sentence, current_sentence, current_key_lenght*sizeof(int));
 		memcpy(current_sentence1, current_sentence, max_lenght*sizeof(int));
-		num_keys_served_from_save += max_number;
 
 		// Sum
 		i = current_key_lenght - 1;
@@ -1370,15 +1382,15 @@ PUBLIC int sentence_generate_ntlm(unsigned int* nt_buffer, unsigned int max_numb
 
 	return 1;
 }
-PUBLIC int sentence_generate_utf8(unsigned char* keys, unsigned int max_number, int thread_id)
+PUBLIC int sentence_gen_utf8(unsigned char* keys, unsigned int max_number, int thread_id)
 {
 	unsigned int i, j;
 	int* save_sentence = ((int*)thread_params) + 32*thread_id;
-	unsigned char phrase[MAX_KEY_LENGHT+4];
-	unsigned char phrase_space[MAX_KEY_LENGHT+4];
+	unsigned char phrase[MAX_KEY_LENGHT_SMALL+4];
+	unsigned char phrase_space[MAX_KEY_LENGHT_SMALL+4];
 	unsigned int current_key_lenght1;
 	int my_max_number = max_number/2;
-	int current_sentence1[MAX_KEY_LENGHT];
+	int current_sentence1[MAX_KEY_LENGHT_SMALL];
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
@@ -1394,7 +1406,6 @@ PUBLIC int sentence_generate_utf8(unsigned char* keys, unsigned int max_number, 
 		save_sentence[31] = current_key_lenght;
 		memcpy(save_sentence, current_sentence, current_key_lenght*sizeof(int));
 		memcpy(current_sentence1, current_sentence, max_lenght*sizeof(int));
-		num_keys_served_from_save += max_number;
 
 		// Sum
 		i = current_key_lenght - 1;
@@ -1516,9 +1527,9 @@ PUBLIC int sentence_generate_utf8(unsigned char* keys, unsigned int max_number, 
 		phrase[key_lenght_normal] = 0;
 		phrase_space[key_lenght_space] = 0;
 		strcpy(keys, phrase);
-		keys += MAX_KEY_LENGHT;
+		keys += MAX_KEY_LENGHT_SMALL;
 		strcpy(keys, phrase_space);
-		keys += MAX_KEY_LENGHT;
+		keys += MAX_KEY_LENGHT_SMALL;
 
 		// Next key
 		j = current_key_lenght1 - 1;
@@ -1543,7 +1554,175 @@ PUBLIC int sentence_generate_utf8(unsigned char* keys, unsigned int max_number, 
 
 	return max_number;
 }
-PUBLIC int sentence_generate_ocl(int* current_sentence1, unsigned int max_number, int thread_id)
+PUBLIC int sentence_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+{
+	unsigned int i, j;
+	int* save_sentence = ((int*)thread_params) + 32 * thread_id;
+	unsigned char phrase[MAX_KEY_LENGHT_BIG + 4];
+	unsigned char phrase_space[MAX_KEY_LENGHT_BIG + 4];
+	unsigned int current_key_lenght1;
+	int my_max_number = max_number / 2;
+	int current_sentence1[MAX_KEY_LENGHT_SMALL];
+
+	HS_ENTER_MUTEX(&key_provider_mutex);
+
+	if (current_key_lenght > max_lenght)
+	{
+		HS_LEAVE_MUTEX(&key_provider_mutex);
+		return 0;
+	}
+	else
+	{
+		// Copy all
+		current_key_lenght1 = current_key_lenght;
+		save_sentence[31] = current_key_lenght;
+		memcpy(save_sentence, current_sentence, current_key_lenght*sizeof(int));
+		memcpy(current_sentence1, current_sentence, max_lenght*sizeof(int));
+
+		// Sum
+		i = current_key_lenght - 1;
+		while (my_max_number)
+		{
+			current_sentence[i] += my_max_number%num_words;
+			my_max_number /= num_words;
+
+			if ((unsigned int)current_sentence[i] >= num_words)
+			{
+				my_max_number++;
+				current_sentence[i] -= num_words;
+			}
+
+			// Increase length
+			if (my_max_number && --i >= current_key_lenght)
+			{
+				memmove(current_sentence + 1, current_sentence, current_key_lenght*sizeof(int));
+				current_sentence[0] = 0;
+				current_key_lenght++;
+				my_max_number--;
+				i = 0;
+			}
+		}
+	}
+
+	HS_LEAVE_MUTEX(&key_provider_mutex);
+
+	for (i = 0; i < max_number / 2; i++)
+	{
+		unsigned char* key_normal = phrase;
+		unsigned char* key_space = phrase_space;
+
+		unsigned int word_pos_j = GET_WORD_POS(current_sentence1[0]);
+		unsigned int key_lenght_normal = GET_WORD_LEN(current_sentence1[0]);
+		unsigned int key_lenght_space = key_lenght_normal;
+
+		// Copy first word
+		HS_COPY_REG qword_copy = ((HS_COPY_REG*)(words + word_pos_j))[0];
+		((HS_COPY_REG*)key_normal)[0] = qword_copy;
+		((HS_COPY_REG*)key_space)[0] = qword_copy;
+		if (key_lenght_normal > HS_COPY_SIZE)
+			for (j = 1; j < (key_lenght_normal + (HS_COPY_SIZE - 1)) / HS_COPY_SIZE; j++)
+			{
+				qword_copy = ((HS_COPY_REG*)(words + word_pos_j))[j];
+				((HS_COPY_REG*)key_normal)[j] = qword_copy;
+				((HS_COPY_REG*)key_space)[j] = qword_copy;
+			}
+
+		key_normal += key_lenght_normal;
+		key_space += key_lenght_space;
+
+		// Create sentence
+		for (j = 1; j < current_key_lenght1; j++)
+		{
+			unsigned int lenght_j, k;
+
+			word_pos_j = GET_WORD_POS(current_sentence1[j]);
+			lenght_j = GET_WORD_LEN(current_sentence1[j]);
+
+			key_lenght_normal += lenght_j;
+			key_lenght_space += lenght_j + 1;
+
+			// Copy only words that fit
+			if (key_lenght_normal <= 27 && key_lenght_space <= 27)
+			{
+				*key_space = ' ';
+				key_space++;
+
+				// Copy word
+				qword_copy = *(HS_COPY_REG*)(words + word_pos_j);
+				*(HS_COPY_REG*)(key_normal) = qword_copy;
+				*(HS_COPY_REG*)(key_space) = qword_copy;
+				if (lenght_j > HS_COPY_SIZE)
+					for (k = 1; k < (lenght_j + (HS_COPY_SIZE - 1)) / HS_COPY_SIZE; k++)
+					{
+						qword_copy = ((HS_COPY_REG*)(words + word_pos_j))[k];
+						((HS_COPY_REG*)key_normal)[k] = qword_copy;
+						((HS_COPY_REG*)key_space)[k] = qword_copy;
+					}
+
+				key_normal += lenght_j;
+				key_space += lenght_j;
+			}
+			else
+			{
+				// Copy only words that fit
+				if (key_lenght_normal <= 27)
+				{
+					// Copy word
+					*(HS_COPY_REG*)(key_normal) = *(HS_COPY_REG*)(words + word_pos_j);
+					if (lenght_j > HS_COPY_SIZE)
+						for (k = 1; k < (lenght_j + (HS_COPY_SIZE - 1)) / HS_COPY_SIZE; k++)
+							((HS_COPY_REG*)key_normal)[k] = ((HS_COPY_REG*)(words + word_pos_j))[k];
+
+					key_normal += lenght_j;
+				}
+				else key_lenght_normal -= lenght_j;
+
+				// Copy only words that fit
+				if (key_lenght_space <= 27)
+				{
+					*key_space = ' ';
+					key_space++;
+
+					// Copy word
+					*(HS_COPY_REG*)(key_space) = *(HS_COPY_REG*)(words + word_pos_j);
+					if (lenght_j > HS_COPY_SIZE)
+						for (k = 1; k < (lenght_j + (HS_COPY_SIZE - 1)) / HS_COPY_SIZE; k++)
+							((HS_COPY_REG*)key_space)[k] = ((HS_COPY_REG*)(words + word_pos_j))[k];
+
+					key_space += lenght_j;
+				}
+				else key_lenght_space -= lenght_j + 1;
+			}
+		}
+
+		// Copy keys
+		convert_utf8_2_coalesc(phrase, nt_buffer + 2 * i, max_number, key_lenght_normal);
+		convert_utf8_2_coalesc(phrase_space, nt_buffer + 2 * i + 1, max_number, key_lenght_space);
+
+		// Next key
+		j = current_key_lenght1 - 1;
+		while (++current_sentence1[j] == num_words)
+		{
+			current_sentence1[j] = 0;
+
+			if (--j >= current_key_lenght1)
+			{
+				current_key_lenght1++;
+				if (current_key_lenght1 > max_lenght)
+					return 2 * i;
+				else
+				{
+					memmove(current_sentence1 + 1, current_sentence1, (current_key_lenght - 1)*sizeof(int));
+					current_sentence1[0] = 0;
+				}
+				break;
+			}
+		}
+	}
+
+	return max_number;
+}
+PUBLIC int sentence_gen_ocl(int* current_sentence1, unsigned int max_number, int thread_id)
 {
 	unsigned int i;
 	int* save_sentence = ((int*)thread_params) + 32*thread_id;
@@ -1564,7 +1743,6 @@ PUBLIC int sentence_generate_ocl(int* current_sentence1, unsigned int max_number
 		save_sentence[31] = current_key_lenght;
 		memcpy(current_sentence1+2, current_sentence, max_lenght*sizeof(int));
 		memcpy(save_sentence, current_sentence, current_key_lenght*sizeof(int));
-		num_keys_served_from_save += max_number*2;
 
 		// Sum
 		i = current_key_lenght - 1;
@@ -1583,7 +1761,6 @@ PUBLIC int sentence_generate_ocl(int* current_sentence1, unsigned int max_number
 					exceed_served += current_sentence[i]*pow;
 
 				exceed_served += (max_number-1)*pow;
-				num_keys_served_from_save -= 2*exceed_served;
 				current_sentence1[0] -= 2*exceed_served;
 				// Support only one length in each call
 				current_key_lenght++;

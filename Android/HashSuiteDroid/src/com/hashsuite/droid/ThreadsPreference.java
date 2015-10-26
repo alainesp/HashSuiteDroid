@@ -15,12 +15,22 @@ import android.widget.TextView;
 
 public class ThreadsPreference extends DialogPreference
 {
-    private static final int MIN_VALUE = 1;
- 
-    private int mMaxValue;
+    private static int MIN_VALUE = 1;
+    private static int MAX_VALUE = 1;
+    private static int num_gpus = 0;
     private int mValue;
     private NumberPicker mNumberPicker;
  
+    static{
+    	num_gpus = GPUInfo.GetGpusInfo().length;
+    	MIN_VALUE = num_gpus > 0 ? 0 : 1;
+    	MAX_VALUE = Runtime.getRuntime().availableProcessors();
+    }
+    public static int getDefaultValue()
+    {
+    	return Math.max(MAX_VALUE, 0);
+    }
+    
     public ThreadsPreference(Context context)
     {
         this(context, null);
@@ -31,24 +41,29 @@ public class ThreadsPreference extends DialogPreference
         super(context, attrs);
  
         // get attributes specified in XML
-        mMaxValue = Runtime.getRuntime().availableProcessors();
  
         // set layout
         setDialogLayoutResource(R.layout.number_picker_dialog_text);
         setDialogIcon(R.drawable.ic_action_computer);
         setPositiveButtonText("Set");
+        
+        setValue(getDefaultValue());
     }
  
     @Override
     protected void onSetInitialValue(boolean restore, Object defaultValue)
     {
-        setValue(restore ? getPersistedInt(Runtime.getRuntime().availableProcessors()) : (Integer) defaultValue);
+        setValue(restore ? getPersistedInt(getDefaultValue()) : getDefaultValue());
     }
  
     @Override
     protected Object onGetDefaultValue(TypedArray a, int index)
     {
-        return a.getInt(index, Runtime.getRuntime().availableProcessors());
+    	int value = getDefaultValue();
+    	
+    	//setValue(value);
+    	
+    	return value;
     }
  
     @Override
@@ -61,7 +76,7 @@ public class ThreadsPreference extends DialogPreference
  
         mNumberPicker = (NumberPicker) view.findViewById(R.id.number_picker);
         mNumberPicker.setMinValue(MIN_VALUE);
-        mNumberPicker.setMaxValue(mMaxValue);
+        mNumberPicker.setMaxValue(MAX_VALUE);
         mNumberPicker.setValue(mValue);
     }
  
@@ -72,7 +87,7 @@ public class ThreadsPreference extends DialogPreference
  
     public void setValue(int value)
     {
-        value = Math.max(Math.min(value, mMaxValue), MIN_VALUE);
+        value = Math.max(Math.min(value, MAX_VALUE), MIN_VALUE);
  
         if (value != mValue)
         {
@@ -80,9 +95,9 @@ public class ThreadsPreference extends DialogPreference
             persistInt(value);
             notifyChanged();
             if(mValue == 1)
-            	this.setSummary("Using " + mValue + " thread of " + mMaxValue);
+            	this.setSummary("Using " + mValue + " thread of " + MAX_VALUE);
             else
-            	this.setSummary("Using " + mValue + " threads of " + mMaxValue);
+            	this.setSummary("Using " + mValue + " threads of " + MAX_VALUE);
         }
     }
  
@@ -128,7 +143,6 @@ public class ThreadsPreference extends DialogPreference
  
         // restore the state
         SavedState myState = (SavedState) state;
-        mMaxValue = Runtime.getRuntime().availableProcessors();
         setValue(myState.value);
  
         super.onRestoreInstanceState(myState.getSuperState());

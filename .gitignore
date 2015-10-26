@@ -1,0 +1,8 @@
+# Ignore all
+/Android/aFileDialog/bin/
+/Android/aFileDialog/gen/
+/Android/HashSuiteDroid/bin/
+/Android/HashSuiteDroid/obj/
+/Android/HashSuiteDroid/libs/
+/Android/HashSuiteDroid/gen/
+

@@ -20,6 +20,10 @@ public class CharsetStringPreference extends DialogPreference
     
     static NameIDData[] charsets;
     CheckBox[] checkbos;
+    
+    static{
+    	charsets = NameIDData.getCharsets();
+    }
  
     public CharsetStringPreference(Context context)
     {
@@ -29,16 +33,15 @@ public class CharsetStringPreference extends DialogPreference
     static void setCharset(int selection)
     {
     	NameIDData.clearCharset();
-    	for (int i = 0; i < charsets.length; i++)
-        	if(getCheckedState(selection, i))
-        		NameIDData.addCharset(charsets[i].id);
+
+		for (int i = 0; i < charsets.length; i++)
+			if(getCheckedState(selection, i))
+				NameIDData.addCharset(charsets[i].id);
     }
  
     public CharsetStringPreference(Context context, AttributeSet attrs)
     {
         super(context, attrs);
-        
-        charsets = NameIDData.getCharsets();
 
         // set layout
         setDialogLayoutResource(R.layout.charset_string);

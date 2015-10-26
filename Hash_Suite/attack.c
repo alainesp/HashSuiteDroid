@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2014 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2015 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include <stdlib.h>
@@ -62,7 +62,7 @@ PRIVATE unsigned int num_passwords_found = 0;
 
 typedef struct FoundKey
 {
-	unsigned char cleartext[MAX_KEY_LENGHT];
+	unsigned char cleartext[MAX_KEY_LENGHT_BIG];
 	unsigned int elapsed;
 	unsigned int index;
 }FoundKey;
@@ -74,8 +74,30 @@ PRIVATE int current_num_keys;
 ////////////////////////////////////////////////////////////////////////////////////
 // General utilities
 ////////////////////////////////////////////////////////////////////////////////////
-PUBLIC clock_t start_time;
+PRIVATE clock_t start_time;
+PRIVATE unsigned int start_time_seconds;
 PUBLIC clock_t save_time;
+
+PUBLIC unsigned int seconds_since_start(int isTotal)
+{
+	unsigned int current_timespan;
+	clock_t now_time = clock();
+
+	// Overflow from positive to negative
+	if (start_time > now_time)
+		current_timespan = ((unsigned int)now_time) - start_time;
+	else
+		current_timespan = now_time - start_time;
+
+	unsigned int current_seconds = current_timespan / CLOCKS_PER_SEC;
+	unsigned int added_timespan = current_seconds*CLOCKS_PER_SEC;
+	unsigned int round_test = ((current_timespan - added_timespan) > (CLOCKS_PER_SEC / 2)) ? 1 : 0;
+
+	start_time_seconds += current_seconds;
+	start_time += added_timespan;
+
+	return start_time_seconds + round_test + (isTotal ? batch[current_attack_index].secs_before_this_attack : 0);
+}
 
 PRIVATE HS_MUTEX found_keys_mutex;
 PRIVATE sqlite3_stmt* save_state_update;
@@ -248,6 +270,19 @@ PRIVATE void load_hashes(int format_index)
 	sqlite3_finalize(count_hashes);
 	sqlite3_finalize(select_not_cracked);
 }
+typedef struct
+{
+	unsigned int keymic[4];
+	unsigned char prf_buffer[128];
+	unsigned char eapol[256+64];
+	unsigned int  eapol_blocks;
+	int           keyver;
+} hccap_bin;
+typedef struct {
+	uint32_t salt[4];
+	uint32_t rounds;
+	uint32_t sign_extension_bug;
+} BF_salt;
 PRIVATE void load_hashes_benchmark(int format_index)
 {
 	unsigned int current_index = 0, i;
@@ -304,10 +339,29 @@ PRIVATE void load_hashes_benchmark(int format_index)
 			bin_value[i] = rand() & 0xFF;
 		for(i = 0; i < formats[format_index].salt_size; i++)
 			salt_value[i] = rand() & 0xFF;
-		// 1/5 not random (simulate username)
-		memset(salt_value, 2, formats[format_index].salt_size/5);
-		if (format_index == DCC_INDEX || format_index == DCC2_INDEX)
-			((unsigned int*)salt_value)[10] = ((rand() % 19) + 1) << 4;
+		// Handle non-random salts-binary
+		switch (format_index)
+		{
+		case DCC_INDEX: case DCC2_INDEX:
+			// 1/5 not random (simulate username)
+			memset(salt_value, 2, formats[format_index].salt_size/5);
+			((unsigned int*)salt_value)[10] = ((rand() % 19) + 9) << 4;
+			break;
+		case WPA_INDEX:
+			((uint32_t*)salt_value)[15] = (64 + rand()%28 + 4) << 3;// Good lenght
+			hccap_bin* wpa_bin = (hccap_bin*)bin_value;
+			wpa_bin->keyver &= 1;// Random WPA/WPA2
+			wpa_bin->eapol_blocks = (wpa_bin->eapol_blocks & 3) + 1;// Sane eapol_blocks
+			break;
+		case BCRYPT_INDEX:
+			{
+			BF_salt* bf_salt = (BF_salt*)salt_value;
+			bf_salt->rounds = 1u << 5u;
+			// for 4 hashes generated only 1 had sign_extension_bug
+			bf_salt->sign_extension_bug = ((bf_salt->sign_extension_bug & 3) == 3);
+			}
+			break;
+		}
 
 		value_map = ((int*)bin_value)[0];
 		
@@ -361,24 +415,24 @@ PUBLIC void password_was_found(unsigned int index, unsigned char* cleartext)
 	HS_ENTER_MUTEX(&found_keys_mutex);
 
 	// TODO: Remove the password from the table
-	if(!is_found[index])
+	if (!is_found[index])
 	{
 		is_found[index] = TRUE;
 
 		num_passwords_found++;
 		num_hashes_found_by_format[batch[current_attack_index].format_index]++;
 
-		if(num_passwords_found >= num_passwords_loaded)
+		if (num_passwords_found >= num_passwords_loaded)
 			continue_attack = FALSE;
 
 		// If full->double capacity
-		if(current_num_keys == capacity)
+		if (current_num_keys == capacity)
 		{
-			capacity*= 2;
-			found_keys = realloc(found_keys, sizeof(FoundKey) * capacity);
+			capacity *= 2;
+			found_keys = realloc(found_keys, sizeof(FoundKey)* capacity);
 		}
 		found_keys[current_num_keys].index = index;
-		found_keys[current_num_keys].elapsed = SECONDS_SINCE(start_time);
+		found_keys[current_num_keys].elapsed = seconds_since_start(TRUE);
 		strcpy(found_keys[current_num_keys].cleartext, cleartext);
 		current_num_keys++;
 	}
@@ -389,21 +443,20 @@ PUBLIC void password_was_found(unsigned int index, unsigned char* cleartext)
 extern void* thread_params;// This is defined in key_provider.c
 extern unsigned int num_thread_params;
 PRIVATE CryptParam* crypto_params = NULL;
-PRIVATE void begin_crack(callback_funtion psend_message_gui)
+PUBLIC OpenCL_Param** ocl_crypt_ptr_params = NULL;
+PRIVATE void begin_crack(void* pset_start_time)
 {
 	unsigned int i, j;
 	int thread_id = 0;
+	int set_start_time = (int)pset_start_time;
 	// Find best implementations. Assume there is at least one compatible
 	perform_crypt_funtion* perform_crypt = NULL;
 	generate_key_funtion* generate = NULL;
 #ifdef HS_OPENCL_SUPPORT
 	// For GPU compilation and then execution
 	create_gpu_crypt_funtion* create_gpu_crypt = NULL;
-	OpenCL_Param** crypt_ptr_params = NULL;
 	gpu_crypt_funtion** crypt_ptr_func = NULL;
 #endif
-
-	send_message_gui = psend_message_gui;
 
 	if(is_benchmark)
 		load_hashes_benchmark(batch[current_attack_index].format_index);
@@ -411,8 +464,9 @@ PRIVATE void begin_crack(callback_funtion psend_message_gui)
 		load_hashes(batch[current_attack_index].format_index);
 	continue_attack = TRUE;
 
-	num_keys_served_from_save  = 0;
-	num_keys_served_from_start += batch[current_attack_index].num_keys_served;
+	//num_keys_served_from_save  = 0;
+	//num_keys_served_from_start += batch[current_attack_index].num_keys_served;
+	set_num_keys_save_add_start(0, batch[current_attack_index].num_keys_served);
 
 	key_providers[batch[current_attack_index].provider_index].resume(batch[current_attack_index].min_lenght, batch[current_attack_index].max_lenght, batch[current_attack_index].params, batch[current_attack_index].resume_arg, batch[current_attack_index].format_index);
 
@@ -437,12 +491,15 @@ out_opencl:
 	if(generate)
 	{
 		// For GPU first create all params to execution (create opencl code, compile...)
-		crypt_ptr_params = (OpenCL_Param**)malloc(sizeof(OpenCL_Param*)*num_gpu_devices);
+		ocl_crypt_ptr_params = (OpenCL_Param**)calloc(num_gpu_devices, sizeof(OpenCL_Param*));
 		crypt_ptr_func = (gpu_crypt_funtion**)malloc(sizeof(gpu_crypt_funtion*)*num_gpu_devices);
 
 		for(i = 0; i < num_gpu_devices; i++)
-			if(gpu_devices[i].is_used)
-				crypt_ptr_params[i] = create_gpu_crypt(i, generate, &(crypt_ptr_func[i]));
+			if (gpu_devices[i].flags & GPU_FLAG_IS_USED)
+			{
+				ocl_crypt_ptr_params[i] = (OpenCL_Param*)calloc(1, sizeof(OpenCL_Param));
+				create_gpu_crypt(ocl_crypt_ptr_params[i], i, generate, &(crypt_ptr_func[i]));
+			}
 	}
 #endif
 
@@ -466,9 +523,9 @@ out_opencl:
 out:
 #ifdef HS_OPENCL_SUPPORT
 	// Count total threads-----------------------------
-	if(crypt_ptr_params && crypt_ptr_func)
+	if(ocl_crypt_ptr_params && crypt_ptr_func)
 		for(i = 0; i < num_gpu_devices; i++)
-			if(gpu_devices[i].is_used && crypt_ptr_params[i])
+			if ((gpu_devices[i].flags & GPU_FLAG_IS_USED) && ocl_crypt_ptr_params[i])
 				num_threads++;
 #endif
 	// If is LM charset not implemented in GPU->use CPU
@@ -481,17 +538,16 @@ out:
 
 #ifdef HS_OPENCL_SUPPORT
 	// Then execute the GPU kernels
-	if(crypt_ptr_params && crypt_ptr_func)
+	if(ocl_crypt_ptr_params && crypt_ptr_func)
 	{
 		for(i = 0; i < num_gpu_devices; i++)
-			if(gpu_devices[i].is_used && crypt_ptr_params[i])
+			if ((gpu_devices[i].flags & GPU_FLAG_IS_USED) && ocl_crypt_ptr_params[i])
 			{
-				crypt_ptr_params[i]->thread_id = thread_id;
-				HS_NEW_THREAD(crypt_ptr_func[i], crypt_ptr_params[i]);
+				ocl_crypt_ptr_params[i]->thread_id = thread_id;
+				HS_NEW_THREAD(crypt_ptr_func[i], ocl_crypt_ptr_params[i]);
 				thread_id++;
 			}
 
-		free(crypt_ptr_params);
 		free(crypt_ptr_func);
 	}
 #endif
@@ -512,6 +568,12 @@ out:
 		}
 
 	save_time = clock();
+	if (set_start_time)
+	{
+		start_time = clock();
+		start_time_seconds = 0;
+	}
+	send_message_gui(MESSAGE_ATTACK_INIT_COMPLETE);
 }
 
 PRIVATE void save_passwords_found()
@@ -548,7 +610,7 @@ PUBLIC int save_attack_state()
 	//if(db_result != SQLITE_OK) return FALSE;
 
 	sqlite3_reset(save_state_update);
-	sqlite3_bind_int  (save_state_update, 1, SECONDS_SINCE(start_time) + batch[current_attack_index].secs_before_this_attack);
+	sqlite3_bind_int  (save_state_update, 1, seconds_since_start(TRUE));
 	sqlite3_bind_int64(save_state_update, 2, batch[current_attack_index].attack_db_id);
 	sqlite3_bind_text (save_state_update, 3, batch[current_attack_index].resume_arg, -1, SQLITE_STATIC);
 	sqlite3_bind_int64(save_state_update, 4, get_num_keys_served());
@@ -562,10 +624,9 @@ PUBLIC int save_attack_state()
 
 	save_time = clock();
 
-	HS_ENTER_MUTEX(&key_provider_mutex);
-	num_keys_served_from_start += num_keys_served_from_save;
-	num_keys_served_from_save = 0;
-	HS_LEAVE_MUTEX(&key_provider_mutex);
+	//num_keys_served_from_start += num_keys_served_from_save;
+	//num_keys_served_from_save = 0;
+	add_num_keys_from_save_to_start();
 
 	return TRUE;
 }
@@ -602,15 +663,15 @@ PRIVATE void cleanup_crack()
 
 	if(is_benchmark) return;
 
-	sqlite3_bind_int  (update_attack, 1, SECONDS_SINCE(start_time) + batch[current_attack_index].secs_before_this_attack);
+	sqlite3_bind_int  (update_attack, 1, seconds_since_start(TRUE));
 	sqlite3_bind_int64(update_attack, 2, batch[current_attack_index].attack_db_id);
 	sqlite3_bind_int64(update_attack, 3, get_num_keys_served());
 	sqlite3_step(update_attack);
 	sqlite3_finalize(update_attack);
 
-	free(thread_params);
+	free(thread_params); thread_params = NULL;
 	free(crypto_params);
-	thread_params = NULL;
+	free(ocl_crypt_ptr_params); ocl_crypt_ptr_params = NULL;
 }
 PUBLIC void finish_thread()
 {
@@ -624,18 +685,6 @@ PUBLIC void finish_thread()
 	{
 		int64_t key_space_before = 0;
 		BEGIN_TRANSACTION;
-		/*int first_error = TRUE;
-		while(BEGIN_TRANSACTION == SQLITE_BUSY)
-		{
-			sqlite3_exec(db, "ROLLBACK;", NULL, NULL, NULL);
-			if(first_error)
-			{
-				first_error = FALSE;
-				send_message_gui(MESSAGE_ERROR_IN_DB);
-			}
-			Sleep(1000);
-		}*/
-		//if(!first_error)
 
 		save_passwords_found();
 		cleanup_crack();
@@ -659,18 +708,38 @@ PUBLIC void finish_thread()
 
 		if(continue_attack && current_attack_index < num_attack_in_batch)
 		{
-			HS_ENTER_MUTEX(&key_provider_mutex);
-
 			// Number of keys trying in the batch
-			num_keys_served_from_start += num_keys_served_from_save;
-			num_keys_served_from_save = 0;
-			send_message_gui(MESSAGE_FINISH_ATTACK);
-			begin_crack(send_message_gui);
+			//num_keys_served_from_start += num_keys_served_from_save;
+			//num_keys_served_from_save = 0;
+			add_num_keys_from_save_to_start();
 
-			HS_LEAVE_MUTEX(&key_provider_mutex);
+			// Update the Begin of the attack
+			sqlite3_stmt* update_attack;
+			sqlite3_prepare_v2(db, "UPDATE Attack SET Begin=datetime('now') WHERE ID=?;", -1, &update_attack, NULL);
+			sqlite3_bind_int64(update_attack, 1, batch[current_attack_index].attack_db_id);
+			sqlite3_step(update_attack);
+			sqlite3_finalize(update_attack);
+
+			send_message_gui(MESSAGE_FINISH_ATTACK);
+			begin_crack(FALSE);
 		}
 		else
 		{
+			// Update all attacks in a batch if no more passwords
+			if (num_passwords_found == num_passwords_loaded)
+			{
+				sqlite3_stmt* update_attack;
+				sqlite3_prepare_v2(db, "UPDATE Attack SET End=datetime('now'),ElapsedTime=0,ResumeArg='',NumKeysServed=0 WHERE ID=?;", -1, &update_attack, NULL);
+				
+				for (int i = current_attack_index; i < num_attack_in_batch; i++)
+				{
+					sqlite3_reset(update_attack);
+					sqlite3_bind_int64(update_attack, 1, batch[i].attack_db_id);
+					sqlite3_step(update_attack);
+				}
+				
+				sqlite3_finalize(update_attack);
+			}
 			current_attack_index = last_index;
 			send_message_gui(MESSAGE_FINISH_BATCH);
 		}
@@ -755,14 +824,17 @@ PUBLIC void resume_crack(sqlite3_int64 db_id, callback_funtion psend_message_gui
 	
 	sqlite3_finalize(select_attack);
 
-	num_keys_served_from_start = 0;
-	num_keys_served_from_save = 0;
+	//num_keys_served_from_start = 0;
+	//num_keys_served_from_save = 0;
+	set_num_keys_zero();
 
 	// If there are attack not finished
-	if(current_attack_index != -1)
-		begin_crack(psend_message_gui);
-
-	start_time = clock();
+	if (current_attack_index != -1)
+	{
+		void* set_start_time = (void*)TRUE;
+		send_message_gui = psend_message_gui;
+		HS_NEW_THREAD(begin_crack, set_start_time);
+	}
 }
 
 // Method to split charset into optimized chunks
@@ -780,7 +852,7 @@ PRIVATE void create_batch(int format_index, int key_prov_index, int min_lenght, 
 
 	// Check that lengths are in range
 	batch[0].min_lenght = __min(__max(__min(max_lenght, min_lenght), key_providers[batch[0].provider_index].min_size), formats[batch[0].format_index].max_plaintext_lenght);
-	batch[0].max_lenght = __min(__min(max_lenght, formats[batch[0].format_index].max_plaintext_lenght), MAX_KEY_LENGHT);
+	batch[0].max_lenght = __min(max_lenght, formats[batch[0].format_index].max_plaintext_lenght);
 	batch[0].num_keys_served = 0;
 
 	// Put Params
@@ -875,11 +947,13 @@ PUBLIC int new_crack(int format_index, int key_prov_index, int min_lenght, int m
 		}
 	}
 
-	num_keys_served_from_start = 0;
-	num_keys_served_from_save = 0;
+	//num_keys_served_from_start = 0;
+	//num_keys_served_from_save = 0;
+	set_num_keys_zero();
 	
-	begin_crack(psend_message_gui);
-	start_time = clock();
+	void* set_start_time = (void*)TRUE;
+	send_message_gui = psend_message_gui;
+	HS_NEW_THREAD(begin_crack, set_start_time);
 
 	return TRUE;
 }

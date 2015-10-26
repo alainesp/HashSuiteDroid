@@ -144,11 +144,11 @@ Bool CPU_Is_InOrder()
 
 #if !defined(MY_CPU_AMD64) && defined(_WIN32)
 
-#if WINAPI_FAMILY==WINAPI_FAMILY_PHONE_APP
-BOOL WINAPI GetVersionEx(
-  _Inout_  LPOSVERSIONINFO lpVersionInfo
-);
-#endif
+//#if WINAPI_FAMILY==WINAPI_FAMILY_PHONE_APP
+//BOOL WINAPI GetVersionEx(
+//  _Inout_  LPOSVERSIONINFO lpVersionInfo
+//);
+//#endif
 
 static Bool CPU_Sys_Is_SSE_Supported()
 {

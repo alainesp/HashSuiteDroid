@@ -35,6 +35,7 @@
         android:max="100" />
 
 <TableLayout
+    android:id="@+id/import_table"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:paddingTop="8dp">
@@ -78,126 +79,6 @@
     <View
         android:layout_height="2dip"
         android:background="#000000" />
-
-    <TableRow
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content" >
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textStyle="bold"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:text="LM" />
-        
-        <TextView
-            android:id="@+id/lm_added"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingLeft="@dimen/activity_horizontal_margin"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:gravity="center_horizontal"
-            android:text="0" />
-
-        <TextView
-            android:id="@+id/lm_disable"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingLeft="@dimen/activity_horizontal_margin"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:gravity="center_horizontal"
-            android:text="0" />
-
-        <TextView
-            android:id="@+id/lm_exist"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingLeft="@dimen/activity_horizontal_margin"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:gravity="center_horizontal"
-            android:text="0" />
-
-    </TableRow>
-
-    <TableRow
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content" >
-
-         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textStyle="bold"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:text="NTLM" />
-         
-        <TextView
-            android:id="@+id/ntlm_added"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingLeft="@dimen/activity_horizontal_margin"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:gravity="center_horizontal"
-            android:text="0" />
-
-        <TextView
-            android:id="@+id/ntlm_disable"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingLeft="@dimen/activity_horizontal_margin"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:gravity="center_horizontal"
-            android:text="0" />
-
-        <TextView
-            android:id="@+id/ntlm_exist"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingLeft="@dimen/activity_horizontal_margin"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:gravity="center_horizontal"
-            android:text="0" />
-
-    </TableRow>
-    
-    <TableRow
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content" >
-        
-         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textStyle="bold"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:text="DCC" />
-
-        <TextView
-            android:id="@+id/dcc_added"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingLeft="@dimen/activity_horizontal_margin"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:gravity="center_horizontal"
-            android:text="0" />
-
-        <TextView
-            android:id="@+id/dcc_disable"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingLeft="@dimen/activity_horizontal_margin"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:gravity="center_horizontal"
-            android:text="0" />
-
-        <TextView
-            android:id="@+id/dcc_exist"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingLeft="@dimen/activity_horizontal_margin"
-            android:textAppearance='?android:attr/textAppearanceMedium'
-            android:gravity="center_horizontal"
-            android:text="0" />
-
-    </TableRow>
     
 </TableLayout>
 
