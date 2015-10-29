@@ -7050,7 +7050,7 @@ PUBLIC int rules_gen_common(unsigned int* nt_buffer, unsigned int NUM_KEYS, int 
 	if (!rules_data_buffer[RULES_IS_INIT_DATA_INDEX])
 	{
 		rules_data_buffer[RULES_IS_INIT_DATA_INDEX] = TRUE;
-		rules_data_buffer[CURRENT_RULE_INDEX] = INT_MAX;
+		rules_data_buffer[CURRENT_RULE_INDEX] = 0xffff;
 		rules_data_buffer[CHAR_ADDED_INDEX] = MIN_CHAR_ADDED;
 		rules_data_buffer[INSERT_POS_INDEX] = 1;
 		rules_data_buffer[DIGIT1_INDEX] = 48;

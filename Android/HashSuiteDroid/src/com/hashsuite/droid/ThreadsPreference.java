@@ -78,6 +78,17 @@ public class ThreadsPreference extends DialogPreference
         mNumberPicker.setMinValue(MIN_VALUE);
         mNumberPicker.setMaxValue(MAX_VALUE);
         mNumberPicker.setValue(mValue);
+        mNumberPicker.setFormatter(new NumberPicker.Formatter()
+		{
+			@Override
+			public String format(int value)
+			{
+				if(value == 1)
+					return "1 thread";
+				else
+					return ""+value+" threads";
+			}
+		});
     }
  
     public int getValue()

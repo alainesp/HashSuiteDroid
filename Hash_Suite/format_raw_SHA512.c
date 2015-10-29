@@ -732,7 +732,11 @@ PRIVATE void ocl_write_sha512_header_uint2(char* source, GPUDevice* gpu, cl_uint
 		break;
 	}
 #else
-	sprintf(source + strlen(source), "#define MAJ(b,c,d) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+	// Minor optimization
+	if (gpu->vendor == OCL_VENDOR_AMD && gpu->vector_int_size >= 4)
+		sprintf(source + strlen(source), "#define MAJ(c,b,d) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+	else
+		sprintf(source + strlen(source), "#define MAJ(b,c,d) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
 #endif
 	
 	// Definitions

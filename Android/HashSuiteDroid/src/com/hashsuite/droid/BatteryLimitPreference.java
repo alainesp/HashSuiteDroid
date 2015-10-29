@@ -14,12 +14,15 @@ import android.widget.NumberPicker;
 
 public class BatteryLimitPreference extends DialogPreference
 {
-    private static final int MIN_VALUE = 5;
-    private static final int MAX_VALUE = 90;
-    private static final int DEFAULT_VALUE = 20;
+    private static final int MIN_VALUE_PERCENT = 5;
+    private static final int MAX_VALUE_PERCENT = 90;
+    private static final int MIN_VALUE_TEMPERAURE = 25;
+    private static final int MAX_VALUE_TEMPERAURE = 70;
+    private static final int DEFAULT_VALUE_AGREGATE = 12820;// 50 | 20
  
-    private int mValue;
-    private NumberPicker mNumberPicker;
+    private int compact_value;
+    private NumberPicker np_percent;
+    private NumberPicker np_temperature;
  
     public BatteryLimitPreference(Context context)
     {
@@ -31,7 +34,7 @@ public class BatteryLimitPreference extends DialogPreference
         super(context, attrs);
  
         // set layout
-        setDialogLayoutResource(R.layout.number_picker_dialog);
+        setDialogLayoutResource(R.layout.battery_limits);
         setDialogIcon(R.drawable.ic_action_battery);
         setPositiveButtonText("Set");
     }
@@ -39,13 +42,13 @@ public class BatteryLimitPreference extends DialogPreference
     @Override
     protected void onSetInitialValue(boolean restore, Object defaultValue)
     {
-        setValue(restore ? getPersistedInt(DEFAULT_VALUE) : (Integer) defaultValue);
+        setValue(restore ? getPersistedInt(DEFAULT_VALUE_AGREGATE) : (Integer) defaultValue);
     }
  
     @Override
     protected Object onGetDefaultValue(TypedArray a, int index)
     {
-        return a.getInt(index, DEFAULT_VALUE);
+        return a.getInt(index, DEFAULT_VALUE_AGREGATE);
     }
  
     @Override
@@ -53,22 +56,48 @@ public class BatteryLimitPreference extends DialogPreference
     {
         super.onBindDialogView(view);
  
-        mNumberPicker = (NumberPicker) view.findViewById(R.id.number_picker);
-        mNumberPicker.setMinValue(MIN_VALUE);
-        mNumberPicker.setMaxValue(MAX_VALUE);
-        mNumberPicker.setValue(mValue);
+        np_percent = (NumberPicker) view.findViewById(R.id.np_battery_percent);
+        np_percent.setMinValue(MIN_VALUE_PERCENT);
+        np_percent.setMaxValue(MAX_VALUE_PERCENT);
+        np_percent.setFormatter(new NumberPicker.Formatter()
+		{
+			@Override
+			public String format(int value)
+			{
+				return ""+value+"%";
+			}
+		});
+        np_percent.setValue(compact_value & 0xff);
+        
+        np_temperature = (NumberPicker) view.findViewById(R.id.np_battery_temperature);
+        np_temperature.setMinValue(MIN_VALUE_TEMPERAURE);
+        np_temperature.setMaxValue(MAX_VALUE_TEMPERAURE);
+        np_temperature.setFormatter(new NumberPicker.Formatter()
+		{
+			@Override
+			public String format(int value)
+			{
+				return ""+value+"°C";
+			}
+		});
+        np_temperature.setValue(compact_value >> 8);
     }
  
     public void setValue(int value)
     {
-        value = Math.min(Math.max(value, MIN_VALUE), MAX_VALUE);
+    	// Test each value separetely
+    	int value_percent = value & 0xff;
+    	int value_temperature = value >> 8;
+    	value_percent = Math.min(Math.max(value_percent, MIN_VALUE_PERCENT), MAX_VALUE_PERCENT);
+    	value_temperature = Math.min(Math.max(value_temperature, MIN_VALUE_TEMPERAURE), MAX_VALUE_TEMPERAURE);
+    	value = value_percent + (value_temperature<<8);
  
-        if (value != mValue)
+        if (value != compact_value)
         {
-            mValue = value;
+        	compact_value = value;
             persistInt(value);
             notifyChanged();
-            this.setSummary("Stop attack if battery < " + mValue + "%");
+            this.setSummary("Stop if Level < " + (compact_value & 0xff) + "% or T > " + (compact_value >> 8) + "°C");
         }
     }
  
@@ -80,7 +109,7 @@ public class BatteryLimitPreference extends DialogPreference
         // when the user selects "OK", persist the new value
         if (positiveResult)
         {
-            int numberPickerValue = mNumberPicker.getValue();
+            int numberPickerValue = np_percent.getValue() + (np_temperature.getValue()<<8);
             if (callChangeListener(numberPickerValue))
             {
                 setValue(numberPickerValue);
@@ -96,7 +125,7 @@ public class BatteryLimitPreference extends DialogPreference
  
         // set the state's value with the class member that holds current setting value
         final SavedState myState = new SavedState(superState);
-        myState.value = mValue;
+        myState.value = compact_value;
  
         return myState;
     }
@@ -158,3 +187,4 @@ public class BatteryLimitPreference extends DialogPreference
         };
     }
 }
+

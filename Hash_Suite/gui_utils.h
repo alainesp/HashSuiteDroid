@@ -1782,7 +1782,7 @@ static void* random_body(void* unused)
 	is_testing = TRUE;
 	hs_log(HS_LOG_INFO, "Test Suite", "Random test begin.");
 
-	int format_index = BCRYPT_INDEX;
+	int format_index = LM_INDEX;
 	// Db Info
 	//random_body_cycle(format_index, DB_INFO_INDEX);
 
@@ -1795,7 +1795,7 @@ static void* random_body(void* unused)
 	}
 
 	// Charset
-	for (check_only_lenght = 1; check_only_lenght <= formats[format_index].max_plaintext_lenght; check_only_lenght++)
+	for (check_only_lenght = (format_index == LM_INDEX) ? 4 : 1; check_only_lenght <= formats[format_index].max_plaintext_lenght; check_only_lenght++)
 	{
 		//hs_log(HS_LOG_INFO, "Test Suite", "Charset random %i-%i", check_only_lenght, check_only_lenght);
 		is_charset_consecutive = FALSE;

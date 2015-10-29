@@ -136,6 +136,8 @@ PUBLIC sqlite3_int64 insert_hash_account(ImportParam* param, const char* user_na
 // Import hashes from file
 ////////////////////////////////////////////////////////////////////////////////////
 PRIVATE void import_wpa_from_pcap_file(ImportParam* param);
+PRIVATE void import_wpa_from_hccap_file(ImportParam* param);
+
 PRIVATE void import_file_general(ImportParam* param)
 {
 	char buffer[1024];
@@ -149,6 +151,11 @@ PRIVATE void import_file_general(ImportParam* param)
 	if (!memcmp(param->filename + len - 5, ".pcap", 5) || !memcmp(param->filename + len - 4, ".cap", 4))
 	{
 		import_wpa_from_pcap_file(param);
+		return;
+	}
+	if (!memcmp(param->filename + len - 6, ".hccap", 6))
+	{
+		import_wpa_from_hccap_file(param);
 		return;
 	}
 
@@ -1361,6 +1368,50 @@ release_resources:
 	param->isEnded = TRUE;
 }
 
+PRIVATE void import_wpa_from_hccap_file(ImportParam* param)
+{
+	continue_import = TRUE;
+
+	// All values to zero
+	memset(&param->result, 0, sizeof(param->result));
+
+	FILE* file = fopen(param->filename, "rb");
+
+	if (file)
+	{
+		lenght_of_file = _filelengthi64(fileno(file));
+		BEGIN_TRANSACTION;
+		sqlite3_int64 tag_id = insert_when_necesary_tag(param->tag);
+		hccap_t wpa;
+
+		while (fread(&wpa, sizeof(wpa), 1, file))
+		{
+			fgetpos(file, &pos_in_file);
+			param->completition = (int)(pos_in_file * 100 / lenght_of_file);
+
+			if (wpa.eapol_size < 256 && strlen(wpa.essid) < 36)
+			{
+				// Convert to string
+				char TmpKey[1024], *cp = TmpKey;
+				cp += sprintf(cp, "%s#", wpa.essid);
+
+				uint8_t* w = (uint8_t*)&wpa;
+				int i;
+				for (i = 36; i + 3 < sizeof(hccap_t); i += 3)
+					cp += code_block(&w[i], 1, cp);
+				cp += code_block(&w[i], 0, cp);
+
+				insert_hash_account(param, wpa.essid, TmpKey, WPA_INDEX, tag_id);
+			}
+		}
+			
+		END_TRANSACTION;
+		fclose(file);
+	}
+
+	param->completition = 100;
+	param->isEnded = TRUE;
+}
 ////////////////////////////////////////////////////////////////////////////////////
 // Export found passwords
 ////////////////////////////////////////////////////////////////////////////////////

@@ -13,9 +13,9 @@
     
     <com.hashsuite.droid.BatteryLimitPreference
         	android:key="pref_key_battery_limit"
-        	android:defaultValue="20"
+        	android:defaultValue="12820"
         	android:icon="@drawable/ic_action_battery"
-        	android:title="Battery Limit"/>
+        	android:title="Battery Limits"/>
     
     </PreferenceCategory>
     

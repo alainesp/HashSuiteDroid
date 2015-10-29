@@ -56,6 +56,14 @@ public class NumberPreference extends DialogPreference
         mNumberPicker.setMinValue(MIN_VALUE);
         mNumberPicker.setMaxValue(Integer.MAX_VALUE);
         mNumberPicker.setValue(mValue);
+        mNumberPicker.setFormatter(new NumberPicker.Formatter()
+		{
+			@Override
+			public String format(int value)
+			{
+				return ""+value+" words";
+			}
+		});
     }
  
     public void setValue(int value)

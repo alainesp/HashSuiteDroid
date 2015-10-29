@@ -371,7 +371,18 @@ PRIVATE void ocl_write_ntlm_header(char* source, GPUDevice* gpu, cl_uint ntlm_si
 		break;
 	}
 #else
-	sprintf(source + strlen(source), "#define MAJ(b,c,d) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+	// Minor optimization
+	if (gpu->vendor == OCL_VENDOR_AMD && gpu->vector_int_size >= 4)
+	{
+		if (num_passwords_loaded == 1)
+			sprintf(source + strlen(source), "#define MAJ(c,d,b) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+		else
+			sprintf(source + strlen(source), "#define MAJ(b,d,c) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+	}
+	else if (gpu->vendor == OCL_VENDOR_INTEL && num_passwords_loaded == 1)
+		sprintf(source + strlen(source), "#define MAJ(d,c,b) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+	else
+		sprintf(source + strlen(source), "#define MAJ(b,c,d) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
 #endif
 	
 	//Initial values

@@ -554,7 +554,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		FileChooserDialog dialog = new FileChooserDialog(this, "Select file to import (pwdump | cachedump | .db | .pcap | ...)", getLayoutInflater());
 
 		// Define the filter
-		dialog.setFilter(".*txt|.*db|.*pcap|.*cap");
+		dialog.setFilter(".*txt|.*db|.*pcap|.*cap|.*hccap");
 
 		// Assign listener for the select event.
 		dialog.addListener(new FileChooserDialog.OnFileSelectedListener()
@@ -682,6 +682,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	{
 		IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
 		Intent batteryStatus = my_activity.registerReceiver(null, ifilter);
+		int battery_temp = (batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) + 5) / 10;
 		int battery_status_val = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
 		int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
 		int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
@@ -700,19 +701,19 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		if(health==BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE)
 		{
 			StopAttack();
-			Toast.makeText(my_activity, "Battery over-voltage.", Toast.LENGTH_LONG).show();
+			Toast.makeText(my_activity, "Battery over-voltages.", Toast.LENGTH_LONG).show();
 			return false;
 		}
-		if(health==BatteryManager.BATTERY_HEALTH_OVERHEAT)
+		if(health==BatteryManager.BATTERY_HEALTH_OVERHEAT || battery_temp > ParamsFragment.getBatteryMaxTemperature())
 		{
 			StopAttack();
-			Toast.makeText(my_activity, "Battery overheat.", Toast.LENGTH_LONG).show();
+			Toast.makeText(my_activity, "Battery overheats.", Toast.LENGTH_LONG).show();
 			return false;
 		}
 		if(health==BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE)
 		{
 			StopAttack();
-			Toast.makeText(my_activity, "Battery had an unknow problem.", Toast.LENGTH_LONG).show();
+			Toast.makeText(my_activity, "Battery has an unknow problem.", Toast.LENGTH_LONG).show();
 			return false;
 		}
 		

@@ -502,12 +502,12 @@ PRIVATE void get_device_info_extended(int gpu_index)
 	// Vendor specific stuff
 	pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DEVICE_VENDOR, sizeof(gpu_devices[gpu_index].vendor_string), gpu_devices[gpu_index].vendor_string, NULL);
 
-#define ANDROID 1
-#ifdef ANDROID
-	pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, sizeof(cl_ulong), &gpu_devices[gpu_index].l1_cache_size, NULL);
-	gpu_devices[gpu_index].l1_cache_size /= 1024;
-	gpu_devices[gpu_index].l2_cache_size = gpu_devices[gpu_index].l1_cache_size;
+	// Cache
+	pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, sizeof(cl_ulong), &gpu_devices[gpu_index].l2_cache_size, NULL);
+	gpu_devices[gpu_index].l2_cache_size /= 1024;
 
+//#define ANDROID 1
+#ifdef ANDROID
 	if (strstr(gpu_devices[gpu_index].vendor_string, "QUALCOMM"))//Checked
 	{
 		gpu_devices[gpu_index].vendor_icon = 20;
@@ -751,11 +751,7 @@ error_out:
 
 		gpu_devices[gpu_index].vendor = OCL_VENDOR_NVIDIA;
 		gpu_devices[gpu_index].vendor_icon = 17;// Device icon based on device vendor
-
-		// Caches
-		pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, sizeof(cl_ulong), &gpu_devices[gpu_index].l1_cache_size, NULL);
-		gpu_devices[gpu_index].l1_cache_size /= 1024;
-		gpu_devices[gpu_index].l2_cache_size = gpu_devices[gpu_index].l1_cache_size;
+		gpu_devices[gpu_index].l1_cache_size = gpu_devices[gpu_index].l2_cache_size;
 
 		if( pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DEVICE_COMPUTE_CAPABILITY_MAJOR_NV, sizeof(cl_uint), &gpu_devices[gpu_index].major_cc, NULL) == CL_SUCCESS &&
 			pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DEVICE_COMPUTE_CAPABILITY_MINOR_NV, sizeof(cl_uint), &minor_cc, NULL) == CL_SUCCESS)
@@ -767,7 +763,10 @@ error_out:
 
 		// For good parallel instructions execution
 		if (gpu_devices[gpu_index].major_cc == 2 && minor_cc == 0)
-			gpu_devices[gpu_index].vector_int_size = 2;// TODO: check this number
+			gpu_devices[gpu_index].vector_int_size = 2;
+
+		if (gpu_devices[gpu_index].major_cc < 3)
+			GPU_SET_FLAG_DISABLE(gpu_devices[gpu_index].flags, GPU_FLAG_HAD_LM_UNROll);
 
 		// Check cuda API for more data
 		if(init_cuda())
@@ -869,9 +868,6 @@ error_out:
 		if (gpu_type == CL_DEVICE_TYPE_CPU)
 			gpu_devices[gpu_index].NUM_KEYS_OPENCL_DIVIDER *= 2;
 		gpu_devices[gpu_index].lm_work_group_size = 16;
-		// Cache
-		pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, sizeof(cl_ulong), &gpu_devices[gpu_index].l2_cache_size, NULL);
-		gpu_devices[gpu_index].l2_cache_size /= 1024;
 
 		// Make name more friendly
 		remove_str(gpu_devices[gpu_index].name, "(R)");
