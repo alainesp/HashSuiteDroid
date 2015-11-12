@@ -513,10 +513,21 @@ PRIVATE void get_device_info_extended(int gpu_index)
 		gpu_devices[gpu_index].vendor_icon = 20;
 		gpu_devices[gpu_index].vendor = OCL_VENDOR_QUALCOMM;
 		gpu_devices[gpu_index].NUM_KEYS_OPENCL_DIVIDER = 4;
-		GPU_SET_FLAG_DISABLE(gpu_devices[gpu_index].flags, GPU_FLAG_LM_USE_SHARED_MEMORY);
 		gpu_devices[gpu_index].flags |= GPU_FLAG_HAD_LM_UNROll;
 		GPU_SET_FLAG_DISABLE(gpu_devices[gpu_index].flags, GPU_FLAG_LM_REQUIRE_WORKGROUP);
-		gpu_devices[gpu_index].lm_compiler_options = "-qcom-sched-rule=2";
+		//gpu_devices[gpu_index].lm_compiler_options = "-qcom-sched-rule=2";
+
+		// Try to read the max GPU clock in a configuration file
+		FILE* gpu_freq = fopen("/sys/class/kgsl/kgsl-3d0/max_gpuclk", "r");
+		if(gpu_freq)
+		{
+			fgets(buffer_str, sizeof(buffer_str), gpu_freq);
+			fclose(gpu_freq);
+
+			cl_uint freq = atoll(buffer_str)/1000000;
+			if(freq)
+				gpu_devices[gpu_index].max_clock_frequency = __max(gpu_devices[gpu_index].max_clock_frequency, freq);
+		}
 
 		// Make name more friendly
 		pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DEVICE_VERSION, sizeof(buffer_str), buffer_str, NULL);
@@ -1119,7 +1130,7 @@ PUBLIC void release_opencl_param(OpenCL_Param* param)
 PUBLIC int build_opencl_program(OpenCL_Param* param, const char* source, char* compiler_options)
 {
 	cl_int code;
-	//clock_t init = clock();
+	//int64_t init = get_milliseconds();
 
 	// Perform runtime source compilation, and obtain kernel entry point.
 #ifndef ANDROID
@@ -1186,8 +1197,7 @@ PUBLIC int build_opencl_program(OpenCL_Param* param, const char* source, char* c
 		}
 #endif
 	
-	//clock_t duration = clock() - init;
-	//duration /= (CLOCKS_PER_SEC/1000);
+	//int64_t duration = get_milliseconds() - init;
 	//hs_log(HS_LOG_INFO, "Test Suite", "Build time: %i ms", (int)duration);
 
 	return TRUE;
@@ -2246,12 +2256,12 @@ PUBLIC void ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key
 	int bad_execution = FALSE;
 	cl_uint zero = 0;
 
-	clock_t init_kernel = clock(), duration_kernel;
+	int64_t init_kernel = get_milliseconds(), duration_kernel;
 	if (CL_SUCCESS != pclEnqueueNDRangeKernel(param->queue, param->kernels[0], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
 		bad_execution = TRUE;
 	if (CL_SUCCESS != pclFinish(param->queue))
 		bad_execution = TRUE;
-	duration_kernel = (clock() - init_kernel) * 1000 / CLOCKS_PER_SEC;
+	duration_kernel = get_milliseconds() - init_kernel;
 	if (!bad_execution && duration_kernel > (OCL_NORMAL_KERNEL_TIME * 4 / 3))
 		hs_log(HS_LOG_WARNING, "UTF8 to long", "UTF8 kernel duration: %ums", (cl_uint)duration_kernel);
 
@@ -2262,12 +2272,12 @@ PUBLIC void ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key
 		param->max_work_group_size /= 2;
 		bad_execution = FALSE;
 
-		init_kernel = clock();
+		init_kernel = get_milliseconds();
 		if (CL_SUCCESS != pclEnqueueNDRangeKernel(param->queue, param->kernels[0], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
 			bad_execution = TRUE;
 		if (CL_SUCCESS != pclFinish(param->queue))
 			bad_execution = TRUE;
-		duration_kernel = (clock() - init_kernel) * 1000 / CLOCKS_PER_SEC;
+		duration_kernel = get_milliseconds() - init_kernel;
 		if (!bad_execution && duration_kernel > (OCL_NORMAL_KERNEL_TIME * 4 / 3))
 			hs_log(HS_LOG_WARNING, "UTF8 to long", "UTF8 kernel duration: %ums", (cl_uint)duration_kernel);
 
@@ -3184,7 +3194,7 @@ out:
 
 	// Find working workgroup
 #define RULE_NUM_WORK_ITEMS_DIVIDER	16
-	clock_t init = clock();
+	int64_t init = get_milliseconds();
 	size_t num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(param->NUM_KEYS_OPENCL / RULE_NUM_WORK_ITEMS_DIVIDER, param->max_work_group_size);
 	size_t max_work_group_size = param->max_work_group_size;
 	cl_uint zero = 0;
@@ -3218,12 +3228,12 @@ out:
 
 				pclFinish(param->queue);
 
-				clock_t init_kernel = clock(), duration_kernel;
+				int64_t init_kernel = get_milliseconds(), duration_kernel;
 				if (CL_SUCCESS != pclEnqueueNDRangeKernel(param->queue, kernel, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
 					bad_execution = TRUE;
 				if (CL_SUCCESS != pclFinish(param->queue))
 					bad_execution = TRUE;
-				duration_kernel = (clock() - init_kernel)*RULE_NUM_WORK_ITEMS_DIVIDER * 1000 / CLOCKS_PER_SEC;
+				duration_kernel = (get_milliseconds() - init_kernel)*RULE_NUM_WORK_ITEMS_DIVIDER;
 				if (!bad_execution && duration_kernel > (OCL_NORMAL_KERNEL_TIME * 4 / 3))
 					hs_log(HS_LOG_WARNING, "Rules to long", "Rules kernel duration: %ums", (cl_uint)duration_kernel);
 
@@ -3235,12 +3245,12 @@ out:
 					bad_execution = FALSE;
 					pclFinish(param->queue);
 
-					init_kernel = clock();
+					init_kernel = get_milliseconds();
 					if (CL_SUCCESS != pclEnqueueNDRangeKernel(param->queue, kernel, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
 						bad_execution = TRUE;
 					if (CL_SUCCESS != pclFinish(param->queue))
 						bad_execution = TRUE;
-					duration_kernel = (clock() - init_kernel)*RULE_NUM_WORK_ITEMS_DIVIDER * 1000 / CLOCKS_PER_SEC;
+					duration_kernel = (get_milliseconds() - init_kernel)*RULE_NUM_WORK_ITEMS_DIVIDER;
 					if (!bad_execution && duration_kernel > (OCL_NORMAL_KERNEL_TIME * 4 / 3))
 						hs_log(HS_LOG_WARNING, "Rules to long", "Rules kernel duration: %ums", (cl_uint)duration_kernel);
 
@@ -3254,8 +3264,7 @@ out:
 	}
 	pclFinish(param->queue);
 
-	clock_t duration = clock() - init;
-	duration /= (CLOCKS_PER_SEC/1000);
+	int64_t duration = get_milliseconds() - init;
 	if (duration > 2000)
 		hs_log(HS_LOG_WARNING, "Test Suite", "Rule check good workgroup: %i ms", (int)duration);
 
@@ -3598,7 +3607,7 @@ PUBLIC void ocl_best_workgroup_pbkdf2(OpenCL_Param* param, int KERNEL_INDEX_PBKD
 	param->NUM_KEYS_OPENCL *= 2;
 
 	// Compare the scalar and vector version
-	clock_t init, scalar_duration, vector_duration;
+	int64_t init, scalar_duration, vector_duration;
 	size_t num_work_items = param->NUM_KEYS_OPENCL;
 	
 	int kernel_param = __min(scalar_param, vector_param);
@@ -3608,20 +3617,20 @@ PUBLIC void ocl_best_workgroup_pbkdf2(OpenCL_Param* param, int KERNEL_INDEX_PBKD
 	pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE], 1, NULL, &num_work_items, &scalar_workgroup, 0, NULL, NULL);
 	pclFinish(param->queue);
 	// Get scalar timespan
-	init = clock();
+	init = get_milliseconds();
 	pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE], 1, NULL, &num_work_items, &scalar_workgroup, 0, NULL, NULL);
 	pclFinish(param->queue);
-	scalar_duration = clock() - init;
+	scalar_duration = get_milliseconds() - init;
 
 	// Warm up
 	num_work_items /= 2;
 	pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE_VEC], 1, NULL, &num_work_items, &vector_workgroup, 0, NULL, NULL);
 	pclFinish(param->queue);
 	// Get vector timespan
-	init = clock();
+	init = get_milliseconds();
 	pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE_VEC], 1, NULL, &num_work_items, &vector_workgroup, 0, NULL, NULL);
 	pclFinish(param->queue);
-	vector_duration = clock() - init;
+	vector_duration = get_milliseconds() - init;
 
 	if (vector_duration < scalar_duration)
 	{

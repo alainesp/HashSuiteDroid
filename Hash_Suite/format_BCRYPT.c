@@ -1291,7 +1291,7 @@ PRIVATE void ocl_work_body(OpenCL_Param* param, int num_keys_filled, void* buffe
 #endif
 		for (cl_uint k = 0; continue_attack && k < salt->rounds; k+=num_iters)
 		{
-			//clock_t init = clock();
+			//int64_t init = get_milliseconds();
 #ifdef BF_USE_REGISTER_MEMORY
 			pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_BF_BODY_XOR_KEY], 1, NULL, &num_work_items    , &bf_body_workgroup, 0, NULL, NULL);
 			pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_BF_BODY_LOOP   ], 1, NULL, &reg_num_work_items, &bf_body_workgroup, 0, NULL, NULL);
@@ -1303,7 +1303,7 @@ PRIVATE void ocl_work_body(OpenCL_Param* param, int num_keys_filled, void* buffe
 #endif
 			// Report keys processed from time to time to maintain good Rate
 			pclFinish(param->queue);
-			//hs_log(HS_LOG_DEBUG, "Test Suite", "Time Loop: %ims", (clock()-init)*1000/CLOCKS_PER_SEC);
+			//hs_log(HS_LOG_DEBUG, "Test Suite", "Time Loop: %ims", get_milliseconds()-init);
 
 			processed_ks += 2*num_iters;
 			int num_keys_reported_add = (int)(num_keys_filled*processed_ks / total_ks) - num_keys_reported;
@@ -2252,13 +2252,12 @@ PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, ge
 	pclSetKernelArg(param->kernels[KERNEL_INDEX_BF_BODY_LOOP], 3, sizeof(num_iters), (void*)&num_iters);
 	pclFinish(param->queue);
 
-	clock_t init = clock();
+	int64_t init = get_milliseconds();
 
 	pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_BF_BODY_LOOP], 1, NULL, &num_work_items, &bf_body_workgroup, 0, NULL, NULL);
 	pclFinish(param->queue);
 
-	uint64_t duration = clock() - init;
-	duration = duration * 1000 / CLOCKS_PER_SEC;
+	uint64_t duration = get_milliseconds() - init;
 	change_value_proportionally(&num_iters, (cl_uint)(duration*3/4));
 
 	//hs_log(HS_LOG_DEBUG, "Bcrypt Loop", "num_iter:%i duration:%i Num Items: %i", num_iters, (int)duration, param->NUM_KEYS_OPENCL);

@@ -18,7 +18,6 @@
 #define NTLM_MAX_KEY_LENGHT	27
 
 // This is MIME Base64 (as opposed to crypt(3) encoding found in common.[ch])
-#define MIME_BASE64_ALPHABET "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 PRIVATE void base64_unmap(char *in_block)
 {
 	int i;
@@ -63,10 +62,10 @@ PRIVATE void base64_unmap(char *in_block)
 		*c = 0;
 	}
 }
-PRIVATE int base64_decode(char *in, int inlen, char *out)
+PUBLIC int base64_decode(const char *in, int inlen, char *out)
 {
 	int i;
-	char *in_block;
+	const char *in_block;
 	char *out_block;
 	char temp[4];
 
@@ -123,7 +122,7 @@ PRIVATE int is_valid(char* user_name, char* sha1, char* unused, char* unused1)
 			return TRUE;
 
 		// Netscape LDAP {SHA} also know as nsldap
-		if (sha1 && !memcmp(sha1, "{SHA}", 5) && valid_mime_base64_string(sha1 + 5, 28))
+		if (sha1 && !_strnicmp(sha1, "{SHA}", 5) && valid_mime_base64_string(sha1 + 5, 28))
 			return TRUE;
 	}
 
@@ -141,7 +140,7 @@ PRIVATE void add_hash_from_line(ImportParam* param, char* user_name, char* sha1,
 			insert_hash_account(param, "user", _strupr(user_name + 12), SHA1_INDEX, tag_id);
 
 		// Netscape LDAP {SHA} also know as nsldap
-		if (sha1 && !memcmp(sha1, "{SHA}", 5) && valid_mime_base64_string(sha1 + 5, 28))
+		if (sha1 && !_strnicmp(sha1, "{SHA}", 5) && valid_mime_base64_string(sha1 + 5, 28))
 		{
 			uint32_t sha1_bin[5];
 			char hex_sha1[41];

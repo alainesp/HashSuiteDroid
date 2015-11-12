@@ -4,7 +4,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
 #include <ctype.h>
 #include <math.h>
 #include <stdint.h>
@@ -39,6 +38,7 @@ extern Format dcc2_format;
 extern Format wpa_format;
 
 extern Format bcrypt_format;
+//extern Format ssha_format;
 #ifdef INCLUDE_DEVELOPING_FORMAT
 extern Format <name>_format;
 #endif
@@ -52,7 +52,41 @@ PUBLIC unsigned char hex_to_num[256];
 PUBLIC unsigned char base64_to_num[256];
 PRIVATE const char itoa64[64] = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <Windows.h>
+PRIVATE LARGE_INTEGER clock_freq;
+PUBLIC int64_t get_milliseconds()
+{
+	LARGE_INTEGER _now;
+	QueryPerformanceCounter(&_now);
+
+	return (_now.QuadPart + clock_freq.QuadPart / 2) / clock_freq.QuadPart;
+}
+#else
+#include <time.h>
+#include <sys/times.h>
+PUBLIC int64_t get_milliseconds()
+{
+	struct timespec _now;
+
+	clock_gettime(CLOCK_MONOTONIC, &_now);
+
+	return ((int64_t)_now.tv_sec)*1000 + (_now.tv_nsec+500000)/1000000;
+}
+// Compares n characters of two strings, ignoring case.
+PUBLIC int _strnicmp(char* string0, char* string1, int count)
+{
+	for (int i = 0; i < count; i++)
+	{
+		int char0 = tolower(string0[i]);
+		int char1 = tolower(string1[i]);
+
+		if(char0 != char1)
+			return (char0 < char1) ? -1 : 1;
+	}
+
+	return 0;
+}
 PUBLIC unsigned char* _strupr(unsigned char* string)
 {
 	unsigned char* ptr = string;
@@ -442,7 +476,8 @@ PRIVATE void formats_init(int db_already_initialize)
 	formats[WPA_INDEX] = wpa_format;
 
 	formats[BCRYPT_INDEX] = bcrypt_format;
-	num_formats = 10;
+	//formats[SSHA_INDEX] = ssha_format;
+	num_formats = 10;//11;
 #ifdef INCLUDE_DEVELOPING_FORMAT
 	formats[<name>_INDEX] = <name>_format;
 	num_formats++;
@@ -475,6 +510,12 @@ PUBLIC void init_all(const char* program_exe_path)
 	FILE* db_file = NULL;
 	int db_already_exits = FALSE;
 	detect_hardware();
+
+	// Windows high-resolution clock support
+#ifdef _WIN32
+	QueryPerformanceFrequency(&clock_freq);
+	clock_freq.QuadPart = (clock_freq.QuadPart + 500) / 1000;
+#endif
 
 	// Save path of program
 	if (program_exe_path)
@@ -590,12 +631,12 @@ PUBLIC char* finish_time()
 		strcpy(buffer, "Unknown");
 	else
 	{
-		double time_in_sec = (double)(clock() - save_time) / CLOCKS_PER_SEC;
+		double time_in_sec = (double)(get_milliseconds() - save_time) / 1000.;
 
 		int64_t num_keys_served_from_save, num_keys_served_from_start;
 		get_num_keys_served_ptr(&num_keys_served_from_save, &num_keys_served_from_start);
 
-		int64_t _secs = (int64_t)(num_keys_served_from_save ? 
+		int64_t _secs = llrint(num_keys_served_from_save ? 
 			((get_key_space_batch() - num_keys_served_from_start - num_keys_served_from_save) * time_in_sec / num_keys_served_from_save) : 
 			((get_key_space_batch() - num_keys_served_from_start - num_keys_served_from_save) * time_in_sec));
 		format_time(_secs);
@@ -605,8 +646,8 @@ PUBLIC char* finish_time()
 }
 PUBLIC char* password_per_sec(char* buffer)
 {
-	double time_in_sec = ((double)(clock() - save_time)) / CLOCKS_PER_SEC;
-	int64_t num_per_sec = (int64_t)(get_num_keys_served_from_save() / time_in_sec);
+	double time_in_sec = (double)(get_milliseconds() - save_time) / 1000.;
+	int64_t num_per_sec = llrint(get_num_keys_served_from_save() / time_in_sec);
 
 	if (num_per_sec < 0)
 		strcpy(buffer, "0");

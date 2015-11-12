@@ -68,7 +68,7 @@ PRIVATE void execute_bench_func(int bench_format_index, int show_index, int benc
 //#define BENCH_ONLY_CPU
 //#define BENCH_ONLY_GPU
 //#define BENCH_ONLY_ALL_GPU
-//#define BENCH_SLEEP_TIME	5000
+//#define BENCH_SLEEP_TIME	5000ll
 #ifdef USE_MAJ_SELECTOR
 PUBLIC extern "C" int MAJ_SELECTOR = -1;
 #endif

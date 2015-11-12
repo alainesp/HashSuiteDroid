@@ -6,7 +6,6 @@
 
 #include <limits.h>
 #include <string.h>
-#include <time.h>
 #include "Interface.h"
 
 #pragma warning(disable: 4996)
@@ -22,6 +21,7 @@
 #define PTR_SIZE_IN_BITS (sizeof(void*)*8)
 
 #ifndef _WIN32
+	int _strnicmp(char* string0, char* string1, int count);
 	unsigned char* _strupr(unsigned char *string);
 	unsigned char* _strlwr(unsigned char *string);
 	long long _filelengthi64(int file);
@@ -45,8 +45,8 @@ void swap_endianness_array(uint32_t* data, int count);
 extern unsigned char hex_to_num[];
 extern unsigned char base64_to_num[];
 
-//#define SECONDS_SINCE(init) ((int)((double)(clock() - init) / CLOCKS_PER_SEC + 0.5))
-extern clock_t save_time;
+//#define SECONDS_SINCE(init) ((int)((double)(get_milliseconds() - init) / 1000 + 0.5))
+extern int64_t save_time;
 unsigned int seconds_since_start(int isTotal);
 
 cl_uint is_power_2(cl_uint x);

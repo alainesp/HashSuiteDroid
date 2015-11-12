@@ -5,7 +5,6 @@
 #include "attack.h"
 #include <stdlib.h>
 
-#define FORMAT_NAME			"LM"
 #define PLAINTEXT_LENGTH	7
 #define BINARY_SIZE			8
 #define SALT_SIZE			0
@@ -4899,10 +4898,10 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 	{
 #ifdef ANDROID
 		// From here down cs are read only once
-		c_memory_space[34] = MEMORY_SHARED;
+		/*c_memory_space[34] = MEMORY_SHARED;
 		c_memory_space[35] = MEMORY_SHARED;
 		c_memory_space[38] = MEMORY_SHARED;
-		c_memory_space[39] = MEMORY_SHARED;
+		c_memory_space[39] = MEMORY_SHARED;*/
 										  
 		c_memory_space[42] = MEMORY_SHARED;
 		c_memory_space[43] = MEMORY_SHARED;
@@ -5973,29 +5972,27 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 		size_t num_work_items = param->NUM_KEYS_OPENCL;
 
 		// Warm up
-		clock_t init = clock();
+		int64_t init = get_milliseconds();
 		pclEnqueueNDRangeKernel(param->queue, param->kernels[max_lenght], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 		pclFinish(param->queue);
-		clock_t duration = clock() - init;
-		duration /= (CLOCKS_PER_SEC/1000);
+		int64_t duration = get_milliseconds() - init;
 		pclEnqueueWriteBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 0, sizeof(cl_uint), &local_num_found, 0, NULL, NULL);
 
 		if (duration > (OCL_NORMAL_KERNEL_TIME * 4 / 3) || duration < (OCL_NORMAL_KERNEL_TIME / 2))
 			hs_log(HS_LOG_WARNING, "LM calculate_best_work_group kernel",  "duration: %ums", (cl_uint)duration);
 
 		// Select a good num_work_items
-		change_value_proportionally(&param->NUM_KEYS_OPENCL, duration);
+		change_value_proportionally(&param->NUM_KEYS_OPENCL, (cl_uint)duration);
 		num_work_items = param->NUM_KEYS_OPENCL;
 
-		init = clock();
+		init = get_milliseconds();
 		pclEnqueueNDRangeKernel(param->queue, param->kernels[max_lenght], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 		pclFinish(param->queue);
-		duration = clock() - init;
-		duration /= (CLOCKS_PER_SEC/1000);
+		duration = get_milliseconds() - init;
 		pclEnqueueWriteBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 0, sizeof(cl_uint), &local_num_found, 0, NULL, NULL);
 
 		// Select a good num_work_items
-		change_value_proportionally(&param->NUM_KEYS_OPENCL, duration);
+		change_value_proportionally(&param->NUM_KEYS_OPENCL, (cl_uint)duration);
 
 		hs_log(HS_LOG_DEBUG, "LM calculate_best_work_group kernel", "duration: %ums\nkeys:%u\nwork_group_size:%u", (cl_uint)duration, param->NUM_KEYS_OPENCL, param->max_work_group_size);
 	}
@@ -6010,12 +6007,11 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 		
 		// Warm up
 		cl_uint blocksPerGrid = (param->NUM_KEYS_OPENCL + (cl_uint)param->max_work_group_size - 1) / (cl_uint)param->max_work_group_size;
-		clock_t init = clock(), duration;
+		int64_t init = get_milliseconds(), duration;
 		CUresult res = cuLaunchKernel(param->cu_kernels[max_lenght], blocksPerGrid, 1, 1, (unsigned int)param->max_work_group_size, 1, 1, 0, NULL, args, NULL);
 		if (res == CUDA_SUCCESS)
 			res = cuCtxSynchronize();
-		duration = clock() - init;
-		duration /= (CLOCKS_PER_SEC / 1000);
+		duration = get_milliseconds() - init;
 		cuMemcpyHtoD(param->cu_mems[GPU_OUTPUT], &lm_param_last_key, 4);
 
 		if (duration > (OCL_NORMAL_KERNEL_TIME * 4 / 3) || duration < (OCL_NORMAL_KERNEL_TIME / 2))
@@ -6023,21 +6019,20 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 
 		// Select a good num_work_items
 		if (res == CUDA_SUCCESS)
-			change_value_proportionally(&param->NUM_KEYS_OPENCL, duration);
+			change_value_proportionally(&param->NUM_KEYS_OPENCL, (cl_uint)duration);
 
 		// Final test
 		blocksPerGrid = (param->NUM_KEYS_OPENCL + (cl_uint)param->max_work_group_size - 1) / (cl_uint)param->max_work_group_size;
-		init = clock();
+		init = get_milliseconds();
 		res = cuLaunchKernel(param->cu_kernels[max_lenght], blocksPerGrid, 1, 1, (unsigned int)param->max_work_group_size, 1, 1, 0, NULL, args, NULL);
 		if (res == CUDA_SUCCESS)
 			res = cuCtxSynchronize();
-		duration = clock() - init;
-		duration /= (CLOCKS_PER_SEC / 1000);
+		duration = get_milliseconds() - init;
 		cuMemcpyHtoD(param->cu_mems[GPU_OUTPUT], &lm_param_last_key, 4);
 
 		// Select a good num_work_items
 		if (res == CUDA_SUCCESS)
-			change_value_proportionally(&param->NUM_KEYS_OPENCL, duration);
+			change_value_proportionally(&param->NUM_KEYS_OPENCL, (cl_uint)duration);
 
 		hs_log(HS_LOG_DEBUG, "LM calculate_best_work_group kernel", "duration: %ums\nkeys:%u\nwork_group_size:%u", (cl_uint)duration, param->NUM_KEYS_OPENCL, param->max_work_group_size);
 		cuCtxPopCurrent(&param->cu_context);
@@ -6380,7 +6375,7 @@ PRIVATE OpenCL_Param* ocl_protocol_charset_init(cl_uint gpu_index, generate_key_
 
 PRIVATE int bench_values[] = {1,10,100,1000,10000,65536,100000,1000000};
 Format lm_format = {
-	FORMAT_NAME,
+	"LM",
 	"DES based.",
 	PLAINTEXT_LENGTH,
 	BINARY_SIZE,

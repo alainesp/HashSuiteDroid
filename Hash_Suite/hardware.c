@@ -135,20 +135,27 @@ PRIVATE void get_os_display_string()
 			RtlGetNtVersionNumbers* pRtlGetNtVersionNumbers = (RtlGetNtVersionNumbers*)GetProcAddress(GetModuleHandle(TEXT("ntdll.dll")), "RtlGetNtVersionNumbers");
 			if (pRtlGetNtVersionNumbers)
 				pRtlGetNtVersionNumbers(&osvi.dwMajorVersion, &osvi.dwMinorVersion, &osvi.dwBuildNumber);
+
 			osvi.dwBuildNumber &= 0x00003fff;
+			current_system_info.major_version = osvi.dwMajorVersion;
+			current_system_info.minor_version = osvi.dwMinorVersion;
 		}
+		if(osvi.dwMajorVersion > 6)
+			strcat(current_system_info.os, osvi.wProductType == VER_NT_WORKSTATION ? "Windows 10 " : "Windows Server 2016 ");
+		else
+		{
+			if (osvi.dwMinorVersion == 0)
+				strcat(current_system_info.os, osvi.wProductType == VER_NT_WORKSTATION ? "Windows Vista " : "Windows Server 2008 ");
 
-		if( osvi.dwMinorVersion == 0 )
-			strcat(current_system_info.os, osvi.wProductType == VER_NT_WORKSTATION ? "Windows Vista " : "Windows Server 2008 ");
+			if (osvi.dwMinorVersion == 1)
+				strcat(current_system_info.os, osvi.wProductType == VER_NT_WORKSTATION ? "Windows 7 " : "Windows Server 2008 R2 ");
 
-		if( osvi.dwMinorVersion == 1 )
-			strcat(current_system_info.os, osvi.wProductType == VER_NT_WORKSTATION ? "Windows 7 " : "Windows Server 2008 R2 ");
-			
-		if( osvi.dwMinorVersion == 2 )
-			strcat(current_system_info.os, osvi.wProductType == VER_NT_WORKSTATION ? "Windows 8 " : "Windows Server 2012 ");
-			
-		if( osvi.dwMinorVersion == 3 )
-			strcat(current_system_info.os, osvi.wProductType == VER_NT_WORKSTATION ? "Windows 8.1 " : "Windows Server 2012 R2 ");
+			if (osvi.dwMinorVersion == 2)
+				strcat(current_system_info.os, osvi.wProductType == VER_NT_WORKSTATION ? "Windows 8 " : "Windows Server 2012 ");
+
+			if (osvi.dwMinorVersion == 3)
+				strcat(current_system_info.os, osvi.wProductType == VER_NT_WORKSTATION ? "Windows 8.1 " : "Windows Server 2012 R2 ");
+		}
 
 		pGPI = (PGPI) GetProcAddress( GetModuleHandle(TEXT("kernel32.dll")), "GetProductInfo");
 		pGPI( osvi.dwMajorVersion, osvi.dwMinorVersion, 0, 0, &dwType);

@@ -682,13 +682,13 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	{
 		IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
 		Intent batteryStatus = my_activity.registerReceiver(null, ifilter);
-		int battery_temp = (batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) + 5) / 10;
-		int battery_status_val = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-		int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
-		int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+		int battery_temp = batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 200);
+		int battery_status_val = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_DISCHARGING);
+		int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, 0);
+		int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, 1);
 		
 		boolean isDischarging = battery_status_val == BatteryManager.BATTERY_STATUS_DISCHARGING;
-		int batteryPct = 100*level /scale;
+		int batteryPct = 100*level/scale;
 		
 		if(isDischarging && batteryPct < ParamsFragment.getBatteryLimit())
 		{
@@ -704,7 +704,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			Toast.makeText(my_activity, "Battery over-voltages.", Toast.LENGTH_LONG).show();
 			return false;
 		}
-		if(health==BatteryManager.BATTERY_HEALTH_OVERHEAT || battery_temp > ParamsFragment.getBatteryMaxTemperature())
+		if(health==BatteryManager.BATTERY_HEALTH_OVERHEAT || battery_temp > (ParamsFragment.getBatteryMaxTemperature()*10))
 		{
 			StopAttack();
 			Toast.makeText(my_activity, "Battery overheats.", Toast.LENGTH_LONG).show();
@@ -1374,7 +1374,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			
 			// Set the url
 			TextView url_hs = (TextView)about.findViewById(R.id.visit_website);
-			url_hs.setText(Html.fromHtml("<a href=\"http://hashsuite.openwall.net\">Hash Suite Website</a>"));
+			url_hs.setText(Html.fromHtml("<a href=\"http://hashsuite.openwall.net/android\">Hash Suite Website</a>"));
 			url_hs.setMovementMethod(LinkMovementMethod.getInstance());
 			
 			try

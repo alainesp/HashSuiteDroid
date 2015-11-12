@@ -4,7 +4,6 @@
 #include "common.h"
 #include <stdlib.h>
 #include <memory.h>
-#include <time.h>
 #include <stdio.h>
 
 #ifdef _WIN32
@@ -74,29 +73,12 @@ PRIVATE int current_num_keys;
 ////////////////////////////////////////////////////////////////////////////////////
 // General utilities
 ////////////////////////////////////////////////////////////////////////////////////
-PRIVATE clock_t start_time;
-PRIVATE unsigned int start_time_seconds;
-PUBLIC clock_t save_time;
+PRIVATE int64_t start_time;
+PUBLIC int64_t save_time;
 
-PUBLIC unsigned int seconds_since_start(int isTotal)
+PUBLIC uint32_t seconds_since_start(int isTotal)
 {
-	unsigned int current_timespan;
-	clock_t now_time = clock();
-
-	// Overflow from positive to negative
-	if (start_time > now_time)
-		current_timespan = ((unsigned int)now_time) - start_time;
-	else
-		current_timespan = now_time - start_time;
-
-	unsigned int current_seconds = current_timespan / CLOCKS_PER_SEC;
-	unsigned int added_timespan = current_seconds*CLOCKS_PER_SEC;
-	unsigned int round_test = ((current_timespan - added_timespan) > (CLOCKS_PER_SEC / 2)) ? 1 : 0;
-
-	start_time_seconds += current_seconds;
-	start_time += added_timespan;
-
-	return start_time_seconds + round_test + (isTotal ? batch[current_attack_index].secs_before_this_attack : 0);
+	return (uint32_t)((get_milliseconds() - start_time+500) / 1000 + (isTotal ? batch[current_attack_index].secs_before_this_attack : 0));
 }
 
 PRIVATE HS_MUTEX found_keys_mutex;
@@ -283,6 +265,7 @@ typedef struct {
 	uint32_t rounds;
 	uint32_t sign_extension_bug;
 } BF_salt;
+#include <time.h>
 PRIVATE void load_hashes_benchmark(int format_index)
 {
 	unsigned int current_index = 0, i;
@@ -567,12 +550,10 @@ out:
 			HS_NEW_THREAD(perform_crypt, crypto_params+thread_id);
 		}
 
-	save_time = clock();
+	save_time = get_milliseconds();
 	if (set_start_time)
-	{
-		start_time = clock();
-		start_time_seconds = 0;
-	}
+		start_time = get_milliseconds();
+
 	send_message_gui(MESSAGE_ATTACK_INIT_COMPLETE);
 }
 
@@ -622,7 +603,7 @@ PUBLIC int save_attack_state()
 
 	END_TRANSACTION;
 
-	save_time = clock();
+	save_time = get_milliseconds();
 
 	//num_keys_served_from_start += num_keys_served_from_save;
 	//num_keys_served_from_save = 0;

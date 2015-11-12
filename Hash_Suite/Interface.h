@@ -147,7 +147,7 @@ typedef void callback_funtion(int message);
 // Formats
 ////////////////////////////////////////////////////////////////////////////////////
 #ifndef INCLUDE_DEVELOPING_FORMAT
-#define MAX_NUM_FORMATS 10
+#define MAX_NUM_FORMATS 11
 #endif
 
 #define LM_INDEX        0
@@ -160,6 +160,7 @@ typedef void callback_funtion(int message);
 #define DCC2_INDEX		7
 #define WPA_INDEX		8
 #define BCRYPT_INDEX	9
+#define SSHA_INDEX		10
 
 // Protocols
 #define PROTOCOL_UTF8_LM					1
@@ -412,6 +413,7 @@ extern int* num_user_by_formats;
 void init_all(const char* program_exe_path);
 void init_opencl();
 // Other common funtions
+int64_t get_milliseconds();
 char* get_full_path(char* filename);
 void itoaWithDigitGrouping(int64_t number, char* str);
 void filelength2string(int64_t length, char* str);
@@ -558,7 +560,7 @@ typedef struct GPUStatus
 
 typedef struct nvmlDevice_st* nvmlDevice_t;
 
-#define GPU_FLAG_IS_USED				(1<<0)
+#define GPU_FLAG_IS_USED				1
 #define GPU_FLAG_SUPPORT_STATUS_INFO	(1<<1)
 #define GPU_FLAG_NATIVE_BITSELECT		(1<<2)
 #define GPU_FLAG_SUPPORT_PTX			(1<<3)

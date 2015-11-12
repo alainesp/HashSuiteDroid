@@ -46,7 +46,7 @@ typedef struct
 #define WPA_PREFIX_LEN	8
 PRIVATE int wpa_line_is_valid(char* hccap, char* unused0, char* unused, char* unused1)
 {
-	if (hccap && !memcmp(hccap, WPA_PREFIX, WPA_PREFIX_LEN))
+	if (hccap && !_strnicmp(hccap, WPA_PREFIX, WPA_PREFIX_LEN))
 	{
 		hccap += WPA_PREFIX_LEN;
 		char* base64 = strchr(hccap, '#');
@@ -76,7 +76,7 @@ PRIVATE void add_hash_from_line(ImportParam* param, char* hccap, char* unused0, 
 {
 	char essid[64];
 
-	if (hccap && !memcmp(hccap, WPA_PREFIX, WPA_PREFIX_LEN))
+	if (hccap && !_strnicmp(hccap, WPA_PREFIX, WPA_PREFIX_LEN))
 	{
 		hccap += WPA_PREFIX_LEN;
 		char* base64 = strchr(hccap, '#');
