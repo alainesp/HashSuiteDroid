@@ -23,15 +23,18 @@
 	PRIVATE sqlite3_stmt* insert_account;
 #endif
 PUBLIC sqlite3_stmt* insert_account_lm;
-PRIVATE sqlite3_stmt* select_account;
 PRIVATE sqlite3_stmt* insert_tag_account;
 PRIVATE sqlite3_stmt* insert_hash;
-PRIVATE sqlite3_stmt* select_hash;
+PUBLIC sqlite3_stmt* select_hash1;
 
 PRIVATE fpos_t lenght_of_file;
 PRIVATE fpos_t pos_in_file;
 
 PUBLIC int continue_import;
+
+// in_hashtable.cpp
+uint32_t exist_hashes_find(int format_index, void* binary, uint32_t expected_num_hashes);
+void exist_hashes_insert(int format_index, void* binary, uint32_t db_id);
 
 // Insert tag if not exists and return his id
 PUBLIC sqlite3_int64 insert_when_necesary_tag(const char* tag)
@@ -54,7 +57,7 @@ PUBLIC sqlite3_int64 insert_when_necesary_tag(const char* tag)
 	return tag_id;
 }
 // Insert a new account and tag it
-PRIVATE sqlite3_int64 insert_tagged_account(const char* user_name, sqlite3_int64 tag_id, sqlite3_int64 hash_id, ImportResult* stat, int format_index)
+PRIVATE sqlite3_int64 insert_tagged_account(const char* user_name, sqlite3_int64 hash_id, ImportResult* stat, int format_index)
 {
 	sqlite3_int64 account_id;
 
@@ -68,67 +71,58 @@ PRIVATE sqlite3_int64 insert_tagged_account(const char* user_name, sqlite3_int64
 		account_id = sqlite3_last_insert_rowid(db);
 		stat->num_users_added++;
 
-		num_user_by_formats[format_index]++;
+		num_user_by_formats1[format_index]++;
 	}
-	else// account already exist
-	{
-		sqlite3_reset(select_account);
-		sqlite3_bind_text (select_account, 1, user_name, -1, SQLITE_STATIC);
-		sqlite3_bind_int64(select_account, 2, hash_id);
-		sqlite3_step(select_account);
-
-		account_id = sqlite3_column_int64(select_account, 0);
-	}
-
-	// Insert tag_account
-	sqlite3_reset(insert_tag_account);
-	sqlite3_bind_int64(insert_tag_account, 1, tag_id);
-	sqlite3_bind_int64(insert_tag_account, 2, account_id);
-	sqlite3_step(insert_tag_account);
 
 	return account_id;
 }
 // insert a hash if not exist
-PUBLIC sqlite3_int64 insert_hash_if_necesary(const char* hex, sqlite3_int64 format_id, ImportResultFormat* hash_stat)
+PUBLIC sqlite3_int64 insert_hash_if_necesary(const char* hex, sqlite3_int64 format_index, ImportResultFormat* hash_stat)
 {
-	sqlite3_int64 hash_id;
+	uint32_t bin_size = formats[format_index].binary_size + formats[format_index].salt_size;
+	BYTE* bin = (BYTE*)malloc(bin_size);
+	formats[format_index].convert_to_binary(hex, bin, bin + formats[format_index].binary_size);
 
-	// Insert hash
-	sqlite3_reset(insert_hash);
-	sqlite3_bind_text(insert_hash, 1, hex, -1, SQLITE_STATIC);
-	sqlite3_bind_int64(insert_hash, 2, format_id);
-
-	// Not exist
-	if(sqlite3_step(insert_hash) == SQLITE_DONE)
+	sqlite3_int64 hash_id = exist_hashes_find((int)format_index, bin, (uint32_t)__min(0xffffffff, (lenght_of_file - pos_in_file) / (strlen(hex) + 1)));
+	if (hash_id == NO_ELEM)
 	{
-		hash_id = sqlite3_last_insert_rowid(db);
+		// Insert hash
+		sqlite3_reset(insert_hash);
+		sqlite3_bind_blob(insert_hash, 1, bin, bin_size, SQLITE_STATIC);
+		sqlite3_bind_int64(insert_hash, 2, formats[format_index].db_id);
 
-		hash_stat->num_hash_added++;
+		// Not exist
+		if (sqlite3_step(insert_hash) == SQLITE_DONE)
+		{
+			hash_id = sqlite3_last_insert_rowid(db);
 
-		num_hashes_by_formats[find_format_index(format_id)]++;
+			hash_stat->num_hash_added++;
+			num_hashes_by_formats1[format_index]++;
+
+			exist_hashes_insert((int)format_index, bin, (uint32_t)hash_id);
+		}
+		else
+			hash_id = -1;
 	}
 	else
 	{
-		// Select Hash
-		sqlite3_reset(select_hash);
-		sqlite3_bind_text (select_hash, 1, hex, -1, SQLITE_STATIC);
-		sqlite3_bind_int64(select_hash, 2, format_id);
-		sqlite3_step(select_hash);
-		hash_id = sqlite3_column_int64(select_hash, 0);
-
 		hash_stat->num_hash_exist++;
 	}
+	free(bin);
 
 	return hash_id;
 }
 
-PUBLIC sqlite3_int64 insert_hash_account(ImportParam* param, const char* user_name, const char* ciphertext, int db_index, sqlite3_int64 tag_id)
+PUBLIC sqlite3_int64 insert_hash_account1(ImportParam* param, const char* user_name, const char* ciphertext, int db_index)
 {
 	// Insert hash
-	sqlite3_int64 hash_id = insert_hash_if_necesary(ciphertext, formats[db_index].db_id, param->result.formats_stat + db_index);
+	sqlite3_int64 hash_id = insert_hash_if_necesary(ciphertext, db_index, param->result.formats_stat + db_index);
 
 	// Insert tagged account
-	return insert_tagged_account(user_name, tag_id, hash_id, &param->result, db_index);
+	if(user_name)
+		return insert_tagged_account(user_name, hash_id, &param->result, db_index);
+
+	return -1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -136,7 +130,39 @@ PUBLIC sqlite3_int64 insert_hash_account(ImportParam* param, const char* user_na
 ////////////////////////////////////////////////////////////////////////////////////
 PRIVATE void import_wpa_from_pcap_file(ImportParam* param);
 PRIVATE void import_wpa_from_hccap_file(ImportParam* param);
+PRIVATE void import_wpa_from_hccapx_file(ImportParam* param);
 
+PRIVATE void my_strtok_s(char* str, char** out, int out_size)
+{
+	int num_tokens = 0;
+	out[0] = str;
+
+	for (int i = 1; i < out_size; i++)
+		out[i] = NULL;
+
+	char current_character = *str;
+	while (current_character)
+	{
+		if (current_character == ':')
+		{
+			*str = 0;
+			num_tokens++;
+			if (num_tokens >= out_size)
+				break;
+			str++;
+			out[num_tokens] = str;
+		}
+		else if (current_character == '\r' || current_character == '\n')
+		{
+			*str = 0;
+			break;
+		}
+		else
+			str++;
+
+		current_character = *str;
+	}
+}
 PRIVATE void import_file_general(ImportParam* param)
 {
 	char buffer[1024];
@@ -144,17 +170,24 @@ PRIVATE void import_file_general(ImportParam* param)
 	int is_valid_line[MAX_NUM_FORMATS];
 	int is_rejected[MAX_NUM_FORMATS];
 	continue_import = TRUE;
+	lenght_of_file = 0;
+	pos_in_file = 0;
 
 	// Check if is a PCAP capture file
 	size_t len = strlen(param->filename);
-	if (!memcmp(param->filename + len - 5, ".pcap", 5) || !memcmp(param->filename + len - 4, ".cap", 4))
+	if ((len > 5 && !memcmp(param->filename + len - 5, ".pcap", 5)) || (len > 4 && !memcmp(param->filename + len - 4, ".cap", 4)))
 	{
 		import_wpa_from_pcap_file(param);
 		return;
 	}
-	if (!memcmp(param->filename + len - 6, ".hccap", 6))
+	if (len > 6 && !memcmp(param->filename + len - 6, ".hccap", 6))
 	{
 		import_wpa_from_hccap_file(param);
+		return;
+	}
+	if (len > 7 && !memcmp(param->filename + len - 7, ".hccapx", 7))
+	{
+		import_wpa_from_hccapx_file(param);
 		return;
 	}
 
@@ -170,25 +203,23 @@ PRIVATE void import_file_general(ImportParam* param)
 
 		BEGIN_TRANSACTION;
 
-		sqlite3_int64 tag_id = insert_when_necesary_tag(param->tag);
+		sqlite3_int64 firstHashId = -1, lastHashId = -1;
 
 		while (fgets(buffer, sizeof(buffer), file) && continue_import)
 		{
 			int valid_formats = 0;
 			int valid_format_index = 0;
-			char* next_token = NULL;
+			char* tokens[4];
 
+			pos_in_file += strlen(buffer);
 			strcpy(line, buffer);
-			char* user_name = strtok_s(buffer, ":\n\r", &next_token);
-			char* p0 = strtok_s(NULL, ":\n\r", &next_token);
-			char* p1 = strtok_s(NULL, ":\n\r", &next_token);
-			char* p2 = strtok_s(NULL, ":\n\r", &next_token);
+			my_strtok_s(buffer, tokens, LENGHT(tokens));
 
 			// Check if format support this line
 			memset(is_valid_line, 0, sizeof(is_valid_line));
 			for (int i = 0; i < num_formats; i++)
 			{
-				is_valid_line[i] = formats[i].is_valid_line(user_name, p0, p1, p2);
+				is_valid_line[i] = formats[i].is_valid_line(tokens[0], tokens[1], tokens[2], tokens[3]);
 				if (is_valid_line[i])
 				{
 					valid_formats++;
@@ -220,12 +251,29 @@ PRIVATE void import_file_general(ImportParam* param)
 			}
 			
 			if (valid_formats == 1)
-				formats[valid_format_index].add_hash_from_line(param, user_name, p0, p1, p2, tag_id);
+			{
+				sqlite3_int64 insertId = formats[valid_format_index].add_hash_from_line(param, tokens[0], tokens[1], tokens[2], tokens[3]);
+				if (insertId >= 0)
+				{
+					lastHashId = insertId;
+					if (firstHashId < 0) firstHashId = insertId;
+				}
+			}
 			else
 				param->result.lines_skiped++;
 
-			fgetpos(file, &pos_in_file);
 			param->completition = (int)(pos_in_file * 100 / lenght_of_file);
+		}
+
+		// Save tags
+		if (firstHashId >= 0 && lastHashId >= 0)
+		{
+			// Insert tag_account
+			sqlite3_reset(insert_tag_account);
+			sqlite3_bind_int64(insert_tag_account, 1, insert_when_necesary_tag(param->tag));
+			sqlite3_bind_int64(insert_tag_account, 2, firstHashId);
+			sqlite3_bind_int64(insert_tag_account, 3, lastHashId);
+			sqlite3_step(insert_tag_account);
 		}
 
 		END_TRANSACTION;
@@ -234,6 +282,7 @@ PRIVATE void import_file_general(ImportParam* param)
 	}
 
 	param->isEnded = TRUE;
+	param->completition = 100;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -290,7 +339,7 @@ PRIVATE void update_account_status(char* machine_name)
 	}
 
 	// Select account
-	sqlite3_prepare_v2(db, "SELECT Account.ID FROM Account INNER JOIN TagAccount ON TagAccount.AccountID==Account.ID INNER JOIN Tag ON Tag.ID==TagAccount.TagID WHERE Tag.Name==? AND UserName==?;", -1, &_select_account, NULL);
+	sqlite3_prepare_v2(db, "SELECT Account.ID FROM Account INNER JOIN TagAccount ON (TagAccount.FirstAccountID<=Account.ID AND TagAccount.LastAccountID>=Account.ID) INNER JOIN Tag ON Tag.ID==TagAccount.TagID WHERE Tag.Name==? AND UserName==?;", -1, &_select_account, NULL);
 	sqlite3_prepare_v2(db, "UPDATE Account SET Fixed=1 WHERE ID=?;", -1, &_update_account_fixed, NULL);
 	sqlite3_prepare_v2(db, "UPDATE Account SET Privilege=? WHERE ID=?;", -1, &_update_account_priv, NULL);
 	BEGIN_TRANSACTION;
@@ -354,15 +403,16 @@ PRIVATE DWORD named_pipe_thread(char* pipe_name, char* machine_name, ImportResul
 {
 	char buffer[4096];
 	unsigned char shared_key[32];
-	unsigned int nonce[2];
-	unsigned int block_counter = 0;
+	uint32_t nonce[2];
+	uint32_t block_counter = 0;
 	DWORD exit_code = 0;
 	HANDLE hFile;
 	DWORD cbRead;
-	unsigned int i;
+	uint32_t i;
 	int to_process = 0, data_to_read, to_decrypt;
 	// Inserting
-	sqlite3_int64 tag_id, hash_id, hash_id2, account_id;
+	sqlite3_int64 hash_id, hash_id2, account_id;
+	sqlite3_int64 firstHashId = -1, lastHashId = -1;
 
 	int nError = 2, wait_count = 0;
 	while (nError == 2 && wait_count < 100)// Wait 30 sec for pipe server to be ready
@@ -392,7 +442,6 @@ PRIVATE DWORD named_pipe_thread(char* pipe_name, char* machine_name, ImportResul
 	if(hFile == INVALID_HANDLE_VALUE) return EXIT_NO_PIPE;
 
 	BEGIN_TRANSACTION;
-	tag_id = insert_when_necesary_tag(machine_name);
 
 	// Read public key
 	data_to_read = ReadFile(hFile, buffer, 32+8, &cbRead, NULL) || GetLastError() == ERROR_MORE_DATA;
@@ -402,7 +451,7 @@ PRIVATE DWORD named_pipe_thread(char* pipe_name, char* machine_name, ImportResul
 	// Read data and Decrypt
 	data_to_read = ReadFile(hFile, buffer, sizeof(buffer), &cbRead, NULL) || GetLastError() == ERROR_MORE_DATA;
 	for(i = 0; i < cbRead/64; i++, block_counter++)
-		salsa20_crypt_block(buffer+i*64, nonce, (unsigned int*)shared_key, block_counter);
+		salsa20_crypt_block(buffer+i*64, nonce, (uint32_t*)shared_key, block_counter);
 	to_decrypt = cbRead%64;
 	cbRead -= to_decrypt;
 	// Message is composed
@@ -436,9 +485,14 @@ PRIVATE DWORD named_pipe_thread(char* pipe_name, char* machine_name, ImportResul
 				sprintf(p, "%02X", _buffer_ptr[i]  & 0xFF);
 
 			// Insert hash ntlm
-			hash_id = insert_hash_if_necesary(ntlm, formats[NTLM_INDEX].db_id, result->formats_stat + NTLM_INDEX);
+			hash_id = insert_hash_if_necesary(ntlm, NTLM_INDEX, result->formats_stat + NTLM_INDEX);
 			// Insert tagged account
-			account_id = insert_tagged_account(user_name, tag_id, hash_id, result, NTLM_INDEX);
+			account_id = insert_tagged_account(user_name, hash_id, result, NTLM_INDEX);
+			if (account_id >= 0)
+			{
+				lastHashId = account_id;
+				if (firstHashId < 0) firstHashId = account_id;
+			}
 
 			if(strcmp(lm, "AAD3B435B51404EEAAD3B435B51404EE") || !strcmp(ntlm, "31D6CFE0D16AE931B73C59D7E0C089C0"))
 			{
@@ -446,10 +500,10 @@ PRIVATE DWORD named_pipe_thread(char* pipe_name, char* machine_name, ImportResul
 				lm_part[16] = 0;// Null terminate it
 				// Insert hash lm
 				strncpy(lm_part, lm, 16);
-				hash_id  = insert_hash_if_necesary(lm_part, formats[LM_INDEX].db_id, result->formats_stat + LM_INDEX);
+				hash_id  = insert_hash_if_necesary(lm_part, LM_INDEX, result->formats_stat + LM_INDEX);
 
 				strncpy(lm_part, lm + 16, 16);
-				hash_id2 = insert_hash_if_necesary(lm_part, formats[LM_INDEX].db_id, result->formats_stat + LM_INDEX);
+				hash_id2 = insert_hash_if_necesary(lm_part, LM_INDEX, result->formats_stat + LM_INDEX);
 
 				// Insert account lm
 				sqlite3_reset(insert_account_lm);
@@ -458,7 +512,7 @@ PRIVATE DWORD named_pipe_thread(char* pipe_name, char* machine_name, ImportResul
 				sqlite3_bind_int64(insert_account_lm, 3, hash_id2);
 				sqlite3_step(insert_account_lm);
 
-				num_user_by_formats[LM_INDEX]++;
+				num_user_by_formats1[LM_INDEX]++;
 			}
 			else
 				result->formats_stat[LM_INDEX].num_hash_disable++;
@@ -473,11 +527,21 @@ PRIVATE DWORD named_pipe_thread(char* pipe_name, char* machine_name, ImportResul
 		data_to_read = ReadFile(hFile, buffer+to_process+to_decrypt, sizeof(buffer)-to_process-to_decrypt, &cbRead, NULL) || GetLastError() == ERROR_MORE_DATA;
 		cbRead += to_decrypt;
 		for(i = 0; i < cbRead/64; i++, block_counter++)
-			salsa20_crypt_block(buffer+to_process+i*64, nonce, (unsigned int*)shared_key, block_counter);
+			salsa20_crypt_block(buffer+to_process+i*64, nonce, (uint32_t*)shared_key, block_counter);
 		to_decrypt = cbRead%64;
 		cbRead -= to_decrypt;
 	}
 
+	// Save tags
+	if (firstHashId >= 0 && lastHashId >= 0)
+	{
+		// Insert tag_account
+		sqlite3_reset(insert_tag_account);
+		sqlite3_bind_int64(insert_tag_account, 1, insert_when_necesary_tag(machine_name));
+		sqlite3_bind_int64(insert_tag_account, 2, firstHashId);
+		sqlite3_bind_int64(insert_tag_account, 3, lastHashId);
+		sqlite3_step(insert_tag_account);
+	}
 	END_TRANSACTION;
 	CloseHandle(hFile);
 
@@ -498,6 +562,8 @@ PRIVATE void import_hash_dump(ImportParam* param, BOOL is_local)
 	// All values to zero
 	memset(&param->result, 0, sizeof(param->result));
 	param->completition = IMPORT_COMPLETITION_UNKNOW;
+	lenght_of_file = 0;
+	pos_in_file = 0;
 
 	// Crypt
 	if(!CryptAcquireContext(&hprov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT|CRYPT_SILENT))
@@ -819,7 +885,7 @@ PRIVATE int code_block(unsigned char *in, unsigned char b, char *cp)
 	*cp = 0;
 	return cnt+3;
 }
-PRIVATE void DumpKey(WPA4way_t* wpa, int one_three, int bIsQOS, ImportParam* param, sqlite3_int64 tag_id)
+PRIVATE sqlite3_int64 DumpKey(WPA4way_t* wpa, int one_three, int bIsQOS, ImportParam* param)
 {
 	ether_auto_802_1x_t *auth13, *auth2;
 	uint8_t *p = (uint8_t*)wpa->packet2;
@@ -830,7 +896,7 @@ PRIVATE void DumpKey(WPA4way_t* wpa, int one_three, int bIsQOS, ImportParam* par
 	char TmpKey[1024], *cp = TmpKey;
 
 	cp += sprintf (cp, "%s#", wpa->essid);
-	if (!wpa->packet2) { return; }
+	if (!wpa->packet2) { return -1; }
 	if (bIsQOS)
 		p += 2;
 	p += 8;
@@ -838,10 +904,10 @@ PRIVATE void DumpKey(WPA4way_t* wpa, int one_three, int bIsQOS, ImportParam* par
 	auth2 = (ether_auto_802_1x_t*)p;
 	if (one_three==1)
 	{
-		if (!wpa->packet1) { return; }
+		if (!wpa->packet1) { return -1; }
 		p = wpa->packet1;	 
 	} else  {					 
-		if (!wpa->packet3) { return; }
+		if (!wpa->packet3) { return -1; }
 		p = wpa->packet3;
 	}
 	p13 = p;
@@ -873,9 +939,9 @@ PRIVATE void DumpKey(WPA4way_t* wpa, int one_three, int bIsQOS, ImportParam* par
 		cp += code_block(&w[i], 1, cp);
 	cp += code_block(&w[i], 0, cp);
 
-	insert_hash_account(param, wpa->essid, TmpKey, WPA_INDEX, tag_id);
+	return insert_hash_account1(param, wpa->essid, TmpKey, WPA_INDEX);
 }
-PRIVATE void Handle4Way(int bIsQOS, uint8_t* packet, pcaprec_hdr_t* pkt_hdr, ImportParam* param, sqlite3_int64 tag_id, WPA4way_t* wpa, int nwpa)
+PRIVATE void Handle4Way(int bIsQOS, uint8_t* packet, pcaprec_hdr_t* pkt_hdr, ImportParam* param, WPA4way_t* wpa, int nwpa, sqlite3_int64* firstHashId, sqlite3_int64* lastHashId)
 {
 	ether_frame_hdr_t *pkt = (ether_frame_hdr_t*)packet;
 	int i, ess = -1;
@@ -964,8 +1030,36 @@ PRIVATE void Handle4Way(int bIsQOS, uint8_t* packet, pcaprec_hdr_t* pkt_hdr, Imp
 
 			// This is canonical for any encapsulations
 			wpa[ess].eapol_sz = auth->length + 4;
+
+			// Try to add the WPA key. We aren't sure if it's valid
+			if (wpa[ess].packet1)
+			{
+				p = (uint8_t*)wpa[ess].packet1;
+				if (bIsQOS)
+					p += 2;
+				p += 8 + sizeof(ether_frame_hdr_t);
+				ether_auto_802_1x_t* auth1 = (ether_auto_802_1x_t*)p;
+
+				uint64_t auth1_replay_cnt = 0;
+				uint64_t auth2_replay_cnt = 0;
+				for (int i = 0; i < 8; i++)
+				{
+					auth1_replay_cnt += ((uint64_t)auth1->replay_cnt[i]) << (56 - 8 * i);
+					auth2_replay_cnt += ((uint64_t)auth->replay_cnt[i]) << (56 - 8 * i);
+				}
+				if (auth1_replay_cnt == auth2_replay_cnt)
+				{
+					sqlite3_int64 insertId = DumpKey(wpa + ess, 1, bIsQOS, param);
+					if (insertId >= 0)
+					{
+						*lastHashId = insertId;
+						if (*firstHashId < 0) *firstHashId = insertId;
+					}
+					wpa[ess].fully_cracked = 1;
+				}
+			}
 			break;
-	case 3:// see if we have a msg2 that 'matches',  which is 1 less than our replay count.
+	case 3:// see if we have a msg2 that 'matches', which is 1 less than our replay count.
 			wpa[ess].packet3 = (uint8_t*)malloc(sizeof(uint8_t)* pkt_hdr->orig_len);
 
 			memcpy(wpa[ess].packet3, packet, pkt_hdr->orig_len);
@@ -983,7 +1077,7 @@ PRIVATE void Handle4Way(int bIsQOS, uint8_t* packet, pcaprec_hdr_t* pkt_hdr, Imp
 				for (int i = 0; i < 8; i++)
 				{
 					auth2_replay_cnt += ((uint64_t)auth2->replay_cnt[i]) << (56 - 8*i);
-					auth3_replay_cnt += ((uint64_t)auth->replay_cnt [i]) << (56 - 8*i);;
+					auth3_replay_cnt += ((uint64_t)auth->replay_cnt [i]) << (56 - 8*i);
 				}
 				if (auth2_replay_cnt + 1 == auth3_replay_cnt)
 				{
@@ -1002,7 +1096,12 @@ PRIVATE void Handle4Way(int bIsQOS, uint8_t* packet, pcaprec_hdr_t* pkt_hdr, Imp
 					// If we didn't see it, we are only 99% sure.
 					if (!wpa[ess].packet1 || !memcmp(auth1->wpa_nonce, auth->wpa_nonce, 32))
 					{
-						DumpKey(wpa+ess, 3, bIsQOS, param, tag_id);
+						sqlite3_int64 insertId = DumpKey(wpa + ess, 3, bIsQOS, param);
+						if (insertId >= 0)
+						{
+							*lastHashId = insertId;
+							if (*firstHashId < 0) *firstHashId = insertId;
+						}
 						wpa[ess].fully_cracked = 1;
 					}
 				}
@@ -1019,12 +1118,12 @@ PRIVATE void Handle4Way(int bIsQOS, uint8_t* packet, pcaprec_hdr_t* pkt_hdr, Imp
 // reading packets (i.e. we have done what we want), we return 0, and
 // the program will exit gracefully.  It is not an error, it is just an
 // indication we have completed (or that the data we want is not here).
-PRIVATE int GetNextPacketAndProcess(FILE* in, int bROT, uint8_t* full_packet, uint32_t link_type, ImportParam* param, sqlite3_int64 tag_id
-	, WPA4way_t** wpa_ptr, int* nwpa, int* MAX_ESSIDS)
+PRIVATE int GetNextPacketAndProcess(FILE* in, int bROT, uint8_t* full_packet, uint32_t link_type, ImportParam* param
+	, WPA4way_t** wpa_ptr, int* nwpa, int* MAX_ESSIDS, sqlite3_int64* firstHashId, sqlite3_int64* lastHashId)
 {
 	ether_frame_hdr_t *pkt;
 	ether_frame_ctl_t *ctl;
-	unsigned int frame_skip = 0;
+	uint32_t frame_skip = 0;
 	uint8_t* packet;
 
 	// GetNextPacket--------------------------
@@ -1055,7 +1154,7 @@ PRIVATE int GetNextPacketAndProcess(FILE* in, int bROT, uint8_t* full_packet, ui
 			frame_skip = 64;
 		else
 		{
-			frame_skip = *(unsigned int*)&packet[4];
+			frame_skip = *(uint32_t*)&packet[4];
 		}
 		if (frame_skip < 8 || frame_skip >= pkt_hdr.incl_len)
 			return 0;
@@ -1120,7 +1219,7 @@ PRIVATE int GetNextPacketAndProcess(FILE* in, int bROT, uint8_t* full_packet, ui
 		// in value.  We are running from an LE point of view, so should look for 0x8e88
 		p += 6;
 		if (*((uint16_t*)p) == 0x8e88)
-			Handle4Way(bQOS, packet, &pkt_hdr, param, tag_id, wpa_ptr[0], nwpa[0]);	// this packet was a eapol packet.
+			Handle4Way(bQOS, packet, &pkt_hdr, param, wpa_ptr[0], nwpa[0], firstHashId, lastHashId);	// this packet was a eapol packet.
 	}
 
 	return 1;
@@ -1173,16 +1272,16 @@ struct ivs2_WPA_hdsk
     int state;                                   /* handshake completion         */
 };
 // Convert WPA handshakes from aircrack-ng (airodump-ng) IVS2 to JtR format
-PRIVATE int convert_ivs(FILE *f_in, ImportParam* param, sqlite3_int64 tag_id)
+PRIVATE int convert_ivs(FILE *f_in, ImportParam* param, sqlite3_int64* firstHashId, sqlite3_int64* lastHashId)
 {
 	struct ivs2_filehdr fivs2;
 	struct ivs2_pkthdr ivs2;
 	struct ivs2_WPA_hdsk *wivs2;
 	hccap_t hccap;
-	unsigned int i;
+	uint32_t i;
 	unsigned char buffer[66000];
 	size_t length, pos;
-	unsigned int pktlen;
+	uint32_t pktlen;
 	unsigned char bssid[6];
 	int bssidFound = 0;
 	char essid[500];
@@ -1216,7 +1315,7 @@ PRIVATE int convert_ivs(FILE *f_in, ImportParam* param, sqlite3_int64 tag_id)
 
 		pos += sizeof(struct ivs2_pkthdr);
 
-		pktlen = (unsigned int)ivs2.len;
+		pktlen = (uint32_t)ivs2.len;
 		if (pktlen + pos > length)
 			return 1;
 
@@ -1224,7 +1323,7 @@ PRIVATE int convert_ivs(FILE *f_in, ImportParam* param, sqlite3_int64 tag_id)
 			return 1;
 
 		// Show "packet" headers
-		// printf("%ld : %d - %02x\n", pos, pktlen, (unsigned int)ivs2.flags);
+		// printf("%ld : %d - %02x\n", pos, pktlen, (uint32_t)ivs2.flags);
 		p = buffer;
 		if (ivs2.flags & IVS2_BSSID)
 		{
@@ -1235,8 +1334,8 @@ PRIVATE int convert_ivs(FILE *f_in, ImportParam* param, sqlite3_int64 tag_id)
 		}
 		if (ivs2.flags & IVS2_ESSID)
 		{
-			unsigned int ofs = (unsigned int)(p - buffer);
-			unsigned int len = pktlen - ofs;
+			uint32_t ofs = (uint32_t)(p - buffer);
+			uint32_t len = pktlen - ofs;
 
 			if (len <= 0 || len + 1 > sizeof(essid))
 				return 1;
@@ -1287,7 +1386,12 @@ PRIVATE int convert_ivs(FILE *f_in, ImportParam* param, sqlite3_int64 tag_id)
 				cp += code_block(&w[i], 1, cp);
 			cp += code_block(&w[i], 0, cp);
 
-			insert_hash_account(param, essid, TmpKey, WPA_INDEX, tag_id);
+			sqlite3_int64 insertId = insert_hash_account1(param, essid, TmpKey, WPA_INDEX);
+			if (insertId >= 0)
+			{
+				*lastHashId = insertId;
+				if (*firstHashId < 0) *firstHashId = insertId;
+			}
 
 			p += len;
 		}
@@ -1300,6 +1404,8 @@ PRIVATE int convert_ivs(FILE *f_in, ImportParam* param, sqlite3_int64 tag_id)
 PRIVATE void import_wpa_from_pcap_file(ImportParam* param)
 {
 	continue_import = TRUE;
+	lenght_of_file = 0;
+	pos_in_file = 0;
 
 	// All values to zero
 	memset(&param->result, 0, sizeof(param->result));
@@ -1310,7 +1416,7 @@ PRIVATE void import_wpa_from_pcap_file(ImportParam* param)
 	{
 		lenght_of_file = _filelengthi64(fileno(file));
 		BEGIN_TRANSACTION;
-		sqlite3_int64 tag_id = insert_when_necesary_tag(param->tag);
+		sqlite3_int64 firstHashId = -1, lastHashId = -1;
 
 		pcap_hdr_t main_hdr;
 		int bROT;
@@ -1322,7 +1428,7 @@ PRIVATE void import_wpa_from_pcap_file(ImportParam* param)
 			else if (main_hdr.magic_number == 0xd4c3b2a1)
 				bROT = 1;
 			else {
-				convert_ivs(file, param, tag_id);
+				convert_ivs(file, param, &firstHashId, &lastHashId);
 				goto release_resources;
 			}
 
@@ -1343,7 +1449,7 @@ PRIVATE void import_wpa_from_pcap_file(ImportParam* param)
 			int nwpa = 0;
 			int MAX_ESSIDS = 100;
 			WPA4way_t* wpa = (WPA4way_t*)malloc(MAX_ESSIDS*sizeof(WPA4way_t));
-			while (GetNextPacketAndProcess(file, bROT, full_packet, main_hdr.network, param, tag_id, &wpa, &nwpa, &MAX_ESSIDS))
+			while (GetNextPacketAndProcess(file, bROT, full_packet, main_hdr.network, param, &wpa, &nwpa, &MAX_ESSIDS, &firstHashId, &lastHashId))
 			{
 				fgetpos(file, &pos_in_file);
 				param->completition = (int)(pos_in_file * 100 / lenght_of_file);
@@ -1358,7 +1464,17 @@ PRIVATE void import_wpa_from_pcap_file(ImportParam* param)
 			free(wpa);
 		}
 
-release_resources:
+	release_resources:
+		// Save tags
+		if (firstHashId >= 0 && lastHashId >= 0)
+		{
+			// Insert tag_account
+			sqlite3_reset(insert_tag_account);
+			sqlite3_bind_int64(insert_tag_account, 1, insert_when_necesary_tag(param->tag));
+			sqlite3_bind_int64(insert_tag_account, 2, firstHashId);
+			sqlite3_bind_int64(insert_tag_account, 3, lastHashId);
+			sqlite3_step(insert_tag_account);
+		}
 		END_TRANSACTION;
 		fclose(file);
 	}
@@ -1370,6 +1486,8 @@ release_resources:
 PRIVATE void import_wpa_from_hccap_file(ImportParam* param)
 {
 	continue_import = TRUE;
+	lenght_of_file = 0;
+	pos_in_file = 0;
 
 	// All values to zero
 	memset(&param->result, 0, sizeof(param->result));
@@ -1380,8 +1498,8 @@ PRIVATE void import_wpa_from_hccap_file(ImportParam* param)
 	{
 		lenght_of_file = _filelengthi64(fileno(file));
 		BEGIN_TRANSACTION;
-		sqlite3_int64 tag_id = insert_when_necesary_tag(param->tag);
 		hccap_t wpa;
+		sqlite3_int64 firstHashId = -1, lastHashId = -1;
 
 		while (fread(&wpa, sizeof(wpa), 1, file))
 		{
@@ -1400,10 +1518,122 @@ PRIVATE void import_wpa_from_hccap_file(ImportParam* param)
 					cp += code_block(&w[i], 1, cp);
 				cp += code_block(&w[i], 0, cp);
 
-				insert_hash_account(param, wpa.essid, TmpKey, WPA_INDEX, tag_id);
+				sqlite3_int64 insertId = insert_hash_account1(param, wpa.essid, TmpKey, WPA_INDEX);
+				if (insertId >= 0)
+				{
+					lastHashId = insertId;
+					if (firstHashId < 0) firstHashId = insertId;
+				}
 			}
+			else
+				param->result.lines_skiped++;
+		}
+
+		// Save tags
+		if (firstHashId >= 0 && lastHashId >= 0)
+		{
+			// Insert tag_account
+			sqlite3_reset(insert_tag_account);
+			sqlite3_bind_int64(insert_tag_account, 1, insert_when_necesary_tag(param->tag));
+			sqlite3_bind_int64(insert_tag_account, 2, firstHashId);
+			sqlite3_bind_int64(insert_tag_account, 3, lastHashId);
+			sqlite3_step(insert_tag_account);
 		}
 			
+		END_TRANSACTION;
+		fclose(file);
+	}
+
+	param->completition = 100;
+	param->isEnded = TRUE;
+}
+
+#define HCCAPX_SIGNATURE 0x58504348 // HCPX
+#pragma pack(1)
+typedef struct
+{
+	uint32_t signature;
+	uint32_t version;
+	uint8_t  message_pair;
+	uint8_t  essid_len;
+	uint8_t  essid[32];
+	uint8_t  keyver;
+	uint8_t  keymic[16];
+	uint8_t  mac_ap[6];
+	uint8_t  nonce_ap[32];
+	uint8_t  mac_sta[6];
+	uint8_t  nonce_sta[32];
+	uint16_t eapol_len;
+	uint8_t  eapol[256];
+
+} hccapx;
+PRIVATE void import_wpa_from_hccapx_file(ImportParam* param)
+{
+	continue_import = TRUE;
+	lenght_of_file = 0;
+	pos_in_file = 0;
+
+	// All values to zero
+	memset(&param->result, 0, sizeof(param->result));
+
+	FILE* file = fopen(param->filename, "rb");
+
+	if (file)
+	{
+		lenght_of_file = _filelengthi64(fileno(file));
+		BEGIN_TRANSACTION;
+		hccapx wpax;
+		hccap_t wpa;
+		sqlite3_int64 firstHashId = -1, lastHashId = -1;
+
+		while (fread(&wpax, sizeof(wpax), 1, file))
+		{
+			fgetpos(file, &pos_in_file);
+			param->completition = (int)(pos_in_file * 100 / lenght_of_file);
+
+			if (wpax.signature == HCCAPX_SIGNATURE && wpax.version >= 2 && wpax.message_pair <= 5 && wpax.eapol_len <= 256 && wpax.essid_len <= 32)
+			{
+				memcpy(wpa.mac1, wpax.mac_ap, sizeof(wpax.mac_ap));
+				memcpy(wpa.mac2, wpax.mac_sta, sizeof(wpax.mac_sta));
+				memcpy(wpa.nonce1, wpax.nonce_ap, sizeof(wpax.nonce_ap));
+				memcpy(wpa.nonce2, wpax.nonce_sta, sizeof(wpax.nonce_sta));
+				memcpy(wpa.eapol, wpax.eapol, wpax.eapol_len);
+				wpa.eapol_size = wpax.eapol_len;
+				wpa.keyver = wpax.keyver;
+				memcpy(wpa.keymic, wpax.keymic, sizeof(wpax.keymic));
+				// Convert to string
+				wpax.essid[wpax.essid_len] = 0;
+				char TmpKey[1024], *cp = TmpKey;
+				cp += sprintf(cp, "%s#", wpax.essid);
+
+				uint8_t* w = (uint8_t*)&wpa;
+				int i;
+				for (i = 36; i + 3 < sizeof(hccap_t); i += 3)
+					cp += code_block(&w[i], 1, cp);
+				cp += code_block(&w[i], 0, cp);
+
+				sqlite3_int64 insertId = insert_hash_account1(param, wpa.essid, TmpKey, WPA_INDEX);
+				if (insertId >= 0)
+				{
+					lastHashId = insertId;
+					if (firstHashId < 0) firstHashId = insertId;
+				}
+			}
+			else
+				param->result.lines_skiped++;
+		}
+
+		// Save tags
+		if (firstHashId >= 0 && lastHashId >= 0)
+		{
+			// Insert tag_account
+			sqlite3_reset(insert_tag_account);
+			sqlite3_bind_int64(insert_tag_account, 1, insert_when_necesary_tag(param->tag));
+			sqlite3_bind_int64(insert_tag_account, 2, firstHashId);
+			sqlite3_bind_int64(insert_tag_account, 3, lastHashId);
+			sqlite3_step(insert_tag_account);
+		}
+
 		END_TRANSACTION;
 		fclose(file);
 	}
@@ -1419,7 +1649,7 @@ PRIVATE int callback_found(void *file, int argc, char **argv, char **azColName)
 	fprintf((FILE*)file, "%s:%s\n", argv[0], argv[1]);
 	return 0;
 }
-PRIVATE void export_found_passwords(const char* filename)
+PRIVATE void export_found_passwords(const char* filename, int unused)
 {
 	FILE* file = fopen(filename,"w");
 
@@ -1429,11 +1659,11 @@ PRIVATE void export_found_passwords(const char* filename)
 		fprintf(file, "UserName:Password \n");
 		fprintf(file, "------------------\n");
 
-		sqlite3_exec(db, "SELECT UserName,ClearText FROM (FindHash INNER JOIN Account ON Account.Hash==FindHash.ID) "
+		sqlite3_exec(db, "SELECT (CASE WHEN UserName NOTNULL THEN UserName ELSE '<unknow>' END),ClearText FROM (FindHash LEFT JOIN Account ON Account.Hash==FindHash.HashID) "
 						 "UNION SELECT UserName,(FindHash1.ClearText || FindHash2.ClearText) AS ClearText FROM "
-						 "(Account INNER JOIN AccountLM ON Account.ID==AccountLM.ID INNER JOIN FindHash AS FindHash1 ON FindHash1.ID==AccountLM.LM1 "
-						 "INNER JOIN FindHash AS FindHash2 ON FindHash2.ID==AccountLM.LM2) WHERE Account.Hash NOT IN "
-						 "(SELECT ID FROM FindHash) ORDER BY UserName;", callback_found, file, NULL);
+						 "(Account INNER JOIN AccountLM ON Account.ID==AccountLM.ID INNER JOIN FindHash AS FindHash1 ON FindHash1.HashID==AccountLM.LM1 "
+						 "INNER JOIN FindHash AS FindHash2 ON FindHash2.HashID==AccountLM.LM2) WHERE Account.Hash NOT IN "
+						 "(SELECT HashID FROM FindHash) ORDER BY UserName;", callback_found, file, NULL);
 
 		fclose(file);
 	}
@@ -1444,7 +1674,7 @@ PRIVATE int callback_found_wordlist(void *file, int argc, char **argv, char **az
 	fprintf((FILE*)file, "%s\n", argv[0]);
 	return 0;
 }
-PRIVATE void export_found_passwords_wordlist(const char* filename)
+PRIVATE void export_found_passwords_wordlist(const char* filename, int unused)
 {
 	FILE* file = fopen(filename,"w");
 
@@ -1461,15 +1691,15 @@ PRIVATE int callback_pwdump(void *file, int argc, char **argv, char **azColName)
 	fprintf((FILE*)file, "%s:1000:%s:%s:::\n", argv[0], argv[1], argv[2]);
 	return 0;
 }
-PRIVATE void export_pwdump(const char* filename)
+PRIVATE void export_pwdump(const char* filename, int unused)
 {
 	FILE* file = fopen(filename, "w");
 
 	if(file != NULL)
 	{
-		char buffer_sql[512];
-		sprintf(buffer_sql, "SELECT UserName,((CASE WHEN HashLM1.Hex NOTNULL THEN HashLM1.Hex ELSE 'AAD3B435B51404EE' END) || "
-			"(CASE WHEN HashLM2.Hex NOTNULL THEN HashLM2.Hex ELSE 'AAD3B435B51404EE' END)),HashNTLM.Hex FROM "
+		char buffer_sql[600];
+		sprintf(buffer_sql, "SELECT UserName,((CASE WHEN HashLM1.Bin NOTNULL THEN ciphertext(HashLM1.Bin,HashLM1.Type) ELSE 'AAD3B435B51404EE' END) || "
+			"(CASE WHEN HashLM2.Bin NOTNULL THEN ciphertext(HashLM2.Bin,HashLM2.Type) ELSE 'AAD3B435B51404EE' END)),ciphertext(HashNTLM.Bin,HashNTLM.Type) FROM "
 			"(Account INNER JOIN Hash AS HashNTLM ON Account.Hash==HashNTLM.ID LEFT JOIN AccountLM ON AccountLM.ID==Account.ID "
 			"LEFT JOIN Hash AS HashLM1 ON HashLM1.ID==AccountLM.LM1 LEFT JOIN Hash AS HashLM2 ON HashLM2.ID==AccountLM.LM2) "
 			"WHERE HashNTLM.Type==%i;", (int)formats[NTLM_INDEX].db_id);
@@ -1479,43 +1709,24 @@ PRIVATE void export_pwdump(const char* filename)
 		fclose(file);
 	}
 }
-// Export WPA
-PRIVATE int callback_wpa(void *file, int argc, char **argv, char **azColName)
+
+// Export hashes
+PRIVATE int callback_hashes(void *file, int argc, char **argv, char **azColName)
 {
-	fprintf((FILE*)file, "$WPAPSK$%s\n", argv[0]);
+	Format* format = find_format(atoi(argv[1]));
+	fprintf((FILE*)file, "%s%s\n", format->prefix, argv[0]);
 	return 0;
 }
-PRIVATE void export_wpa(const char* filename)
-{
-	FILE* file = fopen(filename, "w");
-
-	if(file != NULL)
-	{
-		char buffer_sql[128];
-		sprintf(buffer_sql, "SELECT Hex FROM Hash WHERE Hash.Type==%i;", (int)formats[WPA_INDEX].db_id);
-
-		sqlite3_exec(db, buffer_sql, callback_wpa, file, NULL);
-
-		fclose(file);
-	}
-}
-// Export as cachedump
-PRIVATE int callback_dcc(void *file, int argc, char **argv, char **azColName)
-{
-	char* dcc_hash = strchr(argv[1], ':');
-	fprintf((FILE*)file, "%s:%s\n", argv[0], dcc_hash + 1);
-	return 0;
-}
-PRIVATE void export_dcc(const char* filename)
+PRIVATE void export_hashes(const char* filename, int format_index)
 {
 	FILE* file = fopen(filename, "w");
 
 	if(file != NULL)
 	{
 		char buffer_sql[512];
-		sprintf(buffer_sql, "SELECT UserName,Hex FROM Account INNER JOIN Hash ON Account.Hash==Hash.ID WHERE Hash.Type==%i;", (int)formats[DCC_INDEX].db_id);
+		sprintf(buffer_sql, "SELECT ciphertext(Hash.Bin,Hash.Type),Hash.Type FROM Hash WHERE Hash.Type==%i;", (int)formats[format_index].db_id);
 
-		sqlite3_exec(db, buffer_sql, callback_dcc, file, NULL);
+		sqlite3_exec(db, buffer_sql, callback_hashes, file, NULL);
 
 		fclose(file);
 	}
@@ -1542,7 +1753,7 @@ PUBLIC void export_db(const char* filename)
 		fclose(db_out);
 	}
 }
-#ifdef ANDROID
+#ifdef __ANDROID__
 PUBLIC void import_db(const char* filename)
 {
 	unsigned char buffer[1024*4];
@@ -1570,12 +1781,11 @@ PUBLIC void import_db(const char* filename)
 PUBLIC void register_in_out()
 {
 	// Prepare statements
-	sqlite3_prepare_v2(db, "INSERT INTO Account (UserName,Hash) VALUES (?,?);"		  , -1, &insert_account, NULL);
-	sqlite3_prepare_v2(db, "INSERT INTO AccountLM (ID,LM1,LM2) VALUES (?,?,?);"       , -1, &insert_account_lm, NULL);
-	sqlite3_prepare_v2(db, "SELECT ID FROM Account WHERE UserName=? AND Hash=?;"      , -1, &select_account, NULL);
-	sqlite3_prepare_v2(db, "INSERT INTO TagAccount (TagID, AccountID) VALUES (?, ?);" , -1, &insert_tag_account, NULL);
-	sqlite3_prepare_v2(db, "INSERT INTO Hash (Hex, Type) VALUES (?, ?);"              , -1, &insert_hash, NULL);
-	sqlite3_prepare_v2(db, "SELECT ID FROM Hash WHERE Hex=? AND Type=?;"              , -1, &select_hash, NULL);
+	sqlite3_prepare_v2(db, "INSERT INTO Account (UserName,Hash) VALUES (?,?);"								, -1, &insert_account, NULL);
+	sqlite3_prepare_v2(db, "INSERT INTO AccountLM (ID,LM1,LM2) VALUES (?,?,?);"								, -1, &insert_account_lm, NULL);
+	sqlite3_prepare_v2(db, "INSERT INTO TagAccount (TagID, FirstAccountID, LastAccountID) VALUES (?, ?, ?);", -1, &insert_tag_account, NULL);
+	sqlite3_prepare_v2(db, "INSERT INTO Hash (Bin, Type) VALUES (?, ?);"									, -1, &insert_hash, NULL);
+	sqlite3_prepare_v2(db, "SELECT Bin FROM Hash WHERE ID=?;"									            , -1, &select_hash1, NULL);
 }
 
 PUBLIC Importer importers[] = {
@@ -1591,10 +1801,9 @@ PUBLIC Importer importers[] = {
 PUBLIC Exporter exporters[] = {
 	{38, "Found passwords.", "found_passwords.txt", "Export all passwords already found by the program.", export_found_passwords},// Export found passwords
 	{38, "Found passwords as wordlist.", "found_passwords_wordlist.txt", "Export all passwords already found by the program as a wordlist.", export_found_passwords_wordlist},// Export found passwords as wordlist
-	{38, "Pwdump format."	, "passwords.txt"      , "Export NTLM and LM hashes in pwdump file format.", export_pwdump},
-	{38, "Cachedump format.", "passwords.txt"      , "Export DCC hashes in cachedump file format.", export_dcc},
-	{38, "WPA hashes."	    , "wpa_hashes.txt"     , "Export WPA hashes in a format used by other crackers.", export_wpa}
-#ifdef ANDROID
+	{38, "Pwdump format.", "passwords.txt", "Export NTLM and LM hashes in pwdump file format.", export_pwdump},
+	{38, "Hashes."	     , "hashes.txt"   , "Export all hashes in a format used by other crackers.", export_hashes}
+#ifdef __ANDROID__
 	,{38, "Hash Suite Database.", "config.db"      , "Export Hash Suite Database.", export_db}
 #endif
 	// TODO: Export others...

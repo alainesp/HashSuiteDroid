@@ -1,0 +1,48 @@
+u:$1$12345678$aIccj83HRDBo6ux1bVx7D1:0123456789ABCDE
+u:$apr1$Q6ZYh...$RV6ft2bZ8j.NGrxLYaJt9.:test
+u:$1$12345678$f8QoJuo0DpBRfQSD0vglc1:12345678
+u:$1$$qRPK7m23GJusamGpoGLby/:
+u:$apr1$a2Jqm...$grFrwEgiQleDr0zR4Jx1b.:15 chars is max
+u:$1$$AuJCr07mI7DSew03TmBIv/:no salt
+u:$1$`!@#%^&*$E6hD76/pKTS8qToBCkux30:invalid salt
+u:$1$12345678$xek.CpjQUVgdf/P2N9KQf/:
+u:$1$1234$BdIMOAWFOV2AQlLsrN/Sw.:1234
+u:$apr1$rBXqc...$NlXxN9myBOk95T0AyLAsJ0:john
+u:$apr1$Grpld/..$qp5GyjwM2dnA5Cdej9b411:the
+u:$apr1$GBx.D/..$yfVeeYFCIiEXInfRhBRpy/:ripper
+u:$1$bb$19smCEBG0Q1pVil0/HqK./:aaaaa
+u:$1$coin$rebm0t9KJ56mgGWJF5o5M0:lapin
+u:$1$pouet$/Ecz/vyk.zCYvrr6wB78h0:canard
+u:$1$test2$02MCIATVoxq3IhgK6XRkb1:test1
+u:$1$aussi$X67z3kXsWo92F15uChx1H1:felicie
+u:$1$boire$gf.YM2y3InYEu9.NbVr.v0:manger
+u:$1$bas$qvkmmWnVHRCSv/6LQ1doH/:haut
+u:$1$gauche$EPvd6LZlrgb0MMFPxUrJN1:droite
+
+following hashes are AIX non-standard smd5 hashes
+
+u:{smd5}s8/xSJ/v$uGam4GB8hOjTLQqvBfxJ2/:password
+u:{smd5}alRJaSLb$aKM3H1.h1ycXl5GEVDH1e1:aixsucks?
+u:{smd5}eLB0QWeS$Eg.YfWY8clZuCxF0xNrKg.:0123456789ABCDE
+
+following hashes are AIX standard smd5 hashes (with corrected tag) lpa_options = std_hash=true
+
+u:$1$JVDbGx8K$T9h8HK4LZxeLPMTAxCfpc1:password
+u:$1$1Cu6fEvv$42kuaJ5fMEqyVStPuFG040:0123456789ABCDE
+u:$1$ql5x.xXL$vYVDhExol2xUBBpERRWcn1:jtr>hashcat
+u:$1$27iyq7Ya$miN09fW1Scj0DHVNyewoU/:
+u:$1$84Othc1n$v1cuReaa5lRdGuHaOa76n0:a
+u:$1$4zq0BsCR$U2ua9WZtDEhzy4gFSiLxN1:aa
+u:$1$DKwjKWxp$PY6PdlPZsXjOppPDoFOz4.:aaa
+u:$1$OKDV6ppN$viTVmH48bSePiCrMvXT/./:aaaa
+u:$1$QEWsCY0O$xrTTMKTepiHMp7Oxgz0pX/:aaaaa
+u:$1$5dfdk2dF$XiJBPNrfKcCgdQ/kcoB40/:aaaaaa
+u:$1$Ps6A1Cy6$WsvLg9cQhm9JU0rXkLEtz.:aaaaaaa
+u:$1$9IK7nZ4M$4nx7Mdj05KGPJX/mZaDrh.:aaaaaaaa
+u:$1$l3pNTqwT$GAc.dcRaxCvC20CFGCjp4/:aaaaaaaaa
+u:$1$jSAARhJR$6daQ/ekjAL0MgOUgGJyp10:aaaaaaaaaa
+u:$1$wk3Xwqqg$2AtdiucwJvJgbaVT1jWpb0:aaaaaaaaaaa
+u:$1$G6Fn69Ei$d7AKJUOIdz/gO4Utc0TQP1:aaaaaaaaaaaa
+u:$1$A7XJ7lGK$W5jTnH/4lW4XwZ.6F7n1N.:aaaaaaaaaaaaa
+u:$1$Rcm46RfA$LfdIK/OP16yHzMYHSlx/B.:aaaaaaaaaaaaaa
+u:$1$4bCSSJMN$TcYKTsukD4SFJE1n4MwMZ/:aaaaaaaaaaaaaaa

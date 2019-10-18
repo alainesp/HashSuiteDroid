@@ -40,7 +40,7 @@
         #endif
 #endif
 
-#ifdef ANDROID
+#ifdef __ANDROID__
 #define USE_FILE32API
 #endif
 

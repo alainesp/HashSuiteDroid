@@ -21,9 +21,9 @@
 #define MAX_KEY_LENGHT_BIG		32
 #define LENGHT(x) (sizeof(x)/sizeof(x[0]))
 
-#define rotate32(x,shift)	_rotl(x,shift)
-#define rotate64(x,shift)	_rotl64(x,shift)
-#define SWAP_ENDIANNESS(x, data) x = rotate32(data, 16U); x = ((x & 0x00FF00FF) << 8) + ((x >> 8) & 0x00FF00FF);
+#define ROTATE32(x,shift)	_rotl(x,shift)
+#define ROTATE64(x,shift)	_rotl64(x,shift)
+#define SWAP_ENDIANNESS(x, data) x = ROTATE32(data, 16U); x = ((x & 0x00FF00FF) << 8) | ((x >> 8) & 0x00FF00FF);
 #define SWAP_ENDIANNESS16(x, data) x = (((data&0xff00)>>8) | ((data&0xff)<<8));
 
 #define PRIVATE static
@@ -62,7 +62,7 @@ extern sqlite3* db;
 #define CLIP_RANGE(num,minValue,maxValue)		(__max(__min((num),(maxValue)),(minValue)))
 
 // Function to generate keys candidates
-typedef int generate_key_funtion(void* param, unsigned int count, int thread_id);
+typedef int generate_key_funtion(void* param, uint32_t count, int thread_id);
 
 typedef struct CryptParam
 {
@@ -135,19 +135,20 @@ typedef struct OpenCL_Param
 }
 OpenCL_Param;
 typedef void gpu_crypt_funtion(OpenCL_Param*);
-typedef void create_gpu_crypt_funtion(OpenCL_Param*, cl_uint, generate_key_funtion*, gpu_crypt_funtion**);
+typedef int create_gpu_crypt_funtion(OpenCL_Param*, cl_uint, generate_key_funtion*, gpu_crypt_funtion**);
 #endif
 
 #define MESSAGE_FINISH_BATCH			1
 #define MESSAGE_FINISH_ATTACK			2
 #define MESSAGE_ATTACK_INIT_COMPLETE	3
+#define MESSAGE_ATTACK_GPU_FAIL	        4
 typedef void callback_funtion(int message);
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Formats
 ////////////////////////////////////////////////////////////////////////////////////
 #ifndef INCLUDE_DEVELOPING_FORMAT
-#define MAX_NUM_FORMATS 11
+#define MAX_NUM_FORMATS 12
 #endif
 
 #define LM_INDEX        0
@@ -157,10 +158,12 @@ typedef void callback_funtion(int message);
 #define SHA256_INDEX	4
 #define SHA512_INDEX	5
 #define DCC_INDEX		6
-#define DCC2_INDEX		7
-#define WPA_INDEX		8
-#define BCRYPT_INDEX	9
-#define SSHA_INDEX		10
+#define SSHA_INDEX		7
+#define MD5CRYPT_INDEX	8
+#define DCC2_INDEX		9
+#define WPA_INDEX		10
+#define BCRYPT_INDEX	11
+
 
 // Protocols
 #define PROTOCOL_UTF8_LM					1
@@ -230,7 +233,7 @@ typedef struct Exporter
 	char* name;
 	char* defaultFileName;
 	char* description;
-	void(*function)(const char*);
+	void(*function)(const char*, int);
 }
 Exporter;
 
@@ -267,13 +270,15 @@ typedef struct GPUFormatImplementation
 GPUFormatImplementation;
 #endif
 
+#define DEFAULT_VALUE_MAP_INDEX 0
 typedef struct Format
 {
 	char* name;
 	char* description;
+	char* prefix;
 	int max_plaintext_lenght;
-	unsigned int binary_size;
-	unsigned int salt_size;
+	uint32_t binary_size;
+	uint32_t salt_size;
 	sqlite3_int64 db_id;
 	// Benchmark
 	int* bench_values;// Each item is a number of passwords to benchmark
@@ -282,12 +287,16 @@ typedef struct Format
 	// Convert hexadecimal password into a compact representation
 	// and return a value used for hashing in a hash table
 	// params: IN: hexadecimal, OUT: binary_value, OUT: salt_value
-	unsigned int (*convert_to_binary)(const unsigned char*, void*, void*);
+	uint32_t (*convert_to_binary)(const unsigned char*, void*, void*);
+	void (*convert_to_string)(const void* binary, const void* salt, unsigned char* hex);
+	uint32_t value_map_index0;
+	uint32_t value_map_index1;
 
 	int(*is_valid_line)(char* username, char* p0, char* p1, char* p2);
-	void(*add_hash_from_line)(ImportParam* param, char* username, char* p0, char* p1, char* p2, sqlite3_int64 tag_id);
+	sqlite3_int64(*add_hash_from_line)(ImportParam* param, char* username, char* p0, char* p1, char* p2);
+	void(*optimize_hashes)();
 
-	// Implementations. Fast implementation first
+	// CPU Implementations. Fast implementation first
 	FormatImplementation impls[3];
 #ifdef HS_OPENCL_SUPPORT
 	GPUFormatImplementation opencl_impls[4];
@@ -355,20 +364,20 @@ extern int num_key_providers;
 KeyProvider* find_key_provider(sqlite3_int64 db_id);
 int find_key_provider_index(sqlite3_int64 db_id);
 
-extern unsigned int PHRASES_MAX_WORDS_READ;
+extern uint32_t PHRASES_MAX_WORDS_READ;
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Rules support
 ////////////////////////////////////////////////////////////////////////////////////
 int add_rules_to_param(char* param, int key_provider_index);
-typedef void apply_rule_funtion(unsigned int* nt_buffer, unsigned int max_number, unsigned int* rules_data_buffer);
-typedef void ocl_get_key_funtion(unsigned char* out_key, unsigned char* plain, unsigned int param);
+typedef void apply_rule_funtion(uint32_t* nt_buffer, uint32_t max_number, uint32_t* rules_data_buffer);
+typedef void ocl_get_key_funtion(unsigned char* out_key, unsigned char* plain, uint32_t param);
 
 // Return the vector_size used
-typedef unsigned int ocl_begin_rule_funtion(char* source, char nt_buffer[16][16], char nt_buffer_vector_size[16], unsigned int lenght, unsigned int NUM_KEYS_OPENCL, unsigned int prefered_vector_size);
+typedef uint32_t ocl_begin_rule_funtion(char* source, char nt_buffer[16][16], char nt_buffer_vector_size[16], uint32_t lenght, uint32_t NUM_KEYS_OPENCL, uint32_t prefered_vector_size);
 typedef void ocl_write_code(char* source);
 
-typedef void ocl_rule_common(char* source, char* rule_name, unsigned int in_num_keys, unsigned int out_num_keys);
+typedef void ocl_rule_common(char* source, char* rule_name, uint32_t in_num_keys, uint32_t out_num_keys);
 #define RULE_LENGHT_COMMON	10
 
 #define RULE_UNICODE_INDEX	0
@@ -379,9 +388,9 @@ typedef struct oclRule
 	ocl_rule_common* common_implementation; // A common implementation used in slow formats (DCC2)
 	ocl_begin_rule_funtion* begin[2];		// Load buffer in a specific format (Unicode or UTF8)
 	ocl_write_code* end;					// written at end of crypt cycle
-	ocl_get_key_funtion* get_key;			// Obtain the final key from the source key applyyin the rule trasnformation
+	ocl_get_key_funtion* get_key;			// Obtain the final key from the source key applying the rule trasnformation
 	char* found_param;						// Value to save to later recover the key found
-	unsigned int max_param_value;				// If value is 0 no need of additional params
+	uint32_t max_param_value;			// If value is 0 no need of additional params
 	ocl_write_code* setup_constants;		// If the rule need some constants values, this will execute at the begining of kernels
 	
 }oclRule;
@@ -407,7 +416,7 @@ extern int num_rules;
 #define FIXED_DISABLE	1
 #define FIXED_EXPIRE	2
 
-extern int* num_user_by_formats;
+extern uint32_t* num_user_by_formats1;
 
 // Executed at program init
 void init_all(const char* program_exe_path);
@@ -420,6 +429,9 @@ void filelength2string(int64_t length, char* str);
 int64_t get_num_keys_served();
 void clear_db_accounts();
 int valid_hex_string(unsigned char* ciphertext,int lenght);
+void binary_to_hex(const uint32_t* binary, unsigned char* ciphertext, uint32_t num_dwords, int is_big_endian);
+void base64_encode_mime(const unsigned char *in, int len, char *outy);
+int base64_decode_mime(const char *in, int inlen, unsigned char *out);
 int valid_base64_string(unsigned char* ciphertext, int lenght);
 char* password_per_sec(char* buffer);
 char* get_time_from_begin(int isTotal);
@@ -429,15 +441,42 @@ int new_crack(int format_index, int key_prov_index, int min_lenght, int max_leng
 void resume_crack(sqlite3_int64 db_id, callback_funtion psend_message_gui);
 int save_attack_state();
 int is_wordlist_supported(const char* file_path, char* error_message);
+uint32_t load_fam(uint64_t pos);
+void resize_fam();
+
+////////////////////////////////////////////////////////////////////////////////////
+// Fingerprint
+////////////////////////////////////////////////////////////////////////////////////
+#define FINGERPRINT_STATUS_LOADING_DATA 0
+#define FINGERPRINT_STATUS_COUNTING		1
+#define FINGERPRINT_STATUS_SORTING		2
+#define FINGERPRINT_STATUS_SAVING_DATA  3
+#define FINGERPRINT_STATUS_END			4
+
+typedef struct
+{
+	char out_file[512];
+	uint32_t percent;
+	uint32_t status;
+
+	uint64_t file_size;
+	uint64_t num_parts;
+}
+HASH_TABLE_FINGERPRINT;
+void generate_fingerprint_words(HASH_TABLE_FINGERPRINT* fp);
+////////////////////////////////////////////////////////////////////////////////////
 
 int has_implementations_compatible(int format_index, int provider_index);
 
 int is_found_all_hashes(int format_index);
-int total_num_hashes_found();
-int has_hashes(int format_index);
+void save_num_hashes_cache();
+uint32_t total_num_users();
+uint32_t total_num_hashes_found();
+uint32_t total_num_hashes();
+uint32_t has_hashes(int format_index);
 
-extern int* num_hashes_found_by_format;
-extern int* num_hashes_by_formats;
+extern uint32_t* num_hashes_found_by_format1;
+extern uint32_t* num_hashes_by_formats1;
 ////////////////////////////////////////////////////////////////////////////////////
 // Batch
 ////////////////////////////////////////////////////////////////////////////////////
@@ -459,8 +498,11 @@ typedef struct AttackData
 extern AttackData* batch;
 extern int num_attack_in_batch;
 extern int current_attack_index;
+extern int cache_had_hashes;
+void get_cache_info(char* buffer);
+void release_all_cache();
 
-extern unsigned int MAX_NUM_PASWORDS_LOADED;
+extern uint32_t MAX_NUM_PASWORDS_LOADED;
 extern int is_benchmark;
 extern int use_cpu_as_gpu;
 
@@ -470,9 +512,10 @@ void save_setting(int id, int value);
 void save_settings_to_db();
 
 // Number of passwords currently loaded
-extern unsigned int num_passwords_loaded;
+extern uint32_t num_passwords_loaded;
 // Used to stop the attack
 extern int continue_attack;
+extern int save_needed;
 
 // Hashing
 void hash_ntlm(const unsigned char* message, char* hash);
@@ -506,7 +549,7 @@ typedef struct CPUHardware
 	char brand[0x40];
 	int img_index;
 
-	unsigned int logical_processors;
+	uint32_t logical_processors;
 	unsigned long cores;
 	unsigned long l1_cache_size;// L1 cache in kilobytes
 	unsigned long l2_cache_size;// L2 cache in kilobytes
@@ -518,18 +561,21 @@ typedef struct CPUHardware
 }
 CPUHardware;
 
-typedef struct OtherSystemInfo
+typedef struct
 {
 	char os[64];
 	char machine_name[16];
 	unsigned long major_version;
 	unsigned long minor_version;
 	int is_64bits;
+	unsigned long granularity;      // system allocation granularity
+	size_t large_page_size;
+	int is_large_page_enable;
 }
 OtherSystemInfo;
 
-extern unsigned int app_num_threads;
-extern unsigned int num_threads;
+extern uint32_t app_num_threads;
+extern uint32_t num_threads;
 extern CPUHardware current_cpu;
 extern OtherSystemInfo current_system_info;
 
@@ -553,8 +599,8 @@ extern OtherSystemInfo current_system_info;
 typedef struct GPUStatus
 {
 	char flag;
-	unsigned int temperature;
-	unsigned int fan_speed;
+	uint32_t temperature;
+	uint32_t fan_speed;
 	int usage;
 }GPUStatus;
 
@@ -615,7 +661,7 @@ extern GPUDevice gpu_devices[MAX_NUMBER_GPUS_SUPPORTED];
 extern cl_uint num_gpu_devices;
 
 // Get status
-int gpu_get_updated_status(unsigned int gpu_index, GPUStatus* status);
+int gpu_get_updated_status(uint32_t gpu_index, GPUStatus* status);
 
 typedef cl_int (CL_API_CALL *clGetPlatformIDsFunc)(cl_uint, cl_platform_id*, cl_uint*);
 typedef cl_int (CL_API_CALL *clGetDeviceIDsFunc)(cl_platform_id, cl_device_type, cl_uint, cl_device_id*, cl_uint*);

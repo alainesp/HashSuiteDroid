@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2018 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
@@ -10,13 +10,16 @@
 #define SALT_SIZE			0
 
 #define COPY_BIT(i,j)	if(tmp[i/8] & (1 << (i%8))) out[j/8] |= (1 << (j%8))
+#define UNDO_BIT(i,j)	if(out[j/8] & (1 << (j%8))) tmp[i/8] |= (1 << (i%8))
 
 PRIVATE int is_valid(char* user_name, char* rid, char* lm, char* ntlm)
 {
 	return FALSE;
 }
+#define VALUE_MAP_INDEX0 0
+#define VALUE_MAP_INDEX1 1
 // Implementation of LM hash
-PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, void* salt)
+PRIVATE uint32_t get_binary(const unsigned char* ciphertext, void* binary, void* salt)
 {
 	unsigned char* out = (unsigned char*)binary;
 	unsigned char tmp[8];
@@ -46,13 +49,43 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 
 	return (out[0] | out[1] << 8 | out[2] << 16 | out[3] << 24);
 }
+PRIVATE void binary2hex(const unsigned char* out, const void* salt, unsigned char* ciphertext)
+{
+	unsigned char tmp[8];
+	memset(tmp, 0, 8);
 
-PRIVATE unsigned int first_bit[256];
+	UNDO_BIT( 5,  0); UNDO_BIT( 3,  1); UNDO_BIT(51,  2); UNDO_BIT(49,  3);
+	UNDO_BIT(37,  4); UNDO_BIT(25,  5); UNDO_BIT(15,  6); UNDO_BIT(11,  7);
+	UNDO_BIT(59,  8); UNDO_BIT(61,  9); UNDO_BIT(41, 10); UNDO_BIT(47, 11);
+	UNDO_BIT( 9, 12); UNDO_BIT(27, 13); UNDO_BIT(13, 14); UNDO_BIT( 7, 15);
+	UNDO_BIT(63, 16); UNDO_BIT(45, 17); UNDO_BIT( 1, 18); UNDO_BIT(23, 19);
+	UNDO_BIT(31, 20); UNDO_BIT(33, 21); UNDO_BIT(21, 22); UNDO_BIT(19, 23);
+	UNDO_BIT(57, 24); UNDO_BIT(29, 25); UNDO_BIT(43, 26); UNDO_BIT(55, 27);
+	UNDO_BIT(39, 28); UNDO_BIT(17, 29); UNDO_BIT(53, 30); UNDO_BIT(35, 31);
+
+	UNDO_BIT( 4, 32); UNDO_BIT( 2, 33); UNDO_BIT(50, 34); UNDO_BIT(48, 35);
+	UNDO_BIT(36, 36); UNDO_BIT(24, 37); UNDO_BIT(14, 38); UNDO_BIT(10, 39);
+	UNDO_BIT(58, 40); UNDO_BIT(60, 41); UNDO_BIT(40, 42); UNDO_BIT(46, 43);
+	UNDO_BIT( 8, 44); UNDO_BIT(26, 45); UNDO_BIT(12, 46); UNDO_BIT( 6, 47);
+	UNDO_BIT(62, 48); UNDO_BIT(44, 49); UNDO_BIT( 0, 50); UNDO_BIT(22, 51);
+	UNDO_BIT(30, 52); UNDO_BIT(32, 53); UNDO_BIT(20, 54); UNDO_BIT(18, 55);
+	UNDO_BIT(56, 56); UNDO_BIT(28, 57); UNDO_BIT(42, 58); UNDO_BIT(54, 59);
+	UNDO_BIT(38, 60); UNDO_BIT(16, 61); UNDO_BIT(52, 62); UNDO_BIT(34, 63);
+
+	// Swap
+	uint32_t t = ((uint32_t*)tmp)[0];
+	((uint32_t*)tmp)[0] = ((uint32_t*)tmp)[1];
+	((uint32_t*)tmp)[1] = t;
+
+	binary_to_hex((uint32_t*)tmp, ciphertext, BINARY_SIZE / sizeof(uint32_t), FALSE);
+}
+
+PRIVATE uint32_t first_bit[256];
 PUBLIC void fill_bits()
 {
-	unsigned int index;
+	uint32_t index;
 
-	for(unsigned int i = 1; i < 256; i++)
+	for(uint32_t i = 1; i < 256; i++)
 	{
 		_BitScanForward(&index, i);
 		first_bit[i] = index;
@@ -73,7 +106,7 @@ PUBLIC void fill_bits()
 #define X86_NOT_(a)		(~(a))
 #define X86_ANDN(a,b)	((~(b))&(a))
 
-#define X86_WORD		unsigned int
+#define X86_WORD		uint32_t
 #define X86_BIT_LENGHT	32
 
 /*
@@ -365,13 +398,13 @@ PRIVATE void s8_x86f(X86_WORD* a, X86_WORD* out)
 #define X86_SL(elem,shift)	((elem)<<(shift))
 #define X86_SR(elem,shift)	((elem)>>(shift))
 
-PRIVATE void calculate_hash_x86(X86_WORD* c, unsigned int* hash_values, unsigned int i_shift)
+PRIVATE void calculate_hash_x86(X86_WORD* c, uint32_t* hash_values, uint32_t i_shift)
 {
 	// I try to vectorize the code to obtain the hashes needed for the table
 	// Look a the code commented in x86 version: this is the 'normal' version
 	// Here i calculate hashes 8 at a time. This result in a dramatic better performance
 	X86_WORD hash_tmp[8];
-	unsigned int i;
+	uint32_t i;
 
 	//0,1,2
 	hash_tmp[0] = X86_OR(X86_OR(		  X86_MASK_1(c[0])	   ,  X86_SL(X86_MASK_1(c[1]), 1)),  X86_SL(X86_MASK_1(c[2]), 2));
@@ -633,8 +666,8 @@ PRIVATE void lm_eval_x86(const X86_WORD* k)
 	s2_x86 (X86_XOR_(c[52], k[13]), X86_XOR_(c[60], k[17]), X86_XOR_(c[43], k[40]), X86_XOR_(c[59], k[34]), X86_XOR_(c[48], k[25]), X86_XOR_(c[32], k[5]) , &c[4] , &c[5] , &c[6] , &c[7] );
 
 	{
-		unsigned int hash_values[X86_BIT_LENGHT];
-		unsigned int i, j;
+		uint32_t hash_values[X86_BIT_LENGHT];
+		uint32_t i, j;
 		int calculated_16_round = FALSE;
 		int calculated_2_byte = size_table > 0xFF;
 		int calculated_3_byte = size_table > 0xFFFF;
@@ -665,7 +698,7 @@ PRIVATE void lm_eval_x86(const X86_WORD* k)
 
 		for(j = 0; j < X86_BIT_LENGHT; j++)
 		{
-			unsigned int index = table[hash_values[j] & size_table];
+			uint32_t index = table[hash_values[j] & size_table];
 			// Partial match
 			while(index != NO_ELEM)
 			{
@@ -763,7 +796,7 @@ next_iteration:
 PRIVATE void convert_key_to_input_x86(unsigned char* key_iter, unsigned char* old_key_iter, X86_WORD* lm_buffer_key)
 {
 	X86_WORD _mask;
-	unsigned int diff;
+	uint32_t diff;
 
 	//for(i = 0; i < BIT_LENGHT; i++, _mask <<= 1)
 	//{
@@ -924,6 +957,7 @@ PRIVATE void crypt_utf8_lm_protocol_x86(CryptParam* param)
 // V128 Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #include "arch_simd.h"
+
 #define MAX_REPEAT 8
 #define REPEAT		for(repeat=0;repeat<MAX_REPEAT;repeat++,c++,k++)
 #define END_REPEAT	c=first_c;k=first_k;
@@ -937,18 +971,18 @@ PRIVATE void crypt_utf8_lm_protocol_x86(CryptParam* param)
 #define V128_MASK_7(elem)	(V128_AND(elem, V128_CONST(0x40404040U)))
 #define V128_MASK_8(elem)	(V128_AND(elem, V128_CONST(0x80808080U)))
 
-typedef void calculate_hash_func(V128_WORD* c, unsigned int* hash_values, unsigned int i_shift);
-typedef void calculate_lm_indexs_func(unsigned int* hash_values, unsigned int* indexs);
+typedef void calculate_hash_func(V128_WORD* c, uint32_t* hash_values, uint32_t i_shift);
+typedef void calculate_lm_indexs_func(uint32_t* hash_values, uint32_t* indexs);
 typedef void lm_eval_kernel_func(void* lm_buffer_key, void* lm_buffer_crypt, void* tmp_stor);
 PRIVATE void lm_eval_final(V128_WORD* first_k, V128_WORD* first_c, V128_WORD* a, calculate_hash_func* calculate_hash, calculate_lm_indexs_func* calculate_lm_indexs);
 
-PRIVATE void calculate_hash_v128(V128_WORD* c, unsigned int* hash_values, unsigned int i_shift)
+PRIVATE void calculate_hash_v128(V128_WORD* c, uint32_t* hash_values, uint32_t i_shift)
 {
 	// I try to vectorize the code to obtain the hashes needed for the table
 	// Look a the code commented in x86 version: this is the 'normal' version
 	// Here i calculate hashes 8 at a time. This result in a dramatic better performance
 	V128_WORD hash_tmp[8];
-	unsigned int i;
+	uint32_t i;
 
 	//0,1,2
 	hash_tmp[0] = V128_OR(V128_OR(		  V128_MASK_1(c[0])	   ,  V128_SL(V128_MASK_1(c[1*MAX_REPEAT]), 1)),  V128_SL(V128_MASK_1(c[2*MAX_REPEAT]), 2));
@@ -982,14 +1016,14 @@ PRIVATE void calculate_hash_v128(V128_WORD* c, unsigned int* hash_values, unsign
 	if(i_shift)
 		for(i = 0; i < V128_BIT_LENGHT/8; i++)
 		{
-			hash_values[i*8+0] |= ((unsigned int)((unsigned char*)(&hash_tmp[0]))[i]) << i_shift;
-			hash_values[i*8+1] |= ((unsigned int)((unsigned char*)(&hash_tmp[1]))[i]) << i_shift;
-			hash_values[i*8+2] |= ((unsigned int)((unsigned char*)(&hash_tmp[2]))[i]) << i_shift;
-			hash_values[i*8+3] |= ((unsigned int)((unsigned char*)(&hash_tmp[3]))[i]) << i_shift;
-			hash_values[i*8+4] |= ((unsigned int)((unsigned char*)(&hash_tmp[4]))[i]) << i_shift;
-			hash_values[i*8+5] |= ((unsigned int)((unsigned char*)(&hash_tmp[5]))[i]) << i_shift;
-			hash_values[i*8+6] |= ((unsigned int)((unsigned char*)(&hash_tmp[6]))[i]) << i_shift;
-			hash_values[i*8+7] |= ((unsigned int)((unsigned char*)(&hash_tmp[7]))[i]) << i_shift;
+			hash_values[i*8+0] |= ((uint32_t)((unsigned char*)(&hash_tmp[0]))[i]) << i_shift;
+			hash_values[i*8+1] |= ((uint32_t)((unsigned char*)(&hash_tmp[1]))[i]) << i_shift;
+			hash_values[i*8+2] |= ((uint32_t)((unsigned char*)(&hash_tmp[2]))[i]) << i_shift;
+			hash_values[i*8+3] |= ((uint32_t)((unsigned char*)(&hash_tmp[3]))[i]) << i_shift;
+			hash_values[i*8+4] |= ((uint32_t)((unsigned char*)(&hash_tmp[4]))[i]) << i_shift;
+			hash_values[i*8+5] |= ((uint32_t)((unsigned char*)(&hash_tmp[5]))[i]) << i_shift;
+			hash_values[i*8+6] |= ((uint32_t)((unsigned char*)(&hash_tmp[6]))[i]) << i_shift;
+			hash_values[i*8+7] |= ((uint32_t)((unsigned char*)(&hash_tmp[7]))[i]) << i_shift;
 		}
 	else
 		for(i = 0; i < V128_BIT_LENGHT/8; i++)
@@ -1007,9 +1041,9 @@ PRIVATE void calculate_hash_v128(V128_WORD* c, unsigned int* hash_values, unsign
 //PRIVATE void convert_key_to_input_v128(unsigned char* key_iter, unsigned char* old_key_iter, V128_WORD lm_buffer_key1[56])
 //{
 //	V128_INIT_MASK(_mask);
-//	unsigned int diff;
+//	uint32_t diff;
 //
-//	for(unsigned int i = 0; i < V128_BIT_LENGHT; i++)
+//	for(uint32_t i = 0; i < V128_BIT_LENGHT; i++)
 //	{
 //		//0
 //		V128_WORD* _buffer_key_tmp1 = lm_buffer_key1 + 48 * MAX_REPEAT;
@@ -1151,7 +1185,7 @@ PRIVATE void convert_key_to_input_v128(uint32_t* keys_ptr, V128_WORD* transpose_
 	{
 		V128_WORD* transpose_buffer_key_ptr = transpose_buffer + j * 32;
 		// Transpose 32x32 bit matrix
-#ifndef ANDROID
+#ifndef __ANDROID__
 		V128_WORD m = V128_CONST(0x0000ffff);
 		for (uint32_t i = 16; i != 0; i >>= 1, m = V128_XOR(m, V128_SL(m, i)))
 			for (uint32_t k = 0; k < 32; k = (k + i + 1) & ~i)
@@ -1213,7 +1247,7 @@ PRIVATE void crypt_lm_body(CryptParam* param, lm_eval_kernel_func* lm_eval_kerne
 	while (continue_attack && param->gen(keys, V128_BIT_LENGHT*MAX_REPEAT, param->thread_id))
 	{
 		if (is_utf8)
-			for (unsigned int i = 0; i < MAX_REPEAT; i++)
+			for (uint32_t i = 0; i < MAX_REPEAT; i++)
 				convert_key_to_input_v128((uint32_t*)(keys + V128_BIT_LENGHT * 8 * i), lm_buffer_crypt, lm_buffer_key + i);
 
 		// Encrypt
@@ -1789,15 +1823,15 @@ void s8_sse2(V128_WORD a0, V128_WORD a1, V128_WORD a2, V128_WORD a3, V128_WORD a
 	//{out0, op_xor, q4, out0, a4}
 }
 
-PRIVATE void calculate_lm_indexs_neon(unsigned int* hash_values, unsigned int* indexs)
+PRIVATE void calculate_lm_indexs_neon(uint32_t* hash_values, uint32_t* indexs)
 {
-	for(unsigned int j4 = 0; j4 < V128_BIT_LENGHT*MAX_REPEAT/4; j4++)
+	for(uint32_t j4 = 0; j4 < V128_BIT_LENGHT*MAX_REPEAT/4; j4++)
 	{
-		unsigned int val4 = 0;
+		uint32_t val4 = 0;
 
 		for (int i = 0; i < 4; i++)
 		{
-			unsigned int val = hash_values[j4*4+i] & size_bit_table;
+			uint32_t val = hash_values[j4*4+i] & size_bit_table;
 			val4 += ((bit_table[val >> 5] >> (val & 31)) & 1) << (8*i);
 		}
 
@@ -2375,8 +2409,8 @@ PRIVATE void s8_sse2f(SSE2_WORD* a, SSE2_WORD* out)
 #ifdef _M_X64
 void lm_eval_sse2_kernel(SSE2_WORD* first_k, SSE2_WORD* first_c, SSE2_WORD* a);
 void lm_eval_avx2_kernel(void* first_k, void* first_c, void* tmp);
-void calculate_hash_avx(SSE2_WORD* c, unsigned int* hash_values, unsigned int i_shift);
-void calculate_lm_indexs_avx(unsigned int* hash_values, unsigned int* indexs);
+void calculate_hash_avx(SSE2_WORD* c, uint32_t* hash_values, uint32_t i_shift);
+void calculate_lm_indexs_avx(uint32_t* hash_values, uint32_t* indexs);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AVX Implementation
@@ -2394,7 +2428,7 @@ PRIVATE void lm_eval_sse2_kernel(SSE2_WORD* first_k, SSE2_WORD* first_c, SSE2_WO
 {
 	SSE2_WORD* c = first_c;
 	SSE2_WORD* k = first_k;
-	unsigned int repeat;
+	uint32_t repeat;
 
 	for(repeat = 0; repeat < MAX_REPEAT; repeat++,c++)
 	{
@@ -2630,7 +2664,7 @@ PRIVATE void lm_eval_sse2_kernel(SSE2_WORD* first_k, SSE2_WORD* first_c, SSE2_WO
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // SSE2 Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void calculate_lm_indexs_see2(unsigned int* hash_values, unsigned int* indexs);
+void calculate_lm_indexs_see2(uint32_t* hash_values, uint32_t* indexs);
 
 PRIVATE void crypt_utf8_lm_protocol_sse2(CryptParam* param)
 {
@@ -2651,11 +2685,11 @@ PRIVATE void lm_eval_final(V128_WORD* first_k, V128_WORD* first_c, V128_WORD* a,
 {
 	V128_WORD* c = first_c;
 	V128_WORD* k = first_k;
-	unsigned int repeat;
+	uint32_t repeat;
 
-	HS_ALIGN(16) unsigned int hash_values[V128_BIT_LENGHT*MAX_REPEAT];
-	HS_ALIGN(16) unsigned int indexs[V128_BIT_LENGHT*MAX_REPEAT / 4];
-	unsigned int i, j4;
+	HS_ALIGN(16) uint32_t hash_values[V128_BIT_LENGHT*MAX_REPEAT];
+	HS_ALIGN(16) uint32_t indexs[V128_BIT_LENGHT*MAX_REPEAT / 4];
+	uint32_t i, j4;
 	int calculated_16_round = FALSE;
 	int calculated_2_byte = size_bit_table > 0xFF;
 	int calculated_3_byte = size_bit_table > 0xFFFF;
@@ -2696,20 +2730,20 @@ PRIVATE void lm_eval_final(V128_WORD* first_k, V128_WORD* first_c, V128_WORD* a,
 
 	for (j4 = 0; j4 < V128_BIT_LENGHT*MAX_REPEAT / 4; j4++)
 	{
-		unsigned int indexs_j4 = indexs[j4];
+		uint32_t indexs_j4 = indexs[j4];
 		if (indexs_j4)// Check 4 bytes at a time
 		{
-			/*unsigned int end;
+			/*uint32_t end;
 			_BitScanReverse(&end, indexs[j4]);
 			_BitScanForward(&rest_j, indexs[j4]);
 			end = end/8+1;
 			rest_j /= 8;*/
 
-			for (unsigned int rest_j = 0, mask = 0xff; rest_j < 4; rest_j++, mask <<= 8)
+			for (uint32_t rest_j = 0, mask = 0xff; rest_j < 4; rest_j++, mask <<= 8)
 				if (indexs_j4 & mask)
 				{
-					unsigned int j = 4 * j4 + rest_j;
-					unsigned int index = table[hash_values[j] & size_table];
+					uint32_t j = 4 * j4 + rest_j;
+					uint32_t index = table[hash_values[j] & size_table];
 					// Partial match
 					while (index != NO_ELEM)
 					{
@@ -2849,7 +2883,7 @@ PRIVATE void lm_eval_final(V128_WORD* first_k, V128_WORD* first_c, V128_WORD* a,
 // OpenCL Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_OPENCL_SUPPORT
-#ifdef ANDROID
+#ifdef __ANDROID__
 	#define LM_BEGIN_USE_HASHTABLE	TRUE
 #else
 	#define LM_BEGIN_USE_HASHTABLE	(num_passwords_loaded>50)
@@ -4333,46 +4367,46 @@ PRIVATE unsigned char ks[] = {
 #define MEMORY_SHARED		1
 
 #include <math.h>
-PRIVATE unsigned int lm_get_bit_table_mask(unsigned int num_passwords_loaded, cl_ulong l1_size, cl_ulong l2_size)
+PRIVATE uint32_t lm_get_bit_table_mask(uint32_t num_passwords_loaded, cl_ulong l1_size, cl_ulong l2_size)
 {
 	int i;
-	unsigned int result = 1;
+	uint32_t result = 1;
 	int num_bytes_bit_table;
 
 	// Generate result with all bits less than
 	// first bit in num_elem in 1
-	while(result < num_passwords_loaded)
+	while (result < num_passwords_loaded)
 		result = (result << 1) + 1;
 
 	// 3 bits more into account
-	for(i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++)
 		result = (result << 1) + 1;
 
-	if(l1_size==0 || l2_size==0)
+	if (l1_size == 0 || l2_size == 0)
 		return result;
 
 	// Calculate size
-	num_bytes_bit_table = sizeof(unsigned int) * (result/32+1);
+	num_bytes_bit_table = sizeof(uint32_t) * (result / 32 + 1);
 
 	// Large
-	if(num_bytes_bit_table >= 2*l2_size)
+	if (num_bytes_bit_table >= 2 * l2_size)
 		return (result << 4) + 15;
 
 	// Bit_table is at limit of L2 cache
-	if(num_bytes_bit_table >= l2_size/2)
+	if (num_bytes_bit_table >= l2_size / 2)
 		return result;
 
-	num_bytes_bit_table = (int)log((double)l2_size/num_bytes_bit_table/8);
-	if(num_bytes_bit_table >  1) num_bytes_bit_table++;
-	if(num_bytes_bit_table >= 8) num_bytes_bit_table--;
+	num_bytes_bit_table = (int)log((double)l2_size / num_bytes_bit_table / 8);
+	if (num_bytes_bit_table >  1) num_bytes_bit_table++;
+	if (num_bytes_bit_table >= 8) num_bytes_bit_table--;
 
-	for(i = 0; i < num_bytes_bit_table; i++)
+	for (i = 0; i < num_bytes_bit_table; i++)
 		result = (result << 1) + 1;
 
 	return result;
 }
 
-PRIVATE void insert_instruction(LM_Instruction* sbox, unsigned int* lenght, unsigned int pos_to_insert, char operation, char reg_result, char reg_op1)
+PRIVATE void insert_instruction(LM_Instruction* sbox, uint32_t* lenght, uint32_t pos_to_insert, char operation, char reg_result, char reg_op1)
 {
 	memmove(sbox+pos_to_insert+1, sbox+pos_to_insert, sizeof(LM_Instruction)*(lenght[0]-pos_to_insert));
 	sbox[pos_to_insert].operation = operation;
@@ -4380,7 +4414,7 @@ PRIVATE void insert_instruction(LM_Instruction* sbox, unsigned int* lenght, unsi
 	sbox[pos_to_insert].operand1 = reg_op1;
 	lenght[0] = lenght[0] + 1;
 }
-PRIVATE void change_sbox_code(LM_Instruction* sbox, unsigned int* lenght, char reg_out, int c_value_index, unsigned char* c_values, unsigned char* c_memory_space)
+PRIVATE void change_sbox_code(LM_Instruction* sbox, uint32_t* lenght, char reg_out, int c_value_index, unsigned char* c_values, unsigned char* c_memory_space)
 {
 	int i;
 
@@ -4644,7 +4678,7 @@ PRIVATE int* map2c(char reg_a)
 }
 PRIVATE void generate_copy_if_needed(char* source, LM_Instruction* sbox, cl_uint length, cl_uint pos, char reg_result, char reg_operand, cl_bool is_ptx, char l_regs[20][12], char r_regs[20][12])
 {
-	unsigned int pos_operand_change, pos_result_last_use, i;
+	uint32_t pos_operand_change, pos_result_last_use, i;
 	int need_to_copy = FALSE;
 
 	if(reg_result == reg_operand) return;
@@ -4690,7 +4724,7 @@ PRIVATE void generate_copy_if_needed(char* source, LM_Instruction* sbox, cl_uint
 }
 PRIVATE void step(char* source, int count_step, int k0, int k1, int k2, int k3, int k4, int k5, cl_uchar* c_values, GPUDevice* gpu, cl_uchar* k_index_mask, cl_uint key_lenght, int use_generic_load, cl_uchar* c_memory_space, cl_uchar* cs_mapped, int* k_mapped_to_last, cl_uchar* posible_last_load, cl_uchar* use_only_kmask1)
 {
-	unsigned int i;
+	uint32_t i;
 	char l_regs[20][12];
 	char r_regs[20][12];
 	LM_Instruction sbox[80];
@@ -4700,7 +4734,7 @@ PRIVATE void step(char* source, int count_step, int k0, int k1, int k2, int k3, 
 	if ((gpu->flags & GPU_FLAG_SUPPORT_PTX) && (gpu->flags & GPU_FLAG_NVIDIA_LOP3))
 		sboxs_ptr = sboxs_lop3;
 
-	unsigned int lenght = sboxs_ptr[count_step & 7].lenght;
+	uint32_t lenght = sboxs_ptr[count_step & 7].lenght;
 	memcpy(sbox, sboxs_ptr[count_step & 7].instructions, sizeof(LM_Instruction)*lenght);
 
 	// Params and temporal names
@@ -4753,11 +4787,11 @@ PRIVATE void step(char* source, int count_step, int k0, int k1, int k2, int k3, 
 		{
 			cl_uint c_index = atoi(l_regs[reg_result] + 1);
 			if (gpu->flags & GPU_FLAG_SUPPORT_PTX)
-				sprintf(source + strlen(source), "ld.shared.b32 %s,[cs_ptr+%uU];\n", l_regs[reg_op1], cs_mapped[c_index] * gpu->lm_work_group_size * 4);
+				sprintf(source + strlen(source), "ld.shared.b32 %s,[cs_ptr+%uU];\n", l_regs[reg_op1], (cl_uint)(cs_mapped[c_index] * gpu->lm_work_group_size * 4));
 			else
 			{
 				if (c_memory_space[c_index] == MEMORY_SHARED)
-					sprintf(source + strlen(source), "%s=cs[get_local_id(0)+%uU];", l_regs[reg_op1], cs_mapped[c_index] * gpu->lm_work_group_size);
+					sprintf(source + strlen(source), "%s=cs[get_local_id(0)+%uU];", l_regs[reg_op1], (cl_uint)(cs_mapped[c_index] * gpu->lm_work_group_size));
 			}
 
 			strcpy(r_regs[reg_op1], l_regs[reg_op1]);// Now override r_values
@@ -4767,11 +4801,11 @@ PRIVATE void step(char* source, int count_step, int k0, int k1, int k2, int k3, 
 		{
 			cl_uint c_index = atoi(l_regs[reg_result] + 1);
 			if (gpu->flags & GPU_FLAG_SUPPORT_PTX)
-				sprintf(source + strlen(source), "st.shared.b32 [cs_ptr+%uU],%s;\n", cs_mapped[c_index] * gpu->lm_work_group_size * 4, l_regs[reg_op1]);
+				sprintf(source + strlen(source), "st.shared.b32 [cs_ptr+%uU],%s;\n", (cl_uint)(cs_mapped[c_index] * gpu->lm_work_group_size * 4), l_regs[reg_op1]);
 			else
 			{
 				if (c_memory_space[c_index] == MEMORY_SHARED)
-					sprintf(source + strlen(source), "cs[get_local_id(0)+%uU]=%s;", cs_mapped[c_index] * gpu->lm_work_group_size, l_regs[reg_op1]);
+					sprintf(source + strlen(source), "cs[get_local_id(0)+%uU]=%s;", (cl_uint)(cs_mapped[c_index] * gpu->lm_work_group_size), l_regs[reg_op1]);
 			}
 		}
 			break;
@@ -4855,7 +4889,7 @@ PRIVATE void step(char* source, int count_step, int k0, int k1, int k2, int k3, 
 }
 PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* k_values_char, GPUDevice* gpu, int* k_mapped_to_last, cl_uint lm_size_bit_table)
 {
-	unsigned int i, k;
+	uint32_t i, k;
 	unsigned char c_values[64];
 	unsigned char c_memory_space[64];// Use register or shared memory for cs
 	unsigned char cs_mapped[64];// Mapped the c index to shared memory index
@@ -4885,7 +4919,7 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 		c_memory_space[35] = MEMORY_SHARED;
 		c_memory_space[38] = MEMORY_SHARED;
 		c_memory_space[39] = MEMORY_SHARED;
-
+		
 		c_memory_space[42] = MEMORY_SHARED;
 		c_memory_space[43] = MEMORY_SHARED;
 		c_memory_space[44] = MEMORY_SHARED;
@@ -4896,7 +4930,7 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 	//34 35 38 39 42 43 44 46 49 51 54 55 58 59 61 62
 	if (gpu->flags & GPU_FLAG_LM_USE_SHARED_MEMORY)
 	{
-#ifdef ANDROID
+#ifdef __ANDROID__
 		// From here down cs are read only once
 		/*c_memory_space[34] = MEMORY_SHARED;
 		c_memory_space[35] = MEMORY_SHARED;
@@ -5000,7 +5034,7 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 	else
 	{
 		if (gpu->flags & GPU_FLAG_LM_REQUIRE_WORKGROUP)
-			sprintf(source + strlen(source), "\n__attribute__((reqd_work_group_size(%i, 1, 1))) ", gpu->lm_work_group_size);
+			sprintf(source + strlen(source), "\n__attribute__((reqd_work_group_size(%i, 1, 1))) ", (int)gpu->lm_work_group_size);
 		else
 			strcat(source, "\n");
 		sprintf(source + strlen(source), "__kernel void lm_crypt%u(uint current_key, uint last_key_index, __global uint* restrict output", key_lenght);
@@ -5009,12 +5043,12 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 	if (gpu->flags & GPU_FLAG_SUPPORT_PTX)
 	{
 		if(LM_BEGIN_USE_HASHTABLE)
-			sprintf(source+strlen(source), ", .param .u%i .ptr.global table, .param .u%i .ptr.global binary_values, .param .u%i .ptr.global same_hash_next, .param .u%i .ptr.global bit_table", PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS);
-		sprintf(source+strlen(source), ") .reqntid %i\n{\n"
+			sprintf(source + strlen(source), ", .param .u%i .ptr.global table, .param .u%i .ptr.global binary_values, .param .u%i .ptr.global same_hash_next, .param .u%i .ptr.global bit_table", PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS);
+		sprintf(source+strlen(source), ") .reqntid %i %s{\n"
 			".reg .b32 a<6>;\n"
 			".reg .b32 x<%i>;\n"
 			".reg .b32 kmask0;\n"
-			".reg .b32 kmask1;\n", (int)gpu->lm_work_group_size, (gpu->flags & GPU_FLAG_NVIDIA_LOP3) ? 10 : 8);// Use lop3 instruction to reduce gate counts
+			".reg .b32 kmask1;\n", (int)gpu->lm_work_group_size, gpu->major_cc < 3 ? "" : ".minnctapersm 8", (gpu->flags & GPU_FLAG_NVIDIA_LOP3) ? 10 : 8);// Use lop3 instruction to reduce gate counts
 	}
 	else
 	{
@@ -5052,9 +5086,9 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 											"cvt.u%i.u16 cs_ptr,%%tid.x;\n"
 											"shl.b%i cs_ptr,cs_ptr,2;\n"
 											"mov.u%i ptr1,cs;\n"
-											"add.u%i cs_ptr,cs_ptr,ptr1;\n", gpu->lm_work_group_size*num_shared_c * 4, PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS);
+											"add.u%i cs_ptr,cs_ptr,ptr1;\n", (int)(gpu->lm_work_group_size*num_shared_c * 4), PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS, PTR_SIZE_IN_BITS);
 		else if(num_shared_c)
-			sprintf(source+strlen(source), "local uint cs[%i];", gpu->lm_work_group_size*num_shared_c);
+			sprintf(source+strlen(source), "local uint cs[%i];", (int)(gpu->lm_work_group_size*num_shared_c));
 	}
 	// Declare other c as using register
 	for(i = 0; i < 64; i++)
@@ -5146,7 +5180,7 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 			if(c_memory_space[i] == MEMORY_REGISTER)
 				sprintf(source+strlen(source), "mov.u32 c%i,%s;\n", i, c_values[i]==VALUE_KNOW_0 ? "0" : "0xffffffff");
 			else if (c_memory_space[i] == MEMORY_SHARED)//MEMORY_SHARED
-				sprintf(source+strlen(source), "st.shared.u32 [cs_ptr+%uU],%s;\n", cs_mapped[i]*gpu->lm_work_group_size*4, c_values[i] == VALUE_KNOW_0 ? "0" : "0xffffffff");
+				sprintf(source+strlen(source), "st.shared.u32 [cs_ptr+%uU],%s;\n", (cl_uint)(cs_mapped[i]*gpu->lm_work_group_size*4), c_values[i] == VALUE_KNOW_0 ? "0" : "0xffffffff");
 		}
 		memset(c_values, VALUE_UNKNOW, sizeof(c_values));
 	}
@@ -5157,7 +5191,7 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 			if (c_memory_space[i] == MEMORY_REGISTER)
 				sprintf(source + strlen(source), "c%i=%s;", i, c_values[i] == VALUE_KNOW_0 ? "0" : "0xffffffff");
 			else  if (c_memory_space[i] == MEMORY_SHARED)
-				sprintf(source + strlen(source), "cs[get_local_id(0)+%uU]=%s;", cs_mapped[i] * gpu->lm_work_group_size, c_values[i] == VALUE_KNOW_0 ? "0" : "0xffffffff");
+				sprintf(source + strlen(source), "cs[get_local_id(0)+%uU]=%s;", (cl_uint)(cs_mapped[i] * gpu->lm_work_group_size), c_values[i] == VALUE_KNOW_0 ? "0" : "0xffffffff");
 		}
 		memset(c_values, VALUE_UNKNOW, sizeof(c_values));
 	}
@@ -5224,6 +5258,29 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 			step(source, 5,  kptr[30], kptr[31], kptr[32], kptr[33], kptr[34], kptr[35], c_values, gpu, k_index_mask, key_lenght, FALSE, c_memory_space, cs_mapped, k_mapped_to_last, posible_last_load, use_only_kmask1);
 			step(source, 6,  kptr[36], kptr[37], kptr[38], kptr[39], kptr[40], kptr[41], c_values, gpu, k_index_mask, key_lenght, FALSE, c_memory_space, cs_mapped, k_mapped_to_last, posible_last_load, use_only_kmask1);
 			step(source, 0,  kptr[42], kptr[43], kptr[44], kptr[45], kptr[46], kptr[47], c_values, gpu, k_index_mask, key_lenght, FALSE, c_memory_space, cs_mapped, k_mapped_to_last, posible_last_load, use_only_kmask1);
+
+			// Fast return for AMD
+			if (!LM_BEGIN_USE_HASHTABLE && i == 7 && !(gpu->flags & GPU_FLAG_SUPPORT_PTX))
+			{
+				strcat(source, "uint fast_result_total=0xffffffff, fast_result;");
+
+				for (k = 0; k < num_passwords_loaded; k++)
+				{
+					strcat(source, "fast_result=0;");
+					// TODO: Generate better code that reuse intermediate results
+					for (cl_uint bit_index = 0; bit_index < 32; bit_index++)
+					{
+						cl_uint bin_val = ((((cl_uchar*)binary_values)[k * 8 + bit_index / 8] >> (bit_index & 7)) & 1);
+
+						sprintf(source + strlen(source), "fast_result|=%sc%i;", bin_val ? "~" : "", bit_index);
+					}
+					strcat(source, "fast_result_total&=fast_result;");
+				}
+
+				// Total match
+				strcat(source, "if(fast_result_total==0xffffffff)return;");
+			}
+
 			//2
 			step(source, 15, kptr[48], kptr[49], kptr[50], kptr[51], kptr[52], kptr[53], c_values, gpu, k_index_mask, key_lenght, FALSE, c_memory_space, cs_mapped, k_mapped_to_last, posible_last_load, use_only_kmask1);
 			step(source, 9,  kptr[54], kptr[55], kptr[56], kptr[57], kptr[58], kptr[59], c_values, gpu, k_index_mask, key_lenght, FALSE, c_memory_space, cs_mapped, k_mapped_to_last, posible_last_load, use_only_kmask1);
@@ -5262,7 +5319,7 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 																 "ld.shared.b32 x1,[cs_ptr+%uU];\n"
 																 "or.b32 x0,x0,x1;\n", cs_mapped[i] * gpu->lm_work_group_size * 4);// x0 is result
 					else
-						sprintf(source+strlen(source), bin_val ? "not.b32 x1,c%i;\n"
+							sprintf(source+strlen(source), bin_val ? "not.b32 x1,c%i;\n"
 																 "or.b32 x0,x0,x1;\n"
 																 :
 																 "or.b32 x0,x0,c%i;\n", i);// x0 is result
@@ -5273,7 +5330,7 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 				else
 				{
 					if(c_memory_space[i] == MEMORY_SHARED)
-						sprintf(source + strlen(source), "result|=%scs[get_local_id(0)+%uU];\n", bin_val ? "~" : "", cs_mapped[i] * gpu->lm_work_group_size);
+						sprintf(source + strlen(source), "result|=%scs[get_local_id(0)+%uU];", bin_val ? "~" : "", (cl_uint)(cs_mapped[i] * gpu->lm_work_group_size));
 					else// Registers
 						sprintf(source+strlen(source), "result|=%sc%i;", bin_val?"~":"", i);
 				}
@@ -5420,7 +5477,7 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 				if (c_memory_space[j] == MEMORY_REGISTER)
 					sprintf(source + strlen(source), "hash_value=c%u&%uU;", j, lm_size_bit_table);
 				if (c_memory_space[j] == MEMORY_SHARED)
-					sprintf(source + strlen(source), "hash_value=cs[get_local_id(0)+%u]&%uU;\n", cs_mapped[j]*gpu->lm_work_group_size, lm_size_bit_table);
+					sprintf(source + strlen(source), "hash_value=cs[get_local_id(0)+%u]&%uU;\n", (cl_uint)(cs_mapped[j]*gpu->lm_work_group_size), lm_size_bit_table);
 			}
 			// TODO: Take into account that SIZE_TABLE can be greater than SIZE_BIT_TABLE
 			if (gpu->flags & GPU_FLAG_SUPPORT_PTX)
@@ -5485,10 +5542,10 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 				}
 				if (c_memory_space[j] == MEMORY_SHARED)
 				{
-					if (bits_to_check < 8)	sprintf(source + strlen(source), "if(( cs[get_local_id(0)+%uu] & 0xFF) != binary_values[index*8])continue;\n", cs_mapped[j] * gpu->lm_work_group_size);
-					if (bits_to_check < 16)	sprintf(source + strlen(source), "if(((cs[get_local_id(0)+%uu] >> 8) & 0xFF) != binary_values[index*8+1])continue;", cs_mapped[j] * gpu->lm_work_group_size);
-					if (bits_to_check < 24)	sprintf(source + strlen(source), "if(((cs[get_local_id(0)+%uu] >> 16) & 0xFF) != binary_values[index*8+2])continue;", cs_mapped[j] * gpu->lm_work_group_size);
-											sprintf(source + strlen(source), "if(( cs[get_local_id(0)+%uu] >> 24) != binary_values[index*8+3])continue;", cs_mapped[j] * gpu->lm_work_group_size);
+					if (bits_to_check < 8)	sprintf(source + strlen(source), "if(( cs[get_local_id(0)+%uu] & 0xFF) != binary_values[index*8])continue;\n", (cl_uint)(cs_mapped[j] * gpu->lm_work_group_size));
+					if (bits_to_check < 16)	sprintf(source + strlen(source), "if(((cs[get_local_id(0)+%uu] >> 8) & 0xFF) != binary_values[index*8+1])continue;", (cl_uint)(cs_mapped[j] * gpu->lm_work_group_size));
+					if (bits_to_check < 24)	sprintf(source + strlen(source), "if(((cs[get_local_id(0)+%uu] >> 16) & 0xFF) != binary_values[index*8+2])continue;", (cl_uint)(cs_mapped[j] * gpu->lm_work_group_size));
+											sprintf(source + strlen(source), "if(( cs[get_local_id(0)+%uu] >> 24) != binary_values[index*8+3])continue;", (cl_uint)(cs_mapped[j] * gpu->lm_work_group_size));
 				}
 			}
 
@@ -5525,7 +5582,7 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 					{
 						sprintf(source+strlen(source), "bin_value=binary_values[(index<<3)+%i]%s;", i >> 3, buffer);
 						if(c_memory_space[i] == MEMORY_SHARED)
-							sprintf(source + strlen(source), "c_value=(cs[get_local_id(0)+%uU]&%uU)%s%i;", cs_mapped[i] * gpu->lm_work_group_size, 1 << j, j>(i & 7) ? ">>" : "<<", (int)abs(((int)i & 7) - ((int)j)));
+							sprintf(source + strlen(source), "c_value=(cs[get_local_id(0)+%uU]&%uU)%s%i;", (cl_uint)(cs_mapped[i] * gpu->lm_work_group_size), 1 << j, j>(i & 7) ? ">>" : "<<", (int)abs(((int)i & 7) - ((int)j)));
 						else// Registers
 							sprintf(source+strlen(source), "c_value=(c%i&%uU)%s%i;", i, 1<<j, j>(i&7)?">>":"<<", (int)abs(((int)i&7)-((int)j)));
 					}
@@ -5546,7 +5603,7 @@ PRIVATE void gen_kernel_with_lenght(cl_uint key_lenght, char* source, cl_uchar* 
 					else
 					{
 						if(c_memory_space[i] == MEMORY_SHARED)
-							sprintf(source + strlen(source), "c_value|=(cs[get_local_id(0)+%uU]&%uU)%s%i;", cs_mapped[i] * gpu->lm_work_group_size, 1 << j, j>(i & 7) ? ">>" : "<<", (int)abs(((int)i & 7) - ((int)j)));
+							sprintf(source + strlen(source), "c_value|=(cs[get_local_id(0)+%uU]&%uU)%s%i;", (cl_uint)(cs_mapped[i] * gpu->lm_work_group_size), 1 << j, j>(i & 7) ? ">>" : "<<", (int)abs(((int)i & 7) - ((int)j)));
 						else// Registers
 							sprintf(source+strlen(source), "c_value|=(c%i&%uU)%s%i;", i, 1<<j, j>(i&7)?">>":"<<", (int)abs(((int)i&7)-((int)j)));
 					}
@@ -5750,7 +5807,7 @@ PRIVATE void crypt_lm_protocol_opencl(OpenCL_Param* param)
 
 	HS_SET_PRIORITY_GPU_THREAD;
 
-#ifndef ANDROID
+#ifndef __ANDROID__
 	if(param->use_ptx)
 	{
 		void *args[] = { &lm_param[0], &lm_param[1], &param->cu_mems[GPU_OUTPUT],
@@ -5759,15 +5816,15 @@ PRIVATE void crypt_lm_protocol_opencl(OpenCL_Param* param)
 
 		while(continue_attack && param->gen(lm_param, param->NUM_KEYS_OPENCL, param->thread_id))
 		{
-			unsigned int key_lenght = lm_param[2];
-			unsigned int blocksPerGrid = (lm_param[3] + (unsigned int)work_group_size - 1) / (unsigned int)work_group_size;
+			uint32_t key_lenght = lm_param[2];
+			uint32_t blocksPerGrid = (lm_param[3] + (uint32_t)work_group_size - 1) / (uint32_t)work_group_size;
 
 			// To maintain synchronization with CPU we need SSE2 (128 bits) length
 			// so we need 4x integer length
 			lm_param[1] *= 4;
 			for(last_index = 0; last_index < 4; last_index++, lm_param[1]++)
 			{
-				CUresult res = cuLaunchKernel(param->cu_kernels[key_lenght], blocksPerGrid, 1, 1, (unsigned int)work_group_size, 1, 1, 0, NULL, args, NULL);
+				CUresult res = cuLaunchKernel(param->cu_kernels[key_lenght], blocksPerGrid, 1, 1, (uint32_t)work_group_size, 1, 1, 0, NULL, args, NULL);
 				cuCtxSynchronize();
 				cuMemcpyDtoH(&num_found, param->cu_mems[GPU_OUTPUT], 4);
 
@@ -5837,15 +5894,15 @@ PRIVATE void crypt_lm_protocol_opencl(OpenCL_Param* param)
 	
 	finish_thread();
 }
-PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_device_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_lm_crypt)
+PRIVATE int crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_device_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_lm_crypt)
 {
 	cl_uint local_num_found = 0, i, lm_size_bit_table;
 	char buffer[16];
-	cl_uint output_size = 3 * sizeof(cl_uint)*num_passwords_loaded;
+	cl_uint output_size = 3 * sizeof(cl_uint) * num_passwords_loaded;
 
 	create_opencl_param(param, gpu_device_index, gen, output_size, TRUE);
 
-#ifdef ANDROID
+#ifdef __ANDROID__
 	param->NUM_KEYS_OPENCL /= 1;
 #else
 	param->NUM_KEYS_OPENCL *= 4;
@@ -5880,7 +5937,7 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 	if(!build_opencl_program(param, source, gpu_devices[gpu_device_index].lm_compiler_options))
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	// Crypt method
@@ -5891,9 +5948,9 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 		if (code != CL_SUCCESS)
 		{
 			release_opencl_param(param);
-			return;
+			return FALSE;
 		}
-#ifndef ANDROID
+#ifndef __ANDROID__
 		else if(param->use_ptx)
 			cuFuncSetCacheConfig(param->cu_kernels[i], CU_FUNC_CACHE_PREFER_SHARED);
 #endif
@@ -5906,17 +5963,17 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 	{
 		if (gpu_devices[gpu_device_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
 		{
-			create_opencl_mem(param, GPU_TABLE		   , CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 4*(size_table+1), table);
-			create_opencl_mem(param, GPU_BIT_TABLE	   , CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 4*(size_bit_table/32+1), bit_table);
-			create_opencl_mem(param, GPU_BINARY_VALUES , CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, BINARY_SIZE*num_passwords_loaded, binary_values);
-			create_opencl_mem(param, GPU_SAME_HASH_NEXT, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 4*num_passwords_loaded, same_hash_next);
+			create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 4 * (size_table + 1), table);
+			create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 4 * (size_bit_table / 32 + 1), bit_table);
+			create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, BINARY_SIZE*num_passwords_loaded, binary_values);
+			create_opencl_mem(param, GPU_SAME_HASH_NEXT, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, 4 * num_passwords_loaded, same_hash_next);
 		}
 		else
 		{
-			create_opencl_mem(param, GPU_TABLE		   , CL_MEM_READ_ONLY, 4*(size_table+1), NULL);
-			create_opencl_mem(param, GPU_BIT_TABLE	   , CL_MEM_READ_ONLY, 4*(lm_size_bit_table/32+1), NULL);
-			create_opencl_mem(param, GPU_BINARY_VALUES , CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL);
-			create_opencl_mem(param, GPU_SAME_HASH_NEXT, CL_MEM_READ_ONLY, 4*num_passwords_loaded, NULL);
+			create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY, 4 * (size_table + 1), NULL);
+			create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY, 4 * (lm_size_bit_table / 32 + 1), NULL);
+			create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL);
+			create_opencl_mem(param, GPU_SAME_HASH_NEXT, CL_MEM_READ_ONLY, 4 * num_passwords_loaded, NULL);
 		}
 	}
 
@@ -5927,10 +5984,10 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 			pclSetKernelArg(param->kernels[i], 2, sizeof(cl_mem), (void*) &param->mems[GPU_OUTPUT]);
 			if(LM_BEGIN_USE_HASHTABLE)
 			{
-				pclSetKernelArg(param->kernels[i], 3, sizeof(cl_mem), (void*) &param->mems[GPU_TABLE]);
-				pclSetKernelArg(param->kernels[i], 4, sizeof(cl_mem), (void*) &param->mems[GPU_BINARY_VALUES]);
-				pclSetKernelArg(param->kernels[i], 5, sizeof(cl_mem), (void*) &param->mems[GPU_SAME_HASH_NEXT]);
-				pclSetKernelArg(param->kernels[i], 6, sizeof(cl_mem), (void*) &param->mems[GPU_BIT_TABLE]);
+				pclSetKernelArg(param->kernels[i], 3, sizeof(cl_mem), (void*)&param->mems[GPU_TABLE]);
+				pclSetKernelArg(param->kernels[i], 4, sizeof(cl_mem), (void*)&param->mems[GPU_BINARY_VALUES]);
+				pclSetKernelArg(param->kernels[i], 5, sizeof(cl_mem), (void*)&param->mems[GPU_SAME_HASH_NEXT]);
+				pclSetKernelArg(param->kernels[i], 6, sizeof(cl_mem), (void*)&param->mems[GPU_BIT_TABLE]);
 			}
 		}
 
@@ -5938,20 +5995,21 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 	cl_write_buffer(param, GPU_OUTPUT, 4, &local_num_found);
 	if (LM_BEGIN_USE_HASHTABLE && !(gpu_devices[gpu_device_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY))
 	{
+		
 		// Create and initialize bitmaps
 		cl_uint* my_bit_table = (cl_uint*)calloc(lm_size_bit_table / 32 + 1, sizeof(cl_uint));
 		cl_uchar* out = (cl_uchar*)binary_values;
 
-		for(i = 0; i < num_passwords_loaded; i++, out+=8)
+		for (i = 0; i < num_passwords_loaded; i++, out += 8)
 		{
 			cl_uint value_map = (out[0] | out[1] << 8 | out[2] << 16 | out[3] << 24) & lm_size_bit_table;
 			my_bit_table[value_map >> 5] |= 1 << (value_map & 31);
 		}
 
-		cl_write_buffer(param, GPU_TABLE		 , 4*(size_table+1), table);
-		cl_write_buffer(param, GPU_BIT_TABLE	 , 4*(lm_size_bit_table/32+1), my_bit_table);
-		cl_write_buffer(param, GPU_BINARY_VALUES , BINARY_SIZE*num_passwords_loaded, binary_values);
-		cl_write_buffer(param, GPU_SAME_HASH_NEXT, 4*num_passwords_loaded, same_hash_next);
+		cl_write_buffer(param, GPU_TABLE, 4 * (size_table + 1), table);
+		cl_write_buffer(param, GPU_BIT_TABLE, 4 * (lm_size_bit_table / 32 + 1), my_bit_table);
+		cl_write_buffer(param, GPU_BINARY_VALUES, BINARY_SIZE*num_passwords_loaded, binary_values);
+		cl_write_buffer(param, GPU_SAME_HASH_NEXT, 4 * num_passwords_loaded, same_hash_next);
 
 		pclFinish(param->queue);
 
@@ -5998,7 +6056,7 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 	}
 	else
 	{
-#ifndef ANDROID
+#ifndef __ANDROID__
 		cl_uint lm_param_current_key = 0;
 		cl_uint lm_param_last_key = 0;
 
@@ -6008,7 +6066,7 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 		// Warm up
 		cl_uint blocksPerGrid = (param->NUM_KEYS_OPENCL + (cl_uint)param->max_work_group_size - 1) / (cl_uint)param->max_work_group_size;
 		int64_t init = get_milliseconds(), duration;
-		CUresult res = cuLaunchKernel(param->cu_kernels[max_lenght], blocksPerGrid, 1, 1, (unsigned int)param->max_work_group_size, 1, 1, 0, NULL, args, NULL);
+		CUresult res = cuLaunchKernel(param->cu_kernels[max_lenght], blocksPerGrid, 1, 1, (uint32_t)param->max_work_group_size, 1, 1, 0, NULL, args, NULL);
 		if (res == CUDA_SUCCESS)
 			res = cuCtxSynchronize();
 		duration = get_milliseconds() - init;
@@ -6024,7 +6082,7 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 		// Final test
 		blocksPerGrid = (param->NUM_KEYS_OPENCL + (cl_uint)param->max_work_group_size - 1) / (cl_uint)param->max_work_group_size;
 		init = get_milliseconds();
-		res = cuLaunchKernel(param->cu_kernels[max_lenght], blocksPerGrid, 1, 1, (unsigned int)param->max_work_group_size, 1, 1, 0, NULL, args, NULL);
+		res = cuLaunchKernel(param->cu_kernels[max_lenght], blocksPerGrid, 1, 1, (uint32_t)param->max_work_group_size, 1, 1, 0, NULL, args, NULL);
 		if (res == CUDA_SUCCESS)
 			res = cuCtxSynchronize();
 		duration = get_milliseconds() - init;
@@ -6040,6 +6098,8 @@ PRIVATE void crypt_lm_protocol_opencl_init(OpenCL_Param* param, cl_uint gpu_devi
 	}
 
 	*gpu_lm_crypt = crypt_lm_protocol_opencl;
+
+	return TRUE;
 }
 #endif
 
@@ -6373,18 +6433,22 @@ PRIVATE OpenCL_Param* ocl_protocol_charset_init(cl_uint gpu_index, generate_key_
 	return ocl_charset_init(gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_lm_header, ocl_gen_kernel_with_lenght, lm_empy_hash, 0, 8);
 }*/
 
-PRIVATE int bench_values[] = {1,10,100,1000,10000,65536,100000,1000000};
 Format lm_format = {
 	"LM",
 	"DES based.",
+	"",
 	PLAINTEXT_LENGTH,
 	BINARY_SIZE,
 	SALT_SIZE,
 	1,
-	bench_values,
-	LENGHT(bench_values),
+	NULL,
+	0,
 	get_binary,
+	binary2hex,
+	VALUE_MAP_INDEX0,
+	VALUE_MAP_INDEX1,
 	is_valid,
+	NULL,
 	NULL,
 #ifdef _M_X64
 	{{CPU_CAP_AVX2, PROTOCOL_FAST_LM, crypt_fast_lm_protocol_avx2}, {CPU_CAP_SSE2, PROTOCOL_FAST_LM, crypt_fast_lm_protocol_sse2}, {CPU_CAP_SSE2, PROTOCOL_UTF8_LM, crypt_utf8_lm_protocol_sse2}},

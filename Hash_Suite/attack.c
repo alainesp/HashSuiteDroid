@@ -1,69 +1,81 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2018 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include <stdlib.h>
 #include <memory.h>
 #include <stdio.h>
+#include "attack.h"
 
 #ifdef _WIN32
 	#include <windows.h>
 	#include <process.h>
 #else
 	#include <pthread.h>
+	#include <fcntl.h>
+	#include <unistd.h>
+	#include <sys/mman.h>
+	#include <sys/stat.h>
 #endif
 
 // Mutex for thread-safe access
 extern HS_MUTEX key_provider_mutex;
 
-PUBLIC unsigned int MAX_NUM_PASWORDS_LOADED = 9999999;
+PUBLIC uint32_t MAX_NUM_PASWORDS_LOADED = UINT32_MAX;
 PUBLIC int is_benchmark = FALSE;
 
 // Number of threads used
-PUBLIC unsigned int num_threads;
-PUBLIC unsigned int app_num_threads;
+PUBLIC uint32_t num_threads;
+PUBLIC uint32_t app_num_threads;
 // Used to stop the attack
 PUBLIC int continue_attack;
+PUBLIC int save_needed = FALSE;
 PRIVATE callback_funtion* send_message_gui;
 // Number of passwords currently loaded
-PUBLIC unsigned int num_passwords_loaded;
+PUBLIC uint32_t num_passwords_loaded;
 // The binary values of the hashes
 PUBLIC void* binary_values = NULL;
 // His DB ids to save when cracked
-PRIVATE sqlite3_int64* hash_ids = NULL;
+PRIVATE uint32_t* hash_ids32 = NULL;
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Table map for fast compare
 ////////////////////////////////////////////////////////////////////////////////////
-PUBLIC unsigned int* table = NULL;
-PUBLIC unsigned int* bit_table = NULL;
+PUBLIC uint32_t* table = NULL;
+PUBLIC uint32_t* bit_table = NULL;
 // If there are more than one password with the same hash point to next
-PUBLIC unsigned int* same_hash_next = NULL;
-PUBLIC unsigned int size_table;
-PUBLIC unsigned int size_bit_table;
-PUBLIC HS_ALIGN(16) unsigned int size_table_see2[4];
-PUBLIC HS_ALIGN(16) unsigned int size_bit_table_see2[4];
-PUBLIC unsigned int first_bit_size_bit_table;
-PUBLIC unsigned int first_bit_size_table;
+PUBLIC uint32_t* same_hash_next = NULL;
+PUBLIC uint32_t size_table;
+PUBLIC uint32_t size_bit_table;
+PUBLIC HS_ALIGN(16) uint32_t size_table_see2[4];
+PUBLIC HS_ALIGN(16) uint32_t size_bit_table_see2[4];
+PUBLIC uint32_t first_bit_size_bit_table;
+PUBLIC uint32_t first_bit_size_table;
+
+PUBLIC uint16_t* cbg_filter = NULL;
+PUBLIC uint32_t* cbg_table = NULL;
+PUBLIC uint32_t cbg_mask;
+PUBLIC uint32_t cbg_count_unlucky;
+PUBLIC uint32_t cbg_count_moved;
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Salted hash
 ////////////////////////////////////////////////////////////////////////////////////
 PUBLIC void* salts_values = NULL;
-PUBLIC unsigned int num_diff_salts;
-PUBLIC unsigned int* salt_index = NULL;
-PUBLIC unsigned int* same_salt_next = NULL;
+PUBLIC uint32_t num_diff_salts;
+PUBLIC uint32_t* salt_index = NULL;
+PUBLIC uint32_t* same_salt_next = NULL;
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Found hashes
 ////////////////////////////////////////////////////////////////////////////////////
-PRIVATE unsigned int num_passwords_found = 0;
+PRIVATE uint32_t num_passwords_found = 0;
 
 typedef struct FoundKey
 {
 	unsigned char cleartext[MAX_KEY_LENGHT_BIG];
-	unsigned int elapsed;
-	unsigned int index;
+	uint32_t elapsed;
+	uint32_t hash_id;
 }FoundKey;
 
 PRIVATE FoundKey* found_keys = NULL;
@@ -83,13 +95,14 @@ PUBLIC uint32_t seconds_since_start(int isTotal)
 
 PRIVATE HS_MUTEX found_keys_mutex;
 PRIVATE sqlite3_stmt* save_state_update;
+PRIVATE sqlite3_stmt* insert_found_hash;
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Batch
 ////////////////////////////////////////////////////////////////////////////////////
 PRIVATE char batch_name[128];
 PRIVATE char batch_description[64];
-#ifdef ANDROID
+#ifdef __ANDROID__
 PUBLIC sqlite3_int64 batch_db_id;
 #else
 PRIVATE sqlite3_int64 batch_db_id;
@@ -98,7 +111,37 @@ PUBLIC AttackData* batch = NULL;
 PUBLIC int num_attack_in_batch;
 PUBLIC int current_attack_index;
 
-PUBLIC char* is_found = NULL;
+PUBLIC uint32_t* is_foundBit = NULL;
+PRIVATE int attack_need_restart = FALSE;
+// Cache
+PUBLIC int cache_had_hashes = FALSE;
+PRIVATE int cache_format_index;
+PRIVATE uint32_t cache_total_hashes;
+PRIVATE uint32_t cache_num_hashes_loaded;
+PRIVATE void set_cache(int format_index)
+{
+	// TODO: This is because the copy of salts it's currently done wrong
+	if (formats[format_index].salt_size && num_diff_salts != num_passwords_found)
+	{
+		cache_had_hashes = FALSE;
+	}
+	else
+	{
+		cache_had_hashes = TRUE;
+		cache_format_index = format_index;
+		cache_total_hashes = num_hashes_by_formats1[format_index];
+		cache_num_hashes_loaded = num_passwords_loaded;
+	}
+}
+PUBLIC void get_cache_info(char* buffer)
+{
+	uint32_t unknow_hashes = num_hashes_by_formats1[cache_format_index] - num_hashes_found_by_format1[cache_format_index];
+
+	itoaWithDigitGrouping(cache_num_hashes_loaded, buffer);
+	strcat(buffer, " hashes are in cache.\n");
+	filelength2string((sizeof(uint32_t) + formats[cache_format_index].binary_size + formats[cache_format_index].salt_size)*cache_num_hashes_loaded, buffer + strlen(buffer));
+	sprintf(buffer + strlen(buffer), " of memory is used.\n%i%% of wasted cache.", (uint32_t)((cache_num_hashes_loaded - unknow_hashes)*100ll/cache_num_hashes_loaded));
+}
 
 extern int64_t num_key_space;
 PUBLIC int64_t get_key_space_batch()
@@ -123,10 +166,55 @@ PUBLIC int64_t get_key_space_batch()
 	return _result;
 }
 
-// Mask and size for the table map. Use 12.5% full
-PRIVATE void calculate_table_mask(unsigned int num_elem)
+PRIVATE void free_all_memory(int exclude_cache)
 {
-	int i;
+	// Free all memory used
+	_aligned_free(bit_table);			bit_table = NULL;
+	_aligned_free(table);				table = NULL;
+	_aligned_free(same_hash_next);		same_hash_next = NULL;
+
+	large_page_free(cbg_filter);		cbg_filter = NULL;
+	free(cbg_table);					cbg_table = NULL;
+
+	if (exclude_cache)
+	{
+		uint32_t bin_size = formats[cache_format_index].binary_size;
+		uint32_t salt_size = formats[cache_format_index].salt_size;
+		// Get good last_index
+		size_t last_index = num_passwords_loaded - 1;
+		for (; last_index && ((is_foundBit[last_index >> 5] >> (last_index & 31)) & 1); last_index--);
+		// Erase found passwords copying from the end and overwrite
+		for (size_t i = 0; i < last_index; i++)
+			if ((is_foundBit[i >> 5] >> (i & 31)) & 1)
+			{
+				hash_ids32[i] = hash_ids32[last_index];
+				memcpy(((BYTE*)binary_values) + i*bin_size, ((BYTE*)binary_values) + last_index*bin_size, bin_size);
+				if (salt_size)
+					memcpy(((BYTE*)salts_values) + i*salt_size, ((BYTE*)salts_values) + last_index*salt_size, salt_size);
+
+				for (last_index--; last_index > i && ((is_foundBit[last_index >> 5] >> (last_index & 31)) & 1); last_index--);
+			}
+	}
+	else
+	{
+		free(hash_ids32);					hash_ids32 = NULL;
+		_aligned_free(binary_values);		binary_values = NULL;
+		_aligned_free(salts_values);		salts_values = NULL;
+	}
+	
+	free(found_keys);					found_keys = NULL;
+	_aligned_free(salt_index);			salt_index = NULL;
+	_aligned_free(same_salt_next);		same_salt_next = NULL;
+	free(is_foundBit);					is_foundBit = NULL;
+}
+PUBLIC void release_all_cache()
+{
+	cache_had_hashes = FALSE;
+	free_all_memory(FALSE);
+}
+// Mask and size for the table map. Use 12.5% full
+PRIVATE void calculate_table_mask(uint32_t num_elem)
+{
 	size_table = 1;
 
 	// Generate result with all bits less than
@@ -134,12 +222,34 @@ PRIVATE void calculate_table_mask(unsigned int num_elem)
 	while(size_table < num_elem)
 		size_table = (size_table << 1) + 1;
 
+	int repeat_size_table = 3;
+	int repeat_size_bit_table = 0;
+
+	if (3*__max(512, current_cpu.l3_cache_size)*1024/71 < num_elem)
+	{
+		repeat_size_table--;// 40 -> 20
+		repeat_size_bit_table++;// 2.5
+	}
+	if (6*__max(512, current_cpu.l3_cache_size)*1024/51 < num_elem)
+	{
+		repeat_size_table--;// 20 -> 10
+		repeat_size_bit_table++;// 2.5
+	}
+	if (12*__max(512, current_cpu.l3_cache_size)*1024/41 < num_elem)
+	{
+		repeat_size_table--;// 10 -> 5
+		repeat_size_bit_table++;// 2.5
+	}
+	if (4*__max(512, current_cpu.l3_cache_size)*1024/2 < num_elem)
+		repeat_size_bit_table++;// 2.5 -> 5
+
 	// 3 bits more into account
-	for(i = 0; i < 3; i++)
+	for(int i = 0; i < repeat_size_table; i++)
 		size_table = (size_table << 1) + 1;
 
 	size_bit_table = (size_table << 1) + 1;
-	//size_bit_table = (size_bit_table << 1) + 1;
+	for (int i = 0; i < repeat_size_bit_table; i++)
+		size_bit_table = (size_bit_table << 1) + 1;
 
 	_BitScanReverse(&first_bit_size_bit_table, size_bit_table);
 	_BitScanReverse(&first_bit_size_table, size_table);
@@ -151,113 +261,192 @@ PRIVATE void calculate_table_mask(unsigned int num_elem)
 }
 PRIVATE void load_hashes(int format_index)
 {
-	sqlite3_stmt* select_not_cracked, *count_hashes;
-	unsigned int current_index = 0, i;
+	assert(format_index >= 0 && format_index < num_formats);
 
-	sqlite3_prepare_v2(db, "SELECT count(*) FROM Hash WHERE Type=? AND ID NOT IN (SELECT ID FROM FindHash);", -1, &count_hashes, NULL);
-	sqlite3_bind_int64(count_hashes, 1, formats[format_index].db_id);
-	sqlite3_step(count_hashes);
-	num_passwords_loaded = sqlite3_column_int(count_hashes, 0);
+	uint32_t current_index = 0, i;
+
+	num_passwords_loaded = num_hashes_by_formats1[format_index] - num_hashes_found_by_format1[format_index];
+
+	// Check if we can use the cache hashes
+	if (cache_had_hashes && (cache_format_index != format_index || cache_total_hashes != num_hashes_by_formats1[format_index] || num_passwords_loaded > MAX_NUM_PASWORDS_LOADED))
+		release_all_cache();
+
 	num_passwords_loaded = __min(num_passwords_loaded, MAX_NUM_PASWORDS_LOADED);
+	int64_t start_load = get_milliseconds();
 
-	// Create data structures needed.
-	binary_values =                 _aligned_malloc(formats[format_index].binary_size    * num_passwords_loaded, 4096);
-	hash_ids      = (sqlite3_int64*)malloc(sizeof(sqlite3_int64) * num_passwords_loaded);
-	is_found      = (char*)malloc(sizeof(char) * num_passwords_loaded);
-	memset(is_found, FALSE, num_passwords_loaded);
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Load the found hashes
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////
+	if (!cache_had_hashes)
+	{
+		// Create data structures needed.
+		binary_values = _aligned_malloc(formats[format_index].binary_size * ((size_t)num_passwords_loaded), 4096);
+		hash_ids32    = (uint32_t*)malloc(sizeof(uint32_t) * num_passwords_loaded);
+	}
+	is_foundBit = (uint32_t*)malloc(sizeof(uint32_t) * (num_passwords_loaded / 32 + 1));
+	memset(is_foundBit, FALSE, sizeof(uint32_t) * (num_passwords_loaded / 32 + 1));
 	// Data for keys found
 	num_passwords_found = 0;
 	current_num_keys = 0;
-	capacity = __max(num_passwords_loaded/100, 512);
-	found_keys = (FoundKey*)malloc(sizeof(FoundKey) * capacity);
+	capacity = __max(num_passwords_loaded/256, 1024);
+	found_keys = (FoundKey*)malloc(sizeof(FoundKey) * ((size_t)capacity));
 
 	num_diff_salts = 0;
 
 	if(formats[format_index].salt_size)// Salted hash
 	{
-		salts_values   = _aligned_malloc( formats[format_index].salt_size * num_passwords_loaded, 4096);
-		salt_index     = (unsigned int*)_aligned_malloc(sizeof(unsigned int) * num_passwords_loaded, 4096);
-		same_salt_next = (unsigned int*)_aligned_malloc(sizeof(unsigned int) * num_passwords_loaded, 4096);
+		if (!cache_had_hashes)
+			salts_values   = _aligned_malloc(formats[format_index].salt_size * ((size_t)num_passwords_loaded), 4096);
+		salt_index     = (uint32_t*)_aligned_malloc(sizeof(uint32_t) * num_passwords_loaded, 4096);
+		same_salt_next = (uint32_t*)_aligned_malloc(sizeof(uint32_t) * num_passwords_loaded, 4096);
 
 		// Initialize table map
-		memset(same_salt_next, 0xff, sizeof(unsigned int) * num_passwords_loaded);
+		memset(same_salt_next, 0xff, sizeof(uint32_t) * num_passwords_loaded);
 	}
-	else// Non-salted hash
+	else if(format_index == LM_INDEX)// Non-salted hash
 	{
 		calculate_table_mask(num_passwords_loaded);
-		table          = (unsigned int*) _aligned_malloc(sizeof(unsigned int) * (size_table+1), 4096);
-		bit_table      = (unsigned int*) _aligned_malloc((size_bit_table/32+1) * sizeof(unsigned int), 4096);
-		same_hash_next = (unsigned int*) _aligned_malloc(sizeof(unsigned int) * num_passwords_loaded, 4096);
+		table          = (uint32_t*) _aligned_malloc(sizeof(uint32_t) * (size_table+1), 4096);
+		bit_table      = (uint32_t*) _aligned_malloc((size_bit_table/32+1) * sizeof(uint32_t), 4096);
+		same_hash_next = (uint32_t*) _aligned_malloc(sizeof(uint32_t) * num_passwords_loaded, 4096);
 
 		// Initialize table map
-		memset(bit_table, 0, (size_bit_table/32+1) * sizeof(unsigned int));
-		memset(table, 0xff, sizeof(unsigned int) * (size_table+1));
-		memset(same_hash_next, 0xff, sizeof(unsigned int) * num_passwords_loaded);
+		memset(bit_table, 0, (size_bit_table/32+1) * sizeof(uint32_t));
+		memset(table, 0xff, sizeof(uint32_t) * (size_table+1));
+		memset(same_hash_next, 0xff, sizeof(uint32_t) * num_passwords_loaded);
 	}
 
-	sqlite3_prepare_v2(db, "SELECT Hex,ID FROM Hash WHERE Type=? AND ID NOT IN (SELECT ID FROM FindHash) LIMIT ?;", -1, &select_not_cracked, NULL);
-	sqlite3_bind_int64(select_not_cracked, 1, formats[format_index].db_id);
-	sqlite3_bind_int  (select_not_cracked, 2, MAX_NUM_PASWORDS_LOADED);
-
-	while(sqlite3_step(select_not_cracked) == SQLITE_ROW)
+	if(cache_had_hashes)
 	{
-		unsigned int value_map = formats[format_index].convert_to_binary(sqlite3_column_text(select_not_cracked, 0), 
-			(char*)binary_values + current_index  * formats[format_index].binary_size,
-			(char*)salts_values  + num_diff_salts * formats[format_index].salt_size);
-		
-		if(formats[format_index].salt_size)// Salted hash
+		for (current_index = 0; current_index < num_passwords_loaded; current_index++)
 		{
-			// Check if salt exist
-			for(i = 0; i < num_diff_salts; i++)
-				if(!memcmp( (char*)salts_values + num_diff_salts*formats[format_index].salt_size,
-							(char*)salts_values +       i       *formats[format_index].salt_size, formats[format_index].salt_size))
-				{// salt already exist
-					unsigned int last_index = salt_index[i];
-					while(same_salt_next[last_index] != NO_ELEM)
-						last_index = same_salt_next[last_index];
+			if (formats[format_index].salt_size)// Salted hash
+			{
+				// Check if salt exist
+				for (i = 0; i < num_diff_salts; i++)
+					if (!memcmp((BYTE*)salts_values + ((size_t)current_index)*formats[format_index].salt_size,
+								(BYTE*)salts_values + ((size_t)i)            *formats[format_index].salt_size, formats[format_index].salt_size))
+					{// salt already exist
+						uint32_t last_index = salt_index[i];
+						while (same_salt_next[last_index] != NO_ELEM)
+							last_index = same_salt_next[last_index];
 
-					same_salt_next[last_index] = current_index;
-					break;
+						same_salt_next[last_index] = current_index;
+						break;
+					}
+
+				if (i == num_diff_salts)// salt not exist
+				{
+					salt_index[num_diff_salts] = current_index;
+					num_diff_salts++;
 				}
-
-			if(i == num_diff_salts)// salt not exist
+			}
+			else if (format_index == LM_INDEX)// Non-salted hash
 			{
-				salt_index[num_diff_salts] = current_index;
-				num_diff_salts++;
+				BYTE* bin = (BYTE*)binary_values + ((size_t)current_index)*formats[format_index].binary_size;
+				uint32_t value_map = ((uint32_t*)bin)[formats[format_index].value_map_index0];
+				
+				bit_table[(value_map & size_bit_table) >> 5] |= 1 << ((value_map & size_bit_table) & 31);
+				// Put the password in the table map
+				if (table[value_map & size_table] == NO_ELEM)
+				{
+					table[value_map & size_table] = current_index;
+				}
+				else
+				{
+					uint32_t last_index = table[value_map & size_table];
+					while (same_hash_next[last_index] != NO_ELEM)
+						last_index = same_hash_next[last_index];
+
+					same_hash_next[last_index] = current_index;
+				}
 			}
 		}
-		else// Non-salted hash
+	}
+	else
+	{
+		sqlite3_stmt* select_not_cracked;
+		sqlite3_prepare_v2(db, "SELECT Bin,ID FROM Hash WHERE Type=? LIMIT ?;", -1, &select_not_cracked, NULL);
+		sqlite3_bind_int64(select_not_cracked, 1, formats[format_index].db_id);
+		sqlite3_bind_int(select_not_cracked, 2, MAX_NUM_PASWORDS_LOADED);
+
+		while (sqlite3_step(select_not_cracked) == SQLITE_ROW)
 		{
-			bit_table[(value_map & size_bit_table) >> 5] |= 1 << ((value_map & size_bit_table) & 31);
-			// Put the password in the table map
-			if(table[value_map & size_table] == NO_ELEM)
-			{
-				table[value_map & size_table] = current_index;
-			}
-			else
-			{
-				unsigned int last_index = table[value_map & size_table];
-				while(same_hash_next[last_index] != NO_ELEM)
-					last_index = same_hash_next[last_index];
+			assert(current_index <= num_passwords_loaded);
+			uint32_t hash_id = (uint32_t)sqlite3_column_int64(select_not_cracked, 1);
+			// Check if hash is already found
+			if (load_fam(hash_id) != NO_ELEM) continue;
+			// TODO: If below assert don't work then recalculate FAM
+			assert(current_index < num_passwords_loaded);
+			hash_ids32[current_index] = hash_id;
 
-				same_hash_next[last_index] = current_index;
+			// Load binary from database
+			BYTE* bin = (BYTE*)sqlite3_column_blob(select_not_cracked, 0);
+			memcpy((BYTE*)binary_values + ((size_t)current_index) * formats[format_index].binary_size, bin, formats[format_index].binary_size);
+			memcpy((BYTE*)salts_values + ((size_t)num_diff_salts) * formats[format_index].salt_size, bin + formats[format_index].binary_size, formats[format_index].salt_size);
+
+			if (formats[format_index].salt_size)// Salted hash
+			{
+				// Check if salt exist
+				for (i = 0; i < num_diff_salts; i++)
+					if (!memcmp((BYTE*)salts_values + ((size_t)num_diff_salts)*formats[format_index].salt_size,
+								(BYTE*)salts_values + ((size_t)i)             *formats[format_index].salt_size, formats[format_index].salt_size))
+					{// salt already exist
+						uint32_t last_index = salt_index[i];
+						while (same_salt_next[last_index] != NO_ELEM)
+							last_index = same_salt_next[last_index];
+
+						same_salt_next[last_index] = current_index;
+						break;
+					}
+
+				if (i == num_diff_salts)// salt not exist
+				{
+					salt_index[num_diff_salts] = current_index;
+					num_diff_salts++;
+				}
 			}
+			else if (format_index == LM_INDEX)// Non-salted hash
+			{
+				uint32_t value_map = ((uint32_t*)bin)[formats[format_index].value_map_index0];
+
+				bit_table[(value_map & size_bit_table) >> 5] |= 1 << ((value_map & size_bit_table) & 31);
+				// Put the password in the table map
+				if (table[value_map & size_table] == NO_ELEM)
+				{
+					table[value_map & size_table] = current_index;
+				}
+				else
+				{
+					uint32_t last_index = table[value_map & size_table];
+					while (same_hash_next[last_index] != NO_ELEM)
+						last_index = same_hash_next[last_index];
+
+					same_hash_next[last_index] = current_index;
+				}
+			}
+
+			current_index++;
 		}
+		// More than 3 seconds loading
+		if ((get_milliseconds() - start_load) > 3000)
+			set_cache(format_index);
 
-		hash_ids[current_index] = sqlite3_column_int64(select_not_cracked, 1);
-
-		current_index++;
+		sqlite3_finalize(select_not_cracked);
 	}
 
-	sqlite3_finalize(count_hashes);
-	sqlite3_finalize(select_not_cracked);
+	build_cbg_table(format_index, formats[format_index].value_map_index0, formats[format_index].value_map_index1);
+	assert(current_index == num_passwords_loaded);	
+
+	if (formats[format_index].optimize_hashes)
+		formats[format_index].optimize_hashes();
 }
 typedef struct
 {
-	unsigned int keymic[4];
+	uint32_t keymic[4];
 	unsigned char prf_buffer[128];
 	unsigned char eapol[256+64];
-	unsigned int  eapol_blocks;
+	uint32_t  eapol_blocks;
 	int           keyver;
 } hccap_bin;
 typedef struct {
@@ -265,18 +454,28 @@ typedef struct {
 	uint32_t rounds;
 	uint32_t sign_extension_bug;
 } BF_salt;
+typedef struct {
+	uint8_t salt[8];
+	uint8_t saltlen;
+	uint8_t prefix;		/** 0 when $1$ or 1 when $apr1$ or 2 for {smd5} which uses no prefix. **/
+	uint8_t prefix_len;
+	uint8_t unused;
+} crypt_md5_salt;
+
 #include <time.h>
 PRIVATE void load_hashes_benchmark(int format_index)
 {
-	unsigned int current_index = 0, i;
+	assert(format_index >= 0 && format_index < num_formats);
+
+	uint32_t current_index = 0, i;
 
 	num_passwords_loaded = MAX_NUM_PASWORDS_LOADED;
 
 	// Create data structures needed.
 	binary_values =                 _aligned_malloc(formats[format_index].binary_size    * num_passwords_loaded, 4096);
-	hash_ids      = (sqlite3_int64*)malloc(sizeof(sqlite3_int64) * num_passwords_loaded);
-	is_found      = (char*)malloc(sizeof(char) * num_passwords_loaded);
-	memset(is_found, FALSE, num_passwords_loaded);
+	hash_ids32    = (uint32_t*)malloc(sizeof(uint32_t) * num_passwords_loaded);
+	is_foundBit   = (uint32_t*)malloc(sizeof(uint32_t) * (num_passwords_loaded / 32 + 1));
+	memset(is_foundBit, FALSE, sizeof(uint32_t) * (num_passwords_loaded / 32 + 1));
 	// Data for keys found
 	num_passwords_found = 0;
 	current_num_keys = 0;
@@ -288,47 +487,58 @@ PRIVATE void load_hashes_benchmark(int format_index)
 	if(formats[format_index].salt_size)// Salted hash
 	{
 		salts_values   = _aligned_malloc( formats[format_index].salt_size * num_passwords_loaded, 4096);
-		salt_index     = (unsigned int*)_aligned_malloc(sizeof(unsigned int) * num_passwords_loaded, 4096);
-		same_salt_next = (unsigned int*)_aligned_malloc(sizeof(unsigned int) * num_passwords_loaded, 4096);
+		salt_index     = (uint32_t*)_aligned_malloc(sizeof(uint32_t) * num_passwords_loaded, 4096);
+		same_salt_next = (uint32_t*)_aligned_malloc(sizeof(uint32_t) * num_passwords_loaded, 4096);
 
 		// Initialize table map
 		for(i = 0; i < num_passwords_loaded; i++)
 			same_salt_next[i] = NO_ELEM;
 	}
-	else// Non-salted hash
+	else if (format_index == LM_INDEX)// Non-salted hash
 	{
 		calculate_table_mask(num_passwords_loaded);
-		table          = (unsigned int*) _aligned_malloc(sizeof(unsigned int) * (size_table+1), 4096);
-		bit_table      = (unsigned int*) _aligned_malloc(sizeof(unsigned int) * (size_bit_table/32+1), 4096);
-		same_hash_next = (unsigned int*) _aligned_malloc(sizeof(unsigned int) * num_passwords_loaded, 4096);
+		table          = (uint32_t*) _aligned_malloc(sizeof(uint32_t) * (size_table+1), 4096);
+		bit_table      = (uint32_t*) _aligned_malloc(sizeof(uint32_t) * (size_bit_table/32+1), 4096);
+		same_hash_next = (uint32_t*) _aligned_malloc(sizeof(uint32_t) * num_passwords_loaded, 4096);
 
 		// Initialize table map
-		memset(bit_table, 0, (size_bit_table/32+1) * sizeof(unsigned int));
-		memset(table, 0xff, sizeof(unsigned int) * (size_table+1));
-		memset(same_hash_next, 0xff, sizeof(unsigned int) * num_passwords_loaded);
+		memset(bit_table, 0, (size_bit_table/32+1) * sizeof(uint32_t));
+		memset(table, 0xff, sizeof(uint32_t) * (size_table+1));
+		memset(same_hash_next, 0xff, sizeof(uint32_t) * num_passwords_loaded);
 	}
 
 	// Seed the random-number generator with the current time so that the numbers will be different every time we run.
 	srand( (unsigned)time( NULL ) );
+	generate_random(binary_values, ((size_t)num_passwords_loaded) * formats[format_index].binary_size);
+	generate_random(salts_values, ((size_t)num_passwords_loaded) * formats[format_index].salt_size);
 
 	for(current_index = 0; current_index < num_passwords_loaded; current_index++)
 	{
 		// Fill values with random data
-		unsigned int value_map;
+		uint32_t value_map;
 		char* bin_value  = (char*)binary_values + current_index  * formats[format_index].binary_size;
 		char* salt_value = (char*)salts_values  + num_diff_salts * formats[format_index].salt_size;
 
-		for(i = 0; i < formats[format_index].binary_size; i++)
-			bin_value[i] = rand() & 0xFF;
-		for(i = 0; i < formats[format_index].salt_size; i++)
-			salt_value[i] = rand() & 0xFF;
 		// Handle non-random salts-binary
 		switch (format_index)
 		{
+		case MD5CRYPT_INDEX:
+			{
+			crypt_md5_salt* md5_salt = (crypt_md5_salt*)salt_value;
+			md5_salt->saltlen = 8;
+			md5_salt->prefix = 0;
+			md5_salt->prefix_len = 3;
+			md5_salt->unused = 0;
+			}
+			break;
+		case SSHA_INDEX:
+			((uint8_t*)salt_value)[9] = 0x80;
+			((uint8_t*)salt_value)[16] = 8;// Salt lenght
+			break;
 		case DCC_INDEX: case DCC2_INDEX:
 			// 1/5 not random (simulate username)
 			memset(salt_value, 2, formats[format_index].salt_size/5);
-			((unsigned int*)salt_value)[10] = ((rand() % 19) + 9) << 4;
+			((uint32_t*)salt_value)[10] = ((rand() % 19) + 9) << 4;
 			break;
 		case WPA_INDEX:
 			((uint32_t*)salt_value)[15] = (64 + rand()%28 + 4) << 3;// Good lenght
@@ -355,7 +565,7 @@ PRIVATE void load_hashes_benchmark(int format_index)
 				if(!memcmp( (char*)salts_values + num_diff_salts*formats[format_index].salt_size,
 							(char*)salts_values +       i       *formats[format_index].salt_size, formats[format_index].salt_size))
 				{// salt already exist
-					unsigned int last_index = salt_index[i];
+					uint32_t last_index = salt_index[i];
 					while(same_salt_next[last_index] != NO_ELEM)
 						last_index = same_salt_next[last_index];
 
@@ -369,7 +579,7 @@ PRIVATE void load_hashes_benchmark(int format_index)
 				num_diff_salts++;
 			}
 		}
-		else// Non-salted hash
+		else if (format_index == LM_INDEX)// Non-salted hash
 		{
 			bit_table[(value_map & size_bit_table) >> 5] |= 1 << ((value_map & size_bit_table) & 31);
 			// Put the password in the table map
@@ -379,7 +589,7 @@ PRIVATE void load_hashes_benchmark(int format_index)
 			}
 			else
 			{
-				unsigned int last_index = table[value_map & size_table];
+				uint32_t last_index = table[value_map & size_table];
 				while(same_hash_next[last_index] != NO_ELEM)
 					last_index = same_hash_next[last_index];
 
@@ -387,10 +597,15 @@ PRIVATE void load_hashes_benchmark(int format_index)
 			}
 		}
 
-		hash_ids[current_index] = current_index;
+		hash_ids32[current_index] = current_index;
 	}
+
+	build_cbg_table(format_index, formats[format_index].value_map_index0, formats[format_index].value_map_index1);
+
+	if (formats[format_index].optimize_hashes)
+		formats[format_index].optimize_hashes();
 }
-PUBLIC void password_was_found(unsigned int index, unsigned char* cleartext)
+PUBLIC void password_was_found(uint32_t index, unsigned char* cleartext)
 {
 	if(is_benchmark) return;
 	if(index >= num_passwords_loaded) return;
@@ -398,40 +613,56 @@ PUBLIC void password_was_found(unsigned int index, unsigned char* cleartext)
 	HS_ENTER_MUTEX(&found_keys_mutex);
 
 	// TODO: Remove the password from the table
-	if (!is_found[index])
+	if ( ! ((is_foundBit[index >> 5] >> (index & 31)) & 1))
 	{
-		is_found[index] = TRUE;
+		is_foundBit[index >> 5] |= 1 << (index & 31);
 
 		num_passwords_found++;
-		num_hashes_found_by_format[batch[current_attack_index].format_index]++;
+		num_hashes_found_by_format1[batch[current_attack_index].format_index]++;
 
 		if (num_passwords_found >= num_passwords_loaded)
+		{
 			continue_attack = FALSE;
+		}// IF salted AND found >= 20% THEN restart attack
+		else if (formats[batch[current_attack_index].format_index].salt_size && num_passwords_found*100ll/num_passwords_loaded >= 20ll)
+		{
+			attack_need_restart = TRUE;
+			continue_attack = FALSE;
+			// Put cache on
+			if (formats[batch[current_attack_index].format_index].optimize_hashes)
+				cache_had_hashes = FALSE;// Because 'void optimize_hashes()' may change layout of hashes
+			else
+				set_cache(batch[current_attack_index].format_index);
+		}
 
 		// If full->double capacity
 		if (current_num_keys == capacity)
 		{
 			capacity *= 2;
-			found_keys = realloc(found_keys, sizeof(FoundKey)* capacity);
+			found_keys = realloc(found_keys, sizeof(FoundKey) * capacity);
 		}
-		found_keys[current_num_keys].index = index;
+		found_keys[current_num_keys].hash_id = hash_ids32[index];
 		found_keys[current_num_keys].elapsed = seconds_since_start(TRUE);
 		strcpy(found_keys[current_num_keys].cleartext, cleartext);
 		current_num_keys++;
+
+		if (num_passwords_loaded > 10000000 && ((uint32_t)current_num_keys) >= num_passwords_loaded/32)//3.1%
+			save_needed = TRUE;
 	}
 
 	HS_LEAVE_MUTEX(&found_keys_mutex);
 }
 
 extern void* thread_params;// This is defined in key_provider.c
-extern unsigned int num_thread_params;
+extern uint32_t num_thread_params;
 PRIVATE CryptParam* crypto_params = NULL;
+#ifdef HS_OPENCL_SUPPORT
 PUBLIC OpenCL_Param** ocl_crypt_ptr_params = NULL;
-PRIVATE void begin_crack(void* pset_start_time)
+#endif
+PRIVATE void begin_crack(void* set_start_time)
 {
-	unsigned int i, j;
+	uint32_t i, j;
 	int thread_id = 0;
-	int set_start_time = (int)pset_start_time;
 	// Find best implementations. Assume there is at least one compatible
 	perform_crypt_funtion* perform_crypt = NULL;
 	generate_key_funtion* generate = NULL;
@@ -446,6 +677,7 @@ PRIVATE void begin_crack(void* pset_start_time)
 	else
 		load_hashes(batch[current_attack_index].format_index);
 	continue_attack = TRUE;
+	save_needed = FALSE;
 
 	//num_keys_served_from_save  = 0;
 	//num_keys_served_from_start += batch[current_attack_index].num_keys_served;
@@ -481,7 +713,11 @@ out_opencl:
 			if (gpu_devices[i].flags & GPU_FLAG_IS_USED)
 			{
 				ocl_crypt_ptr_params[i] = (OpenCL_Param*)calloc(1, sizeof(OpenCL_Param));
-				create_gpu_crypt(ocl_crypt_ptr_params[i], i, generate, &(crypt_ptr_func[i]));
+				if (!create_gpu_crypt(ocl_crypt_ptr_params[i], i, generate, &(crypt_ptr_func[i])))
+				{
+					send_message_gui(MESSAGE_ATTACK_GPU_FAIL);
+					ocl_crypt_ptr_params[i] = NULL;
+				}
 			}
 	}
 #endif
@@ -514,6 +750,11 @@ out:
 	// If is LM charset not implemented in GPU->use CPU
 	if(!app_num_threads && batch[current_attack_index].format_index == LM_INDEX && batch[current_attack_index].provider_index == CHARSET_INDEX)
 		num_threads++;
+	if (num_threads == 0)
+	{
+		num_threads = 1;
+		app_num_threads = 1;
+	}
 	// Create per thread data
 	num_thread_params = num_threads;
 	thread_params = calloc(num_threads, key_providers[batch[current_attack_index].provider_index].per_thread_data_size);
@@ -557,29 +798,281 @@ out:
 	send_message_gui(MESSAGE_ATTACK_INIT_COMPLETE);
 }
 
-PRIVATE void save_passwords_found()
+////////////////////////////////////////////////////////////////////////////////////
+// File Mapping
+////////////////////////////////////////////////////////////////////////////////////
+PRIVATE void save_fam(uint64_t pos, uint32_t value);
+
+#ifdef _WIN32
+typedef struct {
+	HANDLE h_file;
+	HANDLE h_map_file;
+	uint32_t* data;
+	uint64_t offset;
+	uint64_t file_size;
+	HS_MUTEX mutex;
+} FAM;// File Array Mapping
+
+PRIVATE FAM hash2found_id;
+PRIVATE void open_fam()
 {
-	int i;
-	sqlite3_stmt* insert_found_hash;
+	hash2found_id.h_file = CreateFile(get_full_path("hash2found.raw"), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
-	if(!is_benchmark && current_num_keys > 0)
+	// Get file size
+	DWORD high_size;
+	DWORD low_size = GetFileSize(hash2found_id.h_file, &high_size);
+	hash2found_id.file_size = (((uint64_t)high_size) << 32) | low_size;
+	if (hash2found_id.file_size == 0)
 	{
-		sqlite3_prepare_v2(db, "INSERT INTO FindHash (ID,ClearText,ElapsedFind,AttackUsed) VALUES (?,?,?,?);", -1, &insert_found_hash, NULL);
+		uint32_t data = UINT32_MAX;
+		uint32_t ignored;
+		WriteFile(hash2found_id.h_file, &data, sizeof(data), &ignored, NULL);
+		hash2found_id.file_size = sizeof(data);
+	}
 
-		for(i = 0; i < current_num_keys; i++)
-		{
-			sqlite3_reset(insert_found_hash);
-			sqlite3_bind_int64(insert_found_hash, 1, hash_ids[found_keys[i].index]);
-			sqlite3_bind_text (insert_found_hash, 2, found_keys[i].cleartext, -1, SQLITE_STATIC);
-			sqlite3_bind_int  (insert_found_hash, 3, found_keys[i].elapsed);
-			sqlite3_bind_int64(insert_found_hash, 4, batch[current_attack_index].attack_db_id);
-			sqlite3_step(insert_found_hash);
-		}
+	// Create a file mapping object for the file
+	hash2found_id.h_map_file = CreateFileMapping(hash2found_id.h_file,// current file handle
+		NULL,           // default security
+		PAGE_READWRITE, // read/write permission
+		0,              // size of mapping object, high
+		0,				// size of mapping object, low
+		NULL);          // name of mapping object
 
-		current_num_keys = 0;
-		sqlite3_finalize(insert_found_hash);
+	// Map the view and test the results.
+	hash2found_id.offset = 0;
+	hash2found_id.data = (uint32_t*)MapViewOfFile(hash2found_id.h_map_file,// handle to  mapping object
+		FILE_MAP_ALL_ACCESS, // read/write
+		0,                   // high-order 32  bits of file  offset
+		0,					 // low-order 32  bits of file  offset
+		hash2found_id.file_size >= current_system_info.granularity ? current_system_info.granularity : hash2found_id.file_size);      // number of bytes to map
+}
+PRIVATE void ensure_good_fam(uint64_t pos)
+{
+	assert(pos*4 < hash2found_id.file_size);
+
+	if (pos < hash2found_id.offset || pos >= (hash2found_id.offset + current_system_info.granularity/4))
+	{
+		UnmapViewOfFile(hash2found_id.data);
+
+		hash2found_id.offset = pos * 4 / current_system_info.granularity * current_system_info.granularity / 4;
+		DWORD map_size = current_system_info.granularity;
+		if (hash2found_id.offset * 4 + map_size > hash2found_id.file_size)
+			map_size = (DWORD)(hash2found_id.file_size - hash2found_id.offset * 4);
+
+		hash2found_id.data = (uint32_t*)MapViewOfFile(hash2found_id.h_map_file,// handle to  mapping object
+			FILE_MAP_ALL_ACCESS,                      // read/write
+			(DWORD)((hash2found_id.offset * 4) >> 32),// high-order 32  bits of file  offset
+			(DWORD)(hash2found_id.offset * 4),        // low-order 32  bits of file  offset
+			map_size);                                // number of bytes to map
 	}
 }
+PUBLIC void resize_fam()
+{
+	uint64_t new_size = (total_num_hashes() + 1) * sizeof(uint32_t);
+	if (new_size != hash2found_id.file_size)
+	{
+		UnmapViewOfFile(hash2found_id.data);
+		CloseHandle(hash2found_id.h_map_file);
+
+		// Set new size
+		LONG size_high = new_size >> 32;
+		SetFilePointer(hash2found_id.h_file, (LONG)new_size, &size_high, FILE_BEGIN);
+		SetEndOfFile(hash2found_id.h_file);
+
+		uint64_t old_size = hash2found_id.file_size / 4;
+		CloseHandle(hash2found_id.h_file);
+
+		// Initialize data
+		open_fam();
+		for (; old_size < new_size/4; old_size++)
+			save_fam(old_size, UINT32_MAX);
+	}
+}
+#elif defined(ANDROID_MAP)
+typedef struct {
+	int fd;
+	unsigned int granularity;
+	uint32_t* data;
+	uint32_t map_size;
+	uint64_t offset;
+	uint64_t file_size;
+	HS_MUTEX mutex;
+} FAM;// File Array Mapping
+
+PRIVATE FAM hash2found_id;
+PRIVATE void open_fam()
+{
+	hash2found_id.granularity = __max(64 * 1024, sysconf(_SC_PAGE_SIZE));
+	hash2found_id.fd = open(get_full_path("hash2found.raw"), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+
+	// Get file size
+	struct stat sb;
+	fstat(hash2found_id.fd, &sb);
+	hash2found_id.file_size = sb.st_size;
+
+	// Map the view and test the results.
+	hash2found_id.offset = 0;
+	hash2found_id.map_size = hash2found_id.file_size >= hash2found_id.granularity ? hash2found_id.granularity : hash2found_id.file_size;
+	hash2found_id.data = mmap(NULL, hash2found_id.map_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, hash2found_id.fd, hash2found_id.offset);
+}
+PRIVATE void ensure_good_fam(uint64_t pos)
+{
+	assert(pos * 4 < hash2found_id.file_size);
+
+	if (pos < hash2found_id.offset || pos >= (hash2found_id.offset + hash2found_id.map_size / 4))
+	{
+		munmap(hash2found_id.data, hash2found_id.map_size);
+
+		hash2found_id.offset = pos * 4 / hash2found_id.granularity * hash2found_id.granularity / 4;
+		hash2found_id.map_size = hash2found_id.granularity;
+		if (hash2found_id.offset * 4 + hash2found_id.map_size > hash2found_id.file_size)
+			hash2found_id.map_size = hash2found_id.file_size - hash2found_id.offset * 4;
+
+		hash2found_id.data = mmap(NULL, hash2found_id.map_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, hash2found_id.fd, hash2found_id.offset);
+	}
+}
+PUBLIC void resize_fam()
+{
+	uint64_t new_size = (total_num_hashes() + 1) * sizeof(uint32_t);
+	if (new_size != hash2found_id.file_size)
+	{
+		// Close map and file
+		munmap(hash2found_id.data, hash2found_id.map_size);
+
+		// Set new size
+		ftruncate(hash2found_id.fd, new_size);
+		close(hash2found_id.fd);
+
+		uint64_t old_size = hash2found_id.file_size / 4;
+
+		// Initialize data
+		open_fam();
+		for (; old_size < new_size / 4; old_size++)
+			save_fam(old_size, UINT32_MAX);
+	}
+}
+PUBLIC void flush_fam()
+{
+	// Close map and file
+	munmap(hash2found_id.data, hash2found_id.map_size);
+	close(hash2found_id.fd);
+
+	// Initialize data
+	open_fam();
+}
+#else
+typedef struct {
+	int fd;
+	uint32_t* data;
+	uint64_t offset;
+	uint64_t file_size;
+	HS_MUTEX mutex;
+} FAM;// File Array Mapping
+
+PRIVATE FAM hash2found_id;
+PRIVATE void open_fam()
+{
+	hash2found_id.fd = open(get_full_path("hash2found.raw"), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+
+	// Get file size
+	struct stat sb;
+	fstat(hash2found_id.fd, &sb);
+	hash2found_id.file_size = sb.st_size;
+
+	// Map the view and load data.
+	hash2found_id.offset = 0;
+	hash2found_id.data = malloc(hash2found_id.file_size);
+	read(hash2found_id.fd, hash2found_id.data, hash2found_id.file_size);
+}
+PRIVATE void ensure_good_fam(uint64_t pos)
+{
+	assert(pos * 4 < hash2found_id.file_size);
+}
+PUBLIC void resize_fam()
+{
+	uint64_t new_size = (total_num_hashes() + 1) * sizeof(uint32_t);
+	if (new_size != hash2found_id.file_size)
+	{
+		if (new_size < hash2found_id.file_size)
+		{
+			// Set new size
+			ftruncate(hash2found_id.fd, new_size);
+			hash2found_id.file_size = new_size;
+		}
+		else
+		{
+			hash2found_id.data = realloc(hash2found_id.data, new_size);
+			memset(hash2found_id.data + hash2found_id.file_size/4, 0xff, new_size - hash2found_id.file_size);
+			hash2found_id.file_size = new_size;
+			lseek(hash2found_id.fd, 0, SEEK_SET);
+			write(hash2found_id.fd, hash2found_id.data, hash2found_id.file_size);
+		}
+	}
+}
+PUBLIC void flush_fam()
+{
+	lseek(hash2found_id.fd, 0, SEEK_SET);
+	write(hash2found_id.fd, hash2found_id.data, hash2found_id.file_size);
+}
+#endif
+PRIVATE void save_fam(uint64_t pos, uint32_t value) {
+	ensure_good_fam(pos);
+	hash2found_id.data[pos - hash2found_id.offset] = value;
+}
+PUBLIC uint32_t load_fam(uint64_t pos) {
+	HS_ENTER_MUTEX(&hash2found_id.mutex);
+
+	ensure_good_fam(pos);
+	uint32_t result = hash2found_id.data[pos - hash2found_id.offset];
+
+	HS_LEAVE_MUTEX(&hash2found_id.mutex);
+	return result;
+}
+////////////////////////////////////////////////////////////////////////////////////
+
+PRIVATE int qsort_compare(const void *arg1, const void *arg2)
+{
+	uint32_t id1 = ((uint32_t*)arg1)[0];
+	uint32_t id2 = ((uint32_t*)arg2)[0];
+
+	if (id1 < id2)
+		return -1;
+	if (id1 == id2)
+		return 0;
+	return 1;
+}
+PRIVATE void save_passwords_found()
+{
+	if(!is_benchmark && current_num_keys > 0)
+	{
+		sqlite3_int64 attack_id = batch[current_attack_index].attack_db_id;
+		uint32_t* slow_found_ids = malloc(2 * current_num_keys * sizeof(uint32_t));
+
+		for (int i = 0; i < current_num_keys; i++)
+		{
+			sqlite3_reset(insert_found_hash);
+			sqlite3_bind_int64(insert_found_hash, 1, found_keys[i].hash_id);
+			sqlite3_bind_text(insert_found_hash , 2, found_keys[i].cleartext, -1, SQLITE_STATIC);
+			sqlite3_bind_int(insert_found_hash  , 3, found_keys[i].elapsed);
+			sqlite3_bind_int64(insert_found_hash, 4, attack_id);
+			sqlite3_step(insert_found_hash);
+
+			// Possible slow save
+			slow_found_ids[2 * i + 0] = found_keys[i].hash_id;
+			slow_found_ids[2 * i + 1] = (uint32_t)sqlite3_last_insert_rowid(db);
+		}
+
+		qsort(slow_found_ids, current_num_keys, 2 * sizeof(uint32_t), qsort_compare);
+
+		// Insert
+		for (int i = 0; i < current_num_keys; i++)
+			save_fam(slow_found_ids[2 * i + 0], slow_found_ids[2 * i + 1]);
+
+		free(slow_found_ids);
+		current_num_keys = 0;
+	}
+}
+
 PUBLIC int save_attack_state()
 {
 	int db_result;
@@ -609,6 +1102,8 @@ PUBLIC int save_attack_state()
 	//num_keys_served_from_save = 0;
 	add_num_keys_from_save_to_start();
 
+	save_needed = FALSE;
+
 	return TRUE;
 }
 
@@ -616,17 +1111,7 @@ PRIVATE void cleanup_crack()
 {
 	sqlite3_stmt* update_attack = NULL;
 	// Free all memory used
-	_aligned_free(bit_table);			bit_table		= NULL;
-	_aligned_free(table);				table			= NULL;
-	_aligned_free(same_hash_next);		same_hash_next	= NULL;
-
-	free(hash_ids);						hash_ids		= NULL;
-	_aligned_free(binary_values);		binary_values	= NULL;
-	free(found_keys);					found_keys		= NULL;
-	_aligned_free(salts_values);		salts_values	= NULL;
-	_aligned_free(salt_index);			salt_index		= NULL;
-	_aligned_free(same_salt_next);		same_salt_next	= NULL;
-	free(is_found);						is_found		= NULL;
+	free_all_memory(cache_had_hashes);
 
 	if(!is_benchmark)
 	{
@@ -652,7 +1137,9 @@ PRIVATE void cleanup_crack()
 
 	free(thread_params); thread_params = NULL;
 	free(crypto_params);
+#ifdef HS_OPENCL_SUPPORT
 	free(ocl_crypt_ptr_params); ocl_crypt_ptr_params = NULL;
+#endif
 }
 PUBLIC void finish_thread()
 {
@@ -666,7 +1153,7 @@ PUBLIC void finish_thread()
 	{
 		int64_t key_space_before = 0;
 		BEGIN_TRANSACTION;
-
+		
 		save_passwords_found();
 		cleanup_crack();
 
@@ -683,46 +1170,64 @@ PUBLIC void finish_thread()
 		batch[current_attack_index].key_space = num_key_space;
 		last_index = current_attack_index;
 		// Next attack in the batch
-		batch[current_attack_index].is_ended = TRUE;
-		while(current_attack_index < num_attack_in_batch && batch[current_attack_index].is_ended)
-			current_attack_index++;
-
-		if(continue_attack && current_attack_index < num_attack_in_batch)
+		if (attack_need_restart)
 		{
-			// Number of keys trying in the batch
-			//num_keys_served_from_start += num_keys_served_from_save;
-			//num_keys_served_from_save = 0;
-			add_num_keys_from_save_to_start();
-
-			// Update the Begin of the attack
-			sqlite3_stmt* update_attack;
-			sqlite3_prepare_v2(db, "UPDATE Attack SET Begin=datetime('now') WHERE ID=?;", -1, &update_attack, NULL);
-			sqlite3_bind_int64(update_attack, 1, batch[current_attack_index].attack_db_id);
-			sqlite3_step(update_attack);
-			sqlite3_finalize(update_attack);
+			attack_need_restart = FALSE;
+			continue_attack = TRUE;
+			save_needed = FALSE;
 
 			send_message_gui(MESSAGE_FINISH_ATTACK);
-			begin_crack(FALSE);
+			if (num_passwords_found >= num_passwords_loaded)
+			{
+				continue_attack = FALSE;
+				send_message_gui(MESSAGE_FINISH_BATCH);
+			}
+			else
+				resume_crack(batch_db_id, send_message_gui);
 		}
 		else
 		{
-			// Update all attacks in a batch if no more passwords
-			if (num_passwords_found == num_passwords_loaded)
+			batch[current_attack_index].is_ended = TRUE;
+			while (current_attack_index < num_attack_in_batch && batch[current_attack_index].is_ended)
+				current_attack_index++;
+
+			if (continue_attack && current_attack_index < num_attack_in_batch)
 			{
+				// Number of keys trying in the batch
+				//num_keys_served_from_start += num_keys_served_from_save;
+				//num_keys_served_from_save = 0;
+				add_num_keys_from_save_to_start();
+
+				// Update the Begin of the attack
 				sqlite3_stmt* update_attack;
-				sqlite3_prepare_v2(db, "UPDATE Attack SET End=datetime('now'),ElapsedTime=0,ResumeArg='',NumKeysServed=0 WHERE ID=?;", -1, &update_attack, NULL);
-				
-				for (int i = current_attack_index; i < num_attack_in_batch; i++)
-				{
-					sqlite3_reset(update_attack);
-					sqlite3_bind_int64(update_attack, 1, batch[i].attack_db_id);
-					sqlite3_step(update_attack);
-				}
-				
+				sqlite3_prepare_v2(db, "UPDATE Attack SET Begin=datetime('now') WHERE ID=?;", -1, &update_attack, NULL);
+				sqlite3_bind_int64(update_attack, 1, batch[current_attack_index].attack_db_id);
+				sqlite3_step(update_attack);
 				sqlite3_finalize(update_attack);
+
+				send_message_gui(MESSAGE_FINISH_ATTACK);
+				begin_crack(FALSE);
 			}
-			current_attack_index = last_index;
-			send_message_gui(MESSAGE_FINISH_BATCH);
+			else
+			{
+				// Update all attacks in a batch if no more passwords
+				if (num_passwords_found == num_passwords_loaded)
+				{
+					sqlite3_stmt* update_attack;
+					sqlite3_prepare_v2(db, "UPDATE Attack SET End=datetime('now'),ElapsedTime=0,ResumeArg='',NumKeysServed=0 WHERE ID=?;", -1, &update_attack, NULL);
+
+					for (int i = current_attack_index; i < num_attack_in_batch; i++)
+					{
+						sqlite3_reset(update_attack);
+						sqlite3_bind_int64(update_attack, 1, batch[i].attack_db_id);
+						sqlite3_step(update_attack);
+					}
+
+					sqlite3_finalize(update_attack);
+				}
+				current_attack_index = last_index;
+				send_message_gui(MESSAGE_FINISH_BATCH);
+			}
 		}
 	}
 
@@ -791,14 +1296,14 @@ PUBLIC void resume_crack(sqlite3_int64 db_id, callback_funtion psend_message_gui
 			batch[i].key_space = 0;
 		else
 		{
+			// Find first attack not finished
+			if(current_attack_index == -1)
+				current_attack_index = i;
+
 			key_providers[batch[i].provider_index].resume(batch[i].min_lenght, batch[i].max_lenght, batch[i].params, batch[i].resume_arg, batch[i].format_index);
 			batch[i].key_space = num_key_space;
 			key_providers[batch[i].provider_index].finish();
 		}
-
-		// Find first attack not finished
-		if(current_attack_index == -1 && !batch[i].is_ended)
-			current_attack_index = i;
 
 		i++;
 	}
@@ -943,5 +1448,10 @@ PUBLIC void init_attack_data()
 {
 	HS_CREATE_MUTEX(&found_keys_mutex);
 
-	sqlite3_prepare_v2(db, "UPDATE Attack SET ElapsedTime=?1,ResumeArg=?3,NumKeysServed=?4 WHERE ID=?2;", -1, &save_state_update, NULL);
+	sqlite3_prepare_v2(db, "UPDATE Attack SET ElapsedTime=?1,ResumeArg=?3,NumKeysServed=?4 WHERE ID=?2;" , -1, &save_state_update, NULL);
+	sqlite3_prepare_v2(db, "INSERT INTO FindHash (HashID,ClearText,ElapsedFind,AttackUsed) VALUES (?,?,?,?);", -1, &insert_found_hash, NULL);
+
+	HS_CREATE_MUTEX(&hash2found_id.mutex);
+	open_fam();
+	resize_fam();
 }

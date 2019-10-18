@@ -53,13 +53,15 @@ PRIVATE int bcrypt_line_is_valid(char* user_name, char* ciphertext, char* unused
 	}
 	return FALSE;
 }
-PRIVATE void add_hash_from_line(ImportParam* param, char* user_name, char* ciphertext, char* unused, char* unused1, sqlite3_int64 tag_id)
+PRIVATE sqlite3_int64 add_hash_from_line(ImportParam* param, char* user_name, char* ciphertext, char* unused, char* unused1)
 {
 	if (bcrypt_line_is_valid(user_name, ciphertext, NULL, NULL))
 	{
 		// Insert hash and account
-		insert_hash_account(param, user_name, ciphertext, BCRYPT_INDEX, tag_id);
+		return insert_hash_account1(param, user_name, ciphertext, BCRYPT_INDEX);
 	}
+
+	return -1;
 }
 
 #ifdef HS_TESTING
@@ -72,7 +74,7 @@ void BF_decode(uint32_t *dst, const char *src, int size)
 	unsigned char *dptr = (unsigned char *)dst;
 	unsigned char *end = dptr + size;
 	unsigned char *sptr = (unsigned char *)src;
-	unsigned int c1, c2, c3, c4;
+	uint32_t c1, c2, c3, c4;
 
 	do {
 		c1 = BF_atoi64[*sptr++];
@@ -89,7 +91,7 @@ void BF_decode(uint32_t *dst, const char *src, int size)
 	} while (dptr < end);
 }
 
-PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, void* salt_void)
+PRIVATE uint32_t get_binary(const unsigned char* ciphertext, void* binary, void* salt_void)
 {
 	uint32_t* bin = (uint32_t*)binary;
 	BF_salt* salt = (BF_salt*)salt_void;
@@ -108,6 +110,58 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	bin[5] &= 0xFFFFFF00;
 
 	return bin[0];
+}
+PRIVATE unsigned char BF_itoa64[64 + 1] = "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+PRIVATE void BF_encode(unsigned char *dst, const uint32_t* src, int size)
+{
+	const unsigned char *sptr = (const unsigned char *)src;
+	const unsigned char *end = sptr + size;
+	unsigned char *dptr = (unsigned char *)dst;
+	uint32_t c1, c2;
+
+	do {
+		c1 = *sptr++;
+		*dptr++ = BF_itoa64[c1 >> 2];
+		c1 = (c1 & 0x03) << 4;
+		if (sptr >= end) {
+			*dptr++ = BF_itoa64[c1];
+			break;
+		}
+
+		c2 = *sptr++;
+		c1 |= c2 >> 4;
+		*dptr++ = BF_itoa64[c1];
+		c1 = (c2 & 0x0f) << 2;
+		if (sptr >= end) {
+			*dptr++ = BF_itoa64[c1];
+			break;
+		}
+
+		c2 = *sptr++;
+		c1 |= c2 >> 6;
+		*dptr++ = BF_itoa64[c1];
+		*dptr++ = BF_itoa64[c2 & 0x3f];
+	} while (sptr < end);
+}
+PRIVATE void binary2hex(const void* binary, const BF_salt* salt, unsigned char* ciphertext)
+{
+	uint32_t tmp[6];
+
+	int exponent = 0;
+	for (int rounds = salt->rounds; rounds > 1; rounds >>= 1, exponent++);
+
+	sprintf((char*)ciphertext, "$2%s$%02i$", salt->sign_extension_bug ? "x" : "y", exponent);
+
+	memcpy(tmp, salt->salt, 4 * sizeof(uint32_t));
+	swap_endianness_array(tmp, 4);
+	BF_encode(ciphertext + 7, tmp, 16);
+
+	/* This has to be bug-compatible with the original implementation, so
+	* only encode 23 of the 24 bytes. :-) */
+	memcpy(tmp, binary, 6 * sizeof(uint32_t));
+	swap_endianness_array(tmp, 6);
+	BF_encode(&ciphertext[7 + 22], tmp, 23);
+	ciphertext[7 + 22 + 31] = 0;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -431,7 +485,7 @@ PRIVATE void blowfish_set_key(uint32_t* buffer, uint32_t* subkeys, uint32_t* exp
 #define BYTE_2(word)	((word >> 16) & 0xFF)
 #define BYTE_3(word)	((word >> 24))
 
-#ifdef ANDROID
+#ifdef __ANDROID__
 	#define BF_IN_PARALLEL	1
 #else
 	#define BF_IN_PARALLEL	3
@@ -2201,7 +2255,7 @@ sprintf(source+strlen(source),"#define GET_DATA(STATE,index) data_ptr[(STATE+ind
 
 	return source;
 }
-PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules)
+PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules)
 {
 	//      HD_4600        HD_7970        GTX_590       HD_6450    Adreno_330
 	//     G_16 L  R	G_64  L    R      R G_64  L      L   G     L G_32 G_16	                           	                 	         
@@ -2270,6 +2324,8 @@ PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, ge
 
 	param->param1 = CLIP_RANGE(num_iters, 1, min_rounds);
 #endif
+
+	return TRUE;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Charset
@@ -2391,7 +2447,7 @@ PRIVATE void ocl_test_empty()
 
 	free(sboxs);
 }
-PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
 	// Do not allow blank in GPU
 	if (current_key_lenght == 0)
@@ -2400,28 +2456,28 @@ PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, g
 		current_key_lenght = 1;
 		report_keys_processed(1);
 	}
-	ocl_protocol_common_init(param, gpu_index, gen, gpu_crypt, kernels2common + CHARSET_INDEX_IN_KERNELS, FALSE);
+	return ocl_protocol_common_init(param, gpu_index, gen, gpu_crypt, kernels2common + CHARSET_INDEX_IN_KERNELS, FALSE);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Phrases
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
-	ocl_protocol_common_init(param, gpu_index, gen, gpu_crypt, kernels2common + PHRASES_INDEX_IN_KERNELS, FALSE);
+	return ocl_protocol_common_init(param, gpu_index, gen, gpu_crypt, kernels2common + PHRASES_INDEX_IN_KERNELS, FALSE);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UTF8
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
-	ocl_protocol_common_init(param, gpu_index, gen, gpu_crypt, kernels2common + UTF8_INDEX_IN_KERNELS, FALSE);
+	return ocl_protocol_common_init(param, gpu_index, gen, gpu_crypt, kernels2common + UTF8_INDEX_IN_KERNELS, FALSE);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Rules
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 extern int provider_index;
 
-PRIVATE void ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
 	int i, kernel2common_index;
 
@@ -2434,23 +2490,27 @@ PRIVATE void ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_ind
 				goto out;
 			}
 out:
-	ocl_protocol_common_init(param, gpu_device_index, gen, gpu_crypt, kernels2common + kernel2common_index, TRUE);
+	return ocl_protocol_common_init(param, gpu_device_index, gen, gpu_crypt, kernels2common + kernel2common_index, TRUE);
 }
 #endif
 
-PRIVATE int bench_values[] = {1,4,16,64};
 Format bcrypt_format = {
 	"BCRYPT",
 	"Blowfish Crypt.",
+	"",
 	PLAINTEXT_LENGTH,
 	BINARY_SIZE,
 	SALT_SIZE,
 	10,
-	bench_values,
-	LENGHT(bench_values),
+	NULL,
+	0,
 	get_binary,
+	binary2hex,
+	DEFAULT_VALUE_MAP_INDEX,
+	DEFAULT_VALUE_MAP_INDEX,
 	bcrypt_line_is_valid,
 	add_hash_from_line,
+	NULL,
 #ifdef _M_X64
 	{{CPU_CAP_BMI, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_bmi}, {CPU_CAP_AVX, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_c_code}, {CPU_CAP_SSE2, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_c_code}},
 #else

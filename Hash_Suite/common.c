@@ -38,7 +38,8 @@ extern Format dcc2_format;
 extern Format wpa_format;
 
 extern Format bcrypt_format;
-//extern Format ssha_format;
+extern Format ssha_format;
+extern Format md5crypt_format;
 #ifdef INCLUDE_DEVELOPING_FORMAT
 extern Format <name>_format;
 #endif
@@ -46,11 +47,18 @@ extern Format <name>_format;
 PUBLIC Format formats[MAX_NUM_FORMATS];
 PUBLIC int num_formats = 0;
 
+// Bench
+#ifdef __ANDROID__
+PRIVATE int bench_values_raw[] = { 1, 10, 100, 1000, 10000, 100000 };
+#else
+PRIVATE int bench_values_raw[]  = { 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000 };
+#endif
+PRIVATE int bench_values_salt[] = { 1, 4, 16, 64 };
 
 // Map to convert hexadecimal char into his corresponding value
 PUBLIC unsigned char hex_to_num[256];
 PUBLIC unsigned char base64_to_num[256];
-PRIVATE const char itoa64[64] = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+PUBLIC char itoa64[64] = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -112,26 +120,26 @@ PUBLIC long long _filelengthi64(int file)
     return 0;//-1
 }
 
-PUBLIC inline __attribute__((always_inline)) unsigned int _rotl(unsigned int v, unsigned int sh)
+PUBLIC inline __attribute__((always_inline)) uint32_t _rotl(uint32_t v, uint32_t sh)
 {
   return ((v<<sh) | (v>>(32-sh)));
 }
 
-PUBLIC inline __attribute__((always_inline)) uint64_t _rotl64(uint64_t v, unsigned int sh)
+PUBLIC inline __attribute__((always_inline)) uint64_t _rotl64(uint64_t v, uint32_t sh)
 {
   return ((v<<sh) | (v>>(64-sh)));
 }
-PUBLIC void _BitScanReverse(unsigned int* index, unsigned int v)
+PUBLIC void _BitScanReverse(uint32_t* index, uint32_t v)
 {
-	unsigned int r = 0; // r will be lg(v)
+	uint32_t r = 0; // r will be lg(v)
 
 	while (v >>= 1) // unroll for more speed...
 		r++;
 	*index = r;
 }
-PUBLIC void _BitScanForward(unsigned int* index, unsigned int v)
+PUBLIC void _BitScanForward(uint32_t* index, uint32_t v)
 {
-	unsigned int r = 0; // r will be lg(v)
+	uint32_t r = 0; // r will be lg(v)
 
 	if (v)
 		for (; (v & 1)==0; v>>=1, r++);
@@ -140,13 +148,13 @@ PUBLIC void _BitScanForward(unsigned int* index, unsigned int v)
 
 #endif
 
-PUBLIC cl_uint is_power_2(cl_uint x)
+PUBLIC uint32_t is_power_2(uint32_t x)
 {
 	return (x && !(x & (x - 1)));
 }
 
 // Greatest power of 2 <= x
-PUBLIC cl_uint floor_power_2(cl_uint x)
+PUBLIC uint32_t floor_power_2(uint32_t x)
 {
 	x |= x >> 1;
 	x |= x >> 2;
@@ -156,7 +164,7 @@ PUBLIC cl_uint floor_power_2(cl_uint x)
 	return x - (x >> 1);
 }
 // Small power of 2 >= x
-PUBLIC cl_uint ceil_power_2(cl_uint x)
+PUBLIC uint32_t ceil_power_2(uint32_t x)
 {
 	x--;
 	x |= x >> 1;
@@ -168,10 +176,10 @@ PUBLIC cl_uint ceil_power_2(cl_uint x)
 }
 
 // Conversion from division by a constant to a multiplication by a constant and a shift
-PUBLIC DivisionParams get_div_params(unsigned int divisor)
+PUBLIC DivisionParams get_div_params(uint32_t divisor)
 {
 	DivisionParams result;
-	unsigned int i, r = 32;
+	uint32_t i, r = 32;
 	double f = 1;
 
 	// Find significant bits of divisor
@@ -190,12 +198,12 @@ PUBLIC DivisionParams get_div_params(unsigned int divisor)
 		if(f - ((uint64_t)f) < 0.5)
 		{
 			result.sum_one = TRUE;
-			result.magic = (unsigned int)f;
+			result.magic = (uint32_t)f;
 		}
 		else
 		{
 			result.sum_one = FALSE;
-			result.magic = (unsigned int)(f+1);
+			result.magic = (uint32_t)(f+1);
 		}
 	}
 	else
@@ -208,12 +216,12 @@ PUBLIC DivisionParams get_div_params(unsigned int divisor)
 }
 // Testing of good division
 //{
-//	unsigned int64_t i;
+//	uint32_t64_t i;
 //	//DivisionParams div_param = get_div_params(10);
 //	//div_param.sum_one++;
 //	for (i = 0; i < 120; i++)
 //	{
-//		unsigned int rem, div = (i*429496730u) >> 32;
+//		uint32_t rem, div = (i*429496730u) >> 32;
 //		rem = i - div * 10;
 //		if (i%10 != rem || i/10 != div)
 //		{
@@ -285,7 +293,7 @@ PUBLIC void swap_endianness_array(uint32_t* data, int count)
 		data[i] = tmp;
 	}
 }
-PUBLIC unsigned char* ntlm2utf8_key(unsigned int* nt_buffer, unsigned char* key,unsigned int NUM_KEYS, unsigned int index)
+PUBLIC unsigned char* ntlm2utf8_key(uint32_t* nt_buffer, unsigned char* key,uint32_t NUM_KEYS, uint32_t index)
 {
 	int lenght = nt_buffer[14*NUM_KEYS+index] >> 4;
 	int j = 0;
@@ -297,25 +305,24 @@ PUBLIC unsigned char* ntlm2utf8_key(unsigned int* nt_buffer, unsigned char* key,
 
 	return key;
 }
-PUBLIC unsigned char* utf8_coalesc2utf8_key(unsigned int* nt_buffer, unsigned char* key, unsigned int NUM_KEYS, unsigned int index)
+PUBLIC unsigned char* utf8_coalesc2utf8_key(uint32_t* nt_buffer, unsigned char* key, uint32_t NUM_KEYS, uint32_t index)
 {
-	unsigned int len = nt_buffer[7 * NUM_KEYS + index] >> 3;
-	for (unsigned int j = 0; j < (len / 4 + 1); j++)
-		((unsigned int*)key)[j] = nt_buffer[j * NUM_KEYS + index];
+	uint32_t len = nt_buffer[7 * NUM_KEYS + index] >> 3;
+	for (uint32_t j = 0; j < (len / 4 + 1); j++)
+		((uint32_t*)key)[j] = nt_buffer[j * NUM_KEYS + index];
 
 	key[len] = 0;
 	return key;
 }
-extern unsigned int max_lenght;
-PUBLIC unsigned char* utf8_be_coalesc2utf8_key(unsigned int* nt_buffer, unsigned char* key, unsigned int NUM_KEYS, unsigned int index)
+extern uint32_t max_lenght;
+PUBLIC unsigned char* utf8_be_coalesc2utf8_key(uint32_t* nt_buffer, unsigned char* key, uint32_t NUM_KEYS, uint32_t index)
 {
-	unsigned int len_index = (max_lenght > 27) ? 16 : 7;
-	unsigned int len = nt_buffer[len_index * NUM_KEYS + index] >> 3;
-	for (unsigned int j = 0; j < (len / 4 + 1); j++)
+	uint32_t len = nt_buffer[7 * NUM_KEYS + index] >> 3;
+	for (uint32_t j = 0; j < (len / 4 + 1); j++)
 	{
-		unsigned int data = nt_buffer[j * NUM_KEYS + index];
+		uint32_t data = nt_buffer[j * NUM_KEYS + index];
 		SWAP_ENDIANNESS(data, data);
-		((unsigned int*)key)[j] = data;
+		((uint32_t*)key)[j] = data;
 	}
 
 	key[len] = 0;
@@ -323,6 +330,9 @@ PUBLIC unsigned char* utf8_be_coalesc2utf8_key(unsigned int* nt_buffer, unsigned
 }
 PUBLIC int valid_hex_string(unsigned char* ciphertext, int lenght)
 {
+	if (ciphertext == NULL)
+		return FALSE;
+
 	if(strlen((char*)ciphertext) != lenght)
 		return FALSE;
 
@@ -334,6 +344,9 @@ PUBLIC int valid_hex_string(unsigned char* ciphertext, int lenght)
 }
 PUBLIC int valid_base64_string(unsigned char* ciphertext, int lenght)
 {
+	if (ciphertext == NULL)
+		return FALSE;
+
 	if(strlen((char*)ciphertext) != lenght)
 		return FALSE;
 
@@ -359,6 +372,154 @@ PUBLIC int src_contained_in(const char* src, const char* container)
 
 	return TRUE;
 }
+PUBLIC void binary_to_hex(const uint32_t* binary, unsigned char* ciphertext, uint32_t num_dwords, int is_big_endian)
+{
+	uint32_t val;
+	for (uint32_t i = 0; i < num_dwords; i++)
+	{
+		if (is_big_endian)
+		{
+			SWAP_ENDIANNESS(val, binary[i]);
+		}
+		else
+			val = binary[i];
+
+		sprintf((char*)ciphertext + i * 8, "%08X", val);
+	}
+
+	ciphertext[num_dwords * 8] = 0;
+}
+/*********************************************************************
+* Encode functions for mime base-64
+*********************************************************************/
+PRIVATE const char *itoa64m = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+PRIVATE void enc_base64_1(char *out, uint32_t val, uint32_t cnt)
+{
+	while (cnt--)
+	{
+		uint32_t v = (val & 0xFC0000) >> 18;
+		val <<= 6;
+		*out++ = itoa64m[v];
+	}
+}
+PUBLIC void base64_encode_mime(const unsigned char *in, int len, char *outy)
+{
+	int mod = len % 3;
+	uint32_t u;
+
+	for (int i = 0; i * 3 < len; ++i)
+	{
+		if ((i + 1) * 3 >= len)
+		{
+			switch (mod)
+			{
+			case 0:
+				u = ((((uint32_t)in[i * 3]) << 16) | (((uint32_t)in[i * 3 + 1]) << 8) | (((uint32_t)in[i * 3 + 2])));
+				enc_base64_1(outy, u, 4);
+				outy[4] = 0;
+				break;
+			case 1:
+				u = ((uint32_t)in[i * 3]) << 16;
+				enc_base64_1(outy, u, 2);
+				outy[2] = 0;
+				break;
+			case 2:
+				u = (((uint32_t)in[i * 3]) << 16) | (((uint32_t)in[i * 3 + 1]) << 8);
+				enc_base64_1(outy, u, 3);
+				outy[3] = 0;
+				break;
+			}
+		}
+		else
+		{
+			u = ((((uint32_t)in[i * 3]) << 16) | (((uint32_t)in[i * 3 + 1]) << 8) | (((uint32_t)in[i * 3 + 2])));
+			enc_base64_1(outy, u, 4);
+		}
+		outy += 4;
+	}
+	if (mod && len)
+	{
+		outy -= 4;
+		switch (mod)
+		{
+		case 1: strcpy(&outy[2], "=="); break;
+		case 2: strcpy(&outy[3], "="); break;
+		}
+	}
+	if (len == 0) outy[0] = 0;
+}
+// Decode
+PRIVATE void base64_unmap(unsigned char* in_block)
+{
+	for (int i = 0; i < 4; i++)
+	{
+		unsigned char* c = in_block + i;
+
+		if (*c >= 'A' && *c <= 'Z')
+		{
+			*c -= 'A';
+			continue;
+		}
+
+		if (*c >= 'a' && *c <= 'z')
+		{
+			*c -= 'a';
+			*c += 26;
+			continue;
+		}
+
+		if (*c == '+')
+		{
+			*c = 62;
+			continue;
+		}
+
+		if (*c == '/')
+		{
+			*c = 63;
+			continue;
+		}
+
+		if (*c >= '0' && *c <= '9')
+		{
+			*c -= '0';
+			*c += 52;
+			continue;
+		}
+		/* ignore trailing trash (if there were no '=' values */
+		*c = 0;
+	}
+}
+PUBLIC int base64_decode_mime(const char* base64, int inlen, unsigned char* bin)
+{
+	char temp[4];
+
+	const char* in_block = base64;
+	unsigned char* out_block = bin;
+	int bin_size = 0;
+	
+	for (int i = 0; i < inlen; i += 4)
+	{
+		if (*in_block == '=')
+			return bin_size;
+
+		memcpy(temp, in_block, 4);
+		base64_unmap(temp);
+
+		out_block[0] = ((temp[0] << 2) & 0xfc) | ((temp[1] >> 4) & 3);
+		out_block[1] = ((temp[1] << 4) & 0xf0) | ((temp[2] >> 2) & 0xf);
+		out_block[2] = ((temp[2] << 6) & 0xc0) | ((temp[3]) & 0x3f);
+
+		out_block += 3;
+		bin_size += 3;
+		if (in_block[2] == '=') return bin_size - 2;
+		if (in_block[3] == '=') return bin_size - 1;
+		in_block += 4;
+	}
+
+	return bin_size;
+}
+
 // Expand filename to full path including directory of the app
 PUBLIC char* get_full_path(char* filename)
 {
@@ -366,10 +527,10 @@ PUBLIC char* get_full_path(char* filename)
 
 	return full_path;
 }
-PUBLIC unsigned int is_charset_consecutive(unsigned char* charset)
+PUBLIC uint32_t is_charset_consecutive(unsigned char* charset)
 {
 	unsigned char min_val = 255;
-	unsigned int i,j;
+	uint32_t i,j;
 
 	// Find the minimum char value
 	for (i = 0; i < strlen(charset); i++)
@@ -392,10 +553,10 @@ PUBLIC unsigned int is_charset_consecutive(unsigned char* charset)
 
 	return min_val;
 }
-PUBLIC unsigned int get_bit_table_mask(unsigned int num_passwords_loaded, uint64_t l1_size, uint64_t l2_size)
+PUBLIC uint32_t get_bit_table_mask(uint32_t num_passwords_loaded, uint64_t l1_size, uint64_t l2_size)
 {
 	int i;
-	unsigned int result = 1;
+	uint32_t result = 1;
 	int num_bytes_bit_table;
 
 	// Generate result with all bits less than
@@ -411,7 +572,7 @@ PUBLIC unsigned int get_bit_table_mask(unsigned int num_passwords_loaded, uint64
 		return result;
 
 	// Calculate size
-	num_bytes_bit_table = sizeof(unsigned int) * (result/32+1);
+	num_bytes_bit_table = sizeof(uint32_t) * (result/32+1);
 
 	// Bit_table overflow L2 cache
 	if(num_bytes_bit_table > 4*l2_size)
@@ -456,7 +617,7 @@ PRIVATE void hex_init()
 	hex_to_num['F'] = hex_to_num['f'] = 15;
 
 	memset(base64_to_num, NOT_HEX_CHAR, sizeof(base64_to_num));
-	for (unsigned int pos = 0; pos < 64; pos++)
+	for (uint32_t pos = 0; pos < 64; pos++)
 		base64_to_num[itoa64[pos]] = pos;
 }
 PRIVATE void formats_init(int db_already_initialize)
@@ -476,12 +637,28 @@ PRIVATE void formats_init(int db_already_initialize)
 	formats[WPA_INDEX] = wpa_format;
 
 	formats[BCRYPT_INDEX] = bcrypt_format;
-	//formats[SSHA_INDEX] = ssha_format;
-	num_formats = 10;//11;
+	formats[SSHA_INDEX] = ssha_format;
+	formats[MD5CRYPT_INDEX] = md5crypt_format;
+	num_formats = 12;
 #ifdef INCLUDE_DEVELOPING_FORMAT
 	formats[<name>_INDEX] = <name>_format;
 	num_formats++;
 #endif
+
+	// Initialize bench data
+	for (i = 0; i < num_formats; i++)
+	{
+		if (formats[i].salt_size)
+		{
+			formats[i].bench_values = bench_values_salt;
+			formats[i].lenght_bench_values = LENGHT(bench_values_salt);
+		}
+		else
+		{
+			formats[i].bench_values = bench_values_raw;
+			formats[i].lenght_bench_values = LENGHT(bench_values_raw);
+		}
+	}
 
 	if (!db_already_initialize)
 	{
@@ -503,6 +680,17 @@ PRIVATE void formats_init(int db_already_initialize)
 	}
 }
 
+PRIVATE void ciphertext(sqlite3_context* context, int nArgs, sqlite3_value** values)
+{
+	Format* format = find_format(sqlite3_value_int(values[1]));
+
+	const void* binary = sqlite3_value_blob(values[0]);
+	unsigned char* result = (unsigned char*)malloc((format->binary_size + format->salt_size) * 2 + 1);
+
+	format->convert_to_string(binary, ((const char*)binary) + format->binary_size, result);
+
+	sqlite3_result_text(context, result, -1, free);
+}
 // Initialize all data needed by app
 PUBLIC void init_all(const char* program_exe_path)
 {
@@ -540,7 +728,7 @@ PUBLIC void init_all(const char* program_exe_path)
 	}
 
 	// Database
-#ifdef ANDROID
+#ifdef __ANDROID__
 	sqlite3_open(db_path, &db);
 #else
 	#ifdef HS_TESTING
@@ -559,16 +747,18 @@ PUBLIC void init_all(const char* program_exe_path)
 	register_in_out();
 	register_key_providers(db_already_exits);
 	formats_init(db_already_exits);
+	load_settings_from_db();
+	load_cache();
 	init_attack_data();
 
 	END_TRANSACTION;
 
-	load_settings_from_db();
-	load_cache();
 	fill_bits();
 #ifdef HS_OPENCL_SUPPORT
 	init_opencl();
 #endif
+
+	sqlite3_create_function(db, "ciphertext", 2, SQLITE_UTF8 | SQLITE_DETERMINISTIC, NULL, ciphertext, NULL, NULL);
 }
 
 // Get info formatted
@@ -752,14 +942,13 @@ PUBLIC void save_settings_to_db()
 {
 	if (db)
 	{
-		int i = 0;
 		sqlite3_stmt* _update_settings;
 
 		sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO Settings (ID, Value) VALUES (?, ?);", -1, &_update_settings, NULL);
 
 		BEGIN_TRANSACTION;
 
-		for (; i < count_settings_saved; i++)
+		for (int i = 0; i < count_settings_saved; i++)
 		{
 			sqlite3_reset(_update_settings);
 			sqlite3_bind_int(_update_settings, 1, save_setting_ids[i]);
@@ -796,76 +985,78 @@ PUBLIC int get_setting(int id, int default_value)
 
 // Cache
 // TODO: Unified all this cache in a struct
-PUBLIC int* num_hashes_by_formats = NULL;
-PUBLIC int* num_hashes_found_by_format = NULL;
-PUBLIC int* num_user_by_formats = NULL;
+PUBLIC uint32_t* num_hashes_by_formats1 = NULL;
+PUBLIC uint32_t* num_hashes_found_by_format1 = NULL;
+PUBLIC uint32_t* num_user_by_formats1 = NULL;
 
+#define ID_NUM_HASHES_DATA              70000
 PRIVATE void load_cache()
 {
-	sqlite3_stmt* _countHashFormat;
-	sqlite3_stmt* _countHashFoundFormat;
-	sqlite3_stmt* _countUserFormat;
-	int i = 0;
-
 	// Cache
-	num_hashes_by_formats		= (int*)calloc(num_formats, sizeof(int));
-	num_hashes_found_by_format	= (int*)calloc(num_formats, sizeof(int));
-	num_user_by_formats			= (int*)calloc(num_formats, sizeof(int));
+	num_hashes_by_formats1		= (uint32_t*)calloc(num_formats, sizeof(uint32_t));
+	num_hashes_found_by_format1	= (uint32_t*)calloc(num_formats, sizeof(uint32_t));
+	num_user_by_formats1		= (uint32_t*)calloc(num_formats, sizeof(uint32_t));
 
-	// Count hash by formats
-	sqlite3_prepare_v2(db, "SELECT count(*) FROM Hash WHERE Type=?;", -1, &_countHashFormat, NULL);
-	sqlite3_prepare_v2(db, "SELECT count(*) FROM (FindHash INNER JOIN Hash ON Hash.ID==FindHash.ID) WHERE Hash.Type=?;", -1, &_countHashFoundFormat, NULL);
-	sqlite3_prepare_v2(db, "SELECT count(*) FROM (Hash INNER JOIN Account ON Account.Hash==Hash.ID) WHERE Hash.Type=?;", -1, &_countUserFormat, NULL);
-
-	for(; i < num_formats; i++)
+	for(int i = 0; i < num_formats; i++)
 	{
 		// Count hash
-		sqlite3_reset(_countHashFormat);
-		sqlite3_bind_int64(_countHashFormat, 1, formats[i].db_id);
-		sqlite3_step(_countHashFormat);
-		num_hashes_by_formats[i] = sqlite3_column_int(_countHashFormat, 0);
-
+		num_hashes_by_formats1[i] = get_setting(ID_NUM_HASHES_DATA + 3 * i + 0, 0);
 		// Count found hash
-		sqlite3_reset(_countHashFoundFormat);
-		sqlite3_bind_int64(_countHashFoundFormat, 1, formats[i].db_id);
-		sqlite3_step(_countHashFoundFormat);
-		num_hashes_found_by_format[i] = sqlite3_column_int(_countHashFoundFormat, 0);
-
+		num_hashes_found_by_format1[i] = get_setting(ID_NUM_HASHES_DATA + 3 * i + 1, 0);
 		// Count users
-		sqlite3_reset(_countUserFormat);
-		sqlite3_bind_int64(_countUserFormat, 1, formats[i].db_id);
-		sqlite3_step(_countUserFormat);
-		num_user_by_formats[i] = sqlite3_column_int(_countUserFormat, 0);
+		num_user_by_formats1[i] = get_setting(ID_NUM_HASHES_DATA + 3 * i + 2, 0);
 	}
 
-	sqlite3_finalize(_countHashFormat);
-	sqlite3_finalize(_countHashFoundFormat);
-	sqlite3_finalize(_countUserFormat);
-
-	// Give to LM a special treatment
-	sqlite3_prepare_v2(db, "SELECT count(*) FROM AccountLM;", -1, &_countUserFormat, NULL);
-	sqlite3_step(_countUserFormat);
-	num_user_by_formats[LM_INDEX] = sqlite3_column_int(_countUserFormat, 0);
-	sqlite3_finalize(_countUserFormat);
 }
-PUBLIC int total_num_hashes_found()
+PUBLIC void save_num_hashes_cache()
 {
-	int _result = 0;
-	int i = 0;
+	for (int i = 0; i < num_formats; i++)
+	{
+		// Count hash
+		save_setting(ID_NUM_HASHES_DATA + 3 * i + 0, num_hashes_by_formats1[i]);
+		// Count found hash
+		save_setting(ID_NUM_HASHES_DATA + 3 * i + 1, num_hashes_found_by_format1[i]);
+		// Count users
+		save_setting(ID_NUM_HASHES_DATA + 3 * i + 2, num_user_by_formats1[i]);
+	}
 
-	for(; i < num_formats; i++)
-		_result += num_hashes_found_by_format[i];
+	save_settings_to_db();
+}
+PUBLIC uint32_t total_num_users()
+{
+	uint32_t _result = 0;
+
+	for (int i = 0; i < num_formats; i++)
+		_result += num_user_by_formats1[i];
+
+	return _result;
+}
+PUBLIC uint32_t total_num_hashes_found()
+{
+	uint32_t _result = 0;
+
+	for(int i = 0; i < num_formats; i++)
+		_result += num_hashes_found_by_format1[i];
 
 	return _result ;
 }
-PUBLIC int has_hashes(int format_index)
+PUBLIC uint32_t total_num_hashes()
 {
-	return num_hashes_by_formats[format_index];
+	uint32_t _result = 0;
+
+	for (int i = 0; i < num_formats; i++)
+		_result += num_hashes_by_formats1[i];
+
+	return _result;
+}
+PUBLIC uint32_t has_hashes(int format_index)
+{
+	return num_hashes_by_formats1[format_index];
 }
 // All hashes was found for a specific format?
 PUBLIC int is_found_all_hashes(int format_index)
 {
-	return num_hashes_found_by_format[format_index] < num_hashes_by_formats[format_index];
+	return num_hashes_found_by_format1[format_index] < num_hashes_by_formats1[format_index];
 }
 
 PUBLIC void clear_db_accounts()
@@ -875,9 +1066,12 @@ PUBLIC void clear_db_accounts()
 	sqlite3_exec(db, "VACUUM;", NULL, NULL, NULL);
 
 	// Put cache in 0
-	memset(num_hashes_by_formats, 0, num_formats*sizeof(int));
-	memset(num_hashes_found_by_format, 0, num_formats*sizeof(int));
-	memset(num_user_by_formats, 0, num_formats*sizeof(int));
+	memset(num_hashes_by_formats1, 0, num_formats*sizeof(uint32_t));
+	memset(num_hashes_found_by_format1, 0, num_formats*sizeof(uint32_t));
+	memset(num_user_by_formats1, 0, num_formats*sizeof(uint32_t));
+
+	save_num_hashes_cache();
+	resize_fam();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////

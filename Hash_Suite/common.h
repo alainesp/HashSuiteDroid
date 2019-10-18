@@ -10,7 +10,7 @@
 
 #pragma warning(disable: 4996)
 
-#define rotate(x,shift)		rotate32(x,shift)
+#define ROTATE(x,shift)		ROTATE32(x,shift)
 
 #define NO_ELEM		UINT_MAX
 #define POW2(x)		((x)*(x))
@@ -18,24 +18,26 @@
 
 #define FORMAT_USE_SALT num_diff_salts
 
-#define PTR_SIZE_IN_BITS (sizeof(void*)*8)
+#define PTR_SIZE_IN_BITS ((int)(sizeof(void*)*8))
+
+#include <assert.h>
 
 #ifndef _WIN32
 	int _strnicmp(char* string0, char* string1, int count);
 	unsigned char* _strupr(unsigned char *string);
 	unsigned char* _strlwr(unsigned char *string);
 	long long _filelengthi64(int file);
-	unsigned int _rotl(unsigned int v, unsigned int sh);
-	uint64_t _rotl64(uint64_t, unsigned int sh);
-	void _BitScanReverse(unsigned int* index, unsigned int v);
-	void _BitScanForward(unsigned int* index, unsigned int v);
+	uint32_t _rotl(uint32_t v, uint32_t sh);
+	uint64_t _rotl64(uint64_t, uint32_t sh);
+	void _BitScanReverse(uint32_t* index, uint32_t v);
+	void _BitScanForward(uint32_t* index, uint32_t v);
 #endif
 
 void remove_str(char* data, const char* pattern);
 
 extern sqlite3_stmt* insert_account_lm;
-sqlite3_int64 insert_hash_account(ImportParam* param, const char* user_name, const char* ciphertext, int db_index, sqlite3_int64 tag_id);
-sqlite3_int64 insert_hash_if_necesary(const char* hex, sqlite3_int64 format_id, ImportResultFormat* hash_stat);
+sqlite3_int64 insert_hash_account1(ImportParam* param, const char* user_name, const char* ciphertext, int db_index);
+sqlite3_int64 insert_hash_if_necesary(const char* hex, sqlite3_int64 format_index, ImportResultFormat* hash_stat);
 
 void swap_endianness_array(uint32_t* data, int count);
 
@@ -44,24 +46,34 @@ void swap_endianness_array(uint32_t* data, int count);
 // Map to convert hexadecimal char into his corresponding value
 extern unsigned char hex_to_num[];
 extern unsigned char base64_to_num[];
+#ifdef __cplusplus
+extern "C" {  // only need to export C interface if used by C++ source code
+#endif
+	extern char itoa64[];
+
+	uint32_t is_power_2(uint32_t x);
+	uint32_t floor_power_2(uint32_t x);
+	uint32_t ceil_power_2(uint32_t x);
+	void generate_random(uint8_t* values, size_t size);
+
+#ifdef __cplusplus
+}  // only need to export C interface if used by C++ source code
+#endif
+
 
 //#define SECONDS_SINCE(init) ((int)((double)(get_milliseconds() - init) / 1000 + 0.5))
 extern int64_t save_time;
-unsigned int seconds_since_start(int isTotal);
-
-cl_uint is_power_2(cl_uint x);
-cl_uint floor_power_2(cl_uint x);
-cl_uint ceil_power_2(cl_uint x);
+uint32_t seconds_since_start(int isTotal);
 
 // Conversion from division by a constant to a multiplication by a constant and a shift
 typedef struct DivisionParams
 {
-	unsigned int magic;
-	unsigned int shift;
+	uint32_t magic;
+	uint32_t shift;
 	unsigned char sum_one;
 }
 DivisionParams;
-DivisionParams get_div_params(unsigned int divisor);
+DivisionParams get_div_params(uint32_t divisor);
 
 int src_contained_in(const char* src, const char* container);
 
@@ -86,7 +98,7 @@ void register_key_providers(int db_already_initialize);
 void create_opencl_param(OpenCL_Param* result, cl_uint gpu_device_index, generate_key_funtion* gen, cl_uint size_ouput, int use_ptx);
 void release_opencl_param(OpenCL_Param* param);
 int build_opencl_program(OpenCL_Param* param, const char* source, char* compiler_options);
-void create_opencl_mem(OpenCL_Param* param, cl_uint index, cl_mem_flags flag, size_t size, void* host_ptr);
+int create_opencl_mem(OpenCL_Param* param, cl_uint index, cl_mem_flags flag, size_t size, void* host_ptr);
 int create_kernel(OpenCL_Param* param, cl_uint index, char* kernel_name);
 void cl_write_buffer(OpenCL_Param* param, cl_uint index, size_t size, void* ptr);
 
@@ -98,6 +110,6 @@ void cl_write_buffer(OpenCL_Param* param, cl_uint index, size_t size, void* ptr)
 int crypto_scalarmult_curve25519(unsigned char *shared_key, const unsigned char *secret_key, const unsigned char *public_key);
 int crypto_scalarmult_curve25519_base(unsigned char *public_key, const unsigned char *secret_key);
 
-void salsa20_crypt_block(unsigned char* message, const unsigned int* nonce, const unsigned int* key, unsigned int counter);
+void salsa20_crypt_block(unsigned char* message, const uint32_t* nonce, const uint32_t* key, uint32_t counter);
 
 #endif

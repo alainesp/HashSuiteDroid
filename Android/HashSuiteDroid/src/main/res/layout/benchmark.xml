@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<HorizontalScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+<ScrollView android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+        
+<LinearLayout
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="@dimen/activity_vertical_margin">
+    
+<TableLayout
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:id="@+id/benchmark_hardware">
+
+    <TableRow android:layout_width="wrap_content" android:layout_height="wrap_content" >
+        
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="left" android:textAppearance="?android:attr/textAppearanceMedium" android:text="Name"/>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="center_horizontal" android:textAppearance="?android:attr/textAppearanceMedium" android:text="Cores"/>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="center_horizontal" android:textAppearance="?android:attr/textAppearanceMedium" android:text="Freq"/>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="center_horizontal" android:textAppearance="?android:attr/textAppearanceMedium" android:paddingLeft="@dimen/activity_horizontal_margin" android:text="Other Information"/>
+        
+    </TableRow>
+    
+     <!-- just draw a black line -->
+    <View android:layout_height="2dip" android:background="#000000" />
+    
+</TableLayout>
+        
+<TableLayout
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:paddingTop="@dimen/activity_vertical_margin"
+    android:paddingBottom="@dimen/activity_vertical_margin"
+    android:id="@+id/benchmark_table">
+
+    <TableRow android:layout_width="wrap_content" android:layout_height="wrap_content" >
+        
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="left" android:textAppearance="?android:attr/textAppearanceMedium" android:text="Format"/>
+        
+    </TableRow>
+    
+     <!-- just draw a black line -->
+    <View android:layout_height="2dip" android:background="#000000" />
+    
+</TableLayout>
+</LinearLayout>
+</ScrollView>
+</HorizontalScrollView>

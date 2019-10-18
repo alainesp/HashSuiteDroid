@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2015 by Alain Espinosa
+// Copyright (c) 2015-2016 by Alain Espinosa
 
 #include "Interface.h"
 
@@ -80,9 +80,9 @@ PUBLIC extern "C" int MAJ_SELECTOR = -1;
 #endif
 
 #ifdef _WIN32
-PRIVATE unsigned int bench_thread(void* pParam)
+PRIVATE uint32_t bench_thread(void* pParam)
 #else
-PRIVATE unsigned int bench_thread(JNIEnv* env, jclass my_class, jclass thread_cls, jmethodID thread_sleep, jmethodID SetBenchData_id, jmethodID complete_benchmark_id)
+PRIVATE uint32_t bench_thread(JNIEnv* env, jclass my_class, jclass thread_cls, jmethodID thread_sleep, jmethodID SetBenchData_id, jmethodID complete_benchmark_id)
 #endif
 {
 	// Calculate the max number of values
@@ -108,7 +108,7 @@ PRIVATE unsigned int bench_thread(JNIEnv* env, jclass my_class, jclass thread_cl
 			Sleep(BENCH_SLEEP_TIME);
 #endif
 			// Benchmark CPU cores
-			for (unsigned int j = 0; j < num_gpu_devices; j++)
+			for (uint32_t j = 0; j < num_gpu_devices; j++)
 				GPU_SET_FLAG_DISABLE(gpu_devices[j].flags, GPU_FLAG_IS_USED);
 			for (app_num_threads = quick_benchmark ? current_cpu.logical_processors : 1; app_num_threads <= current_cpu.logical_processors && performing_bench; app_num_threads *= 2, show_index++)
 #ifndef BENCH_ONLY_GPU
@@ -118,7 +118,7 @@ PRIVATE unsigned int bench_thread(JNIEnv* env, jclass my_class, jclass thread_cl
 
 			// Benchmark each GPU
 			app_num_threads = 0;
-			for (unsigned int gpu_index = 0; gpu_index < num_gpu_devices && performing_bench; gpu_index++, show_index++)
+			for (uint32_t gpu_index = 0; gpu_index < num_gpu_devices && performing_bench; gpu_index++, show_index++)
 			{
 				gpu_devices[gpu_index].flags |= GPU_FLAG_IS_USED;
 				if (gpu_index) GPU_SET_FLAG_DISABLE(gpu_devices[gpu_index - 1].flags, GPU_FLAG_IS_USED);
@@ -130,7 +130,7 @@ PRIVATE unsigned int bench_thread(JNIEnv* env, jclass my_class, jclass thread_cl
 			// Benchmark concurrent hardware
 			if (performing_bench && !quick_benchmark)
 			{
-				for (unsigned int j = 0; j < num_gpu_devices; j++)
+				for (uint32_t j = 0; j < num_gpu_devices; j++)
 					gpu_devices[j].flags |= GPU_FLAG_IS_USED;
 				if (num_gpu_devices > 1)// All GPUs
 				{
@@ -165,6 +165,7 @@ PRIVATE unsigned int bench_thread(JNIEnv* env, jclass my_class, jclass thread_cl
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Testing
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//#define HS_TESTING
 #ifdef HS_TESTING
 
 #ifndef _WIN32
@@ -172,10 +173,11 @@ PRIVATE unsigned int bench_thread(JNIEnv* env, jclass my_class, jclass thread_cl
 #include <ctype.h>
 unsigned char* _strupr(unsigned char *string);
 unsigned char* _strlwr(unsigned char *string);
-unsigned int _rotl(unsigned int v, unsigned int sh);
+uint32_t _rotl(uint32_t v, uint32_t sh);
 #endif
 
 static int is_testing = FALSE;
+extern "C" const char itoa64[];
 
 static unsigned char* tt_usernames = NULL;
 static unsigned char* tt_cleartexts = NULL;
@@ -190,12 +192,12 @@ static cl_uint tt_num_hashes_gen = 0;
 #define INIT_D 0x10325476
 #define INIT_E 0xC3D2E1F0
 
-extern "C" void md5_process_block(unsigned int* state, const unsigned int* block);
+extern "C" void md5_process_block(uint32_t* state, const void* block);
 static void apply_md5(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash)
 {
-	unsigned int md5_state[4];
-	unsigned int nt_buffer[16];
-	unsigned int len = (unsigned int)strlen((char*)cleartext);
+	uint32_t md5_state[4];
+	uint32_t nt_buffer[16];
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
 
 	memset(nt_buffer, 0, sizeof(nt_buffer));
 	strcpy((char*)nt_buffer, (char*)cleartext);
@@ -210,7 +212,7 @@ static void apply_md5(const unsigned char* username, const unsigned char* cleart
 	md5_process_block(md5_state, nt_buffer);
 
 	hash[0] = 0;
-	for (unsigned int i = 0; i < 4; i++)
+	for (uint32_t i = 0; i < 4; i++)
 	{
 		SWAP_ENDIANNESS(md5_state[i], md5_state[i]);
 		sprintf((char*)hash + strlen((char*)hash), "%08x", md5_state[i]);
@@ -225,14 +227,14 @@ static void apply_ntlm(const unsigned char* username, const unsigned char* clear
 	hash_ntlm(cleartext, (char*)hash);
 }
 
-extern "C" void sha1_process_block_simd(unsigned int* state, unsigned int* W, unsigned int simd_with);
+extern "C" void sha1_process_block_simd(uint32_t* state, uint32_t* W, uint32_t simd_with);
 static void apply_sha1(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash)
 {
-	unsigned int nt_buffer[8];
-	unsigned int W[16];
-	unsigned int sha1_state[5];
+	uint32_t nt_buffer[8];
+	uint32_t W[16];
+	uint32_t sha1_state[5];
 
-	unsigned int len = (unsigned int)strlen((char*)cleartext);
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
 
 	memset(nt_buffer, 0, sizeof(nt_buffer));
 	strcpy((char*)nt_buffer, (char*)cleartext);
@@ -258,19 +260,19 @@ static void apply_sha1(const unsigned char* username, const unsigned char* clear
 	sha1_process_block_simd(sha1_state, W, 1);
 
 	hash[0] = 0;
-	for (unsigned int i = 0; i < 5; i++)
+	for (uint32_t i = 0; i < 5; i++)
 		sprintf((char*)hash+strlen((char*)hash), "%08x", sha1_state[i]);
 }
 
 // SHA-256
-extern "C" void sha256_process_block(unsigned int* state, unsigned int* W);
+extern "C" void sha256_process_block(uint32_t* state, uint32_t* W);
 static void apply_sha256(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash)
 {
-	unsigned int nt_buffer[8];
-	unsigned int W[16];
-	unsigned int sha256_state[8];
+	uint32_t nt_buffer[8];
+	uint32_t W[16];
+	uint32_t sha256_state[8];
 
-	unsigned int len = (unsigned int)strlen((char*)cleartext);
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
 
 	memset(nt_buffer, 0, sizeof(nt_buffer));
 	strcpy((char*)nt_buffer, (char*)cleartext);
@@ -299,7 +301,7 @@ static void apply_sha256(const unsigned char* username, const unsigned char* cle
 	sha256_process_block(sha256_state, W);
 	
 	hash[0] = 0;
-	for (unsigned int i = 0; i < 8; i++)
+	for (uint32_t i = 0; i < 8; i++)
 		sprintf((char*)hash+strlen((char*)hash), "%08x", sha256_state[i]);
 }
 
@@ -307,12 +309,12 @@ static void apply_sha256(const unsigned char* username, const unsigned char* cle
 extern "C" void sha512_process_block(uint64_t* state, uint64_t* W);
 static void apply_sha512(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash)
 {
-	unsigned int nt_buffer[8];
+	uint32_t nt_buffer[8];
 	uint64_t W[16];
 	uint64_t sha512_state[8];
 	uint32_t tmp0, tmp1;
 
-	unsigned int len = (unsigned int)strlen((char*)cleartext);
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
 
 	memset(nt_buffer, 0, sizeof(nt_buffer));
 	strcpy((char*)nt_buffer, (char*)cleartext);
@@ -345,12 +347,12 @@ static void apply_sha512(const unsigned char* username, const unsigned char* cle
 	sha512_process_block(sha512_state, W);
 
 	hash[0] = 0;
-	for (unsigned int i = 0; i < 8; i++)
+	for (uint32_t i = 0; i < 8; i++)
 		sprintf((char*)hash+strlen((char*)hash), "%016llx", sha512_state[i]);
 }
 
-#undef rotate
-#define rotate(x,shift)		rotate32(x,shift)
+#undef ROTATE
+#define ROTATE(x,shift)		ROTATE32(x,shift)
 #define SQRT_2 0x5a827999
 #define SQRT_3 0x6ed9eba1
 
@@ -369,20 +371,21 @@ extern "C" {
 	} hccap_t;
 	typedef struct
 	{
-		unsigned int keymic[4];
+		uint32_t keymic[4];
 		unsigned char prf_buffer[128];
 		unsigned char eapol[256+64];
-		unsigned int  eapol_blocks;
+		uint32_t  eapol_blocks;
 		int           keyver;
 	} hccap_bin;
 
-	void dcc_ntlm_part_c_code(unsigned int* nt_buffer, unsigned int* crypt_result);
-	void dcc_salt_part_c_code(unsigned int* salt_buffer, unsigned int* crypt_result);
-	void dcc2_body_c_code(unsigned int* salt_buffer, unsigned int* crypt_result, unsigned int* sha1_hash, unsigned int* opad_state, unsigned int* ipad_state, unsigned int* W);
-	void wpa_body_c_code(unsigned int* nt_buffer, unsigned int* essid_block, unsigned int* crypt_result, unsigned int* sha1_hash, unsigned int* opad_state, unsigned int* ipad_state, unsigned int* W);
-	void wpa_postprocess_c_code(hccap_bin* salt, unsigned int* crypt_result, unsigned int* sha1_hash, unsigned int* opad_state, unsigned int* ipad_state, unsigned int* W);
-	void convert_utf8_2_coalesc(const unsigned char* key, unsigned int* nt_buffer, unsigned int max_number, unsigned int len);
-	extern unsigned int max_lenght;
+	void dcc_ntlm_part_c_code(uint32_t* nt_buffer, uint32_t* crypt_result);
+	void dcc_salt_part_c_code(uint32_t* salt_buffer, uint32_t* crypt_result);
+	void dcc2_body_c_code(uint32_t* salt_buffer, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W);
+	void wpa_body_c_code(uint32_t* nt_buffer, uint32_t* essid_block, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W);
+	void wpa_postprocess_c_code(hccap_bin* salt, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W);
+	void convert_utf8_2_coalesc(const unsigned char* key, uint32_t* nt_buffer, uint32_t max_number, uint32_t len);
+	extern uint32_t max_lenght;
+	void swap_endianness_array(uint32_t* data, int count);
 }
 static void convert2wpa_salt(hccap_t hccap, hccap_bin* salt)
 {
@@ -393,9 +396,9 @@ static void convert2wpa_salt(hccap_t hccap, hccap_bin* salt)
 	memcpy(salt->eapol, hccap.eapol, hccap.eapol_size);
 	salt->eapol[hccap.eapol_size] = 0x80;
 	memset(salt->eapol + hccap.eapol_size + 1, 0, sizeof(salt->eapol) - hccap.eapol_size - 1);
-	unsigned int* eapol_ptr = ((unsigned int*)salt->eapol);
+	uint32_t* eapol_ptr = ((uint32_t*)salt->eapol);
 	if (hccap.keyver != 1)
-		for (unsigned int i = 0; i < (sizeof(salt->eapol)/4-2); i++)
+		for (uint32_t i = 0; i < (sizeof(salt->eapol)/4-2); i++)
 		{
 			SWAP_ENDIANNESS(eapol_ptr[i], eapol_ptr[i]);
 		}
@@ -426,31 +429,31 @@ static void convert2wpa_salt(hccap_t hccap, hccap_bin* salt)
 	salt->prf_buffer[100] = 0x80;
 	memset(salt->prf_buffer + 101, 0, sizeof(salt->prf_buffer) - 4 - 101);
 
-	unsigned int* prf_buffer_ptr = ((unsigned int*)salt->prf_buffer);
+	uint32_t* prf_buffer_ptr = ((uint32_t*)salt->prf_buffer);
 	prf_buffer_ptr[16+15] = (64 + 100) << 3;
 
-	for (unsigned int i = 0; i < 104/4; i++)
+	for (uint32_t i = 0; i < 104/4; i++)
 	{
 		SWAP_ENDIANNESS(prf_buffer_ptr[i], prf_buffer_ptr[i]);
 	}
 	//------------------------------------------------------------------------------
 }
-static const char* itoa64 = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
 static void apply_wpa(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash)
 {
-	unsigned int crypt_result[10], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
-	unsigned int nt_buffer[17 * 64];
-	unsigned int len = (unsigned int)strlen((char*)cleartext);
+	uint32_t crypt_result[10], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
+	uint32_t nt_buffer[17 * 64];
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
 
 	// nt_buffer
 	max_lenght = 63;
 	memset(nt_buffer, 0, sizeof(nt_buffer));
 	convert_utf8_2_coalesc(cleartext, nt_buffer, 64, len);
-	unsigned int _0x80_index = len / 4 * 64;
+	uint32_t _0x80_index = len / 4 * 64;
 	((unsigned char*)nt_buffer)[_0x80_index * 4 + (len & 3)] = 0;
 	nt_buffer[16 * 64] = len << 3;
 	len = (len + 3) / 4;
-	for (unsigned int j = 0; j < len; j++)
+	for (uint32_t j = 0; j < len; j++)
 	{
 		SWAP_ENDIANNESS(nt_buffer[j * 64], nt_buffer[j * 64]);
 	}
@@ -460,20 +463,20 @@ static void apply_wpa(const unsigned char* username, const unsigned char* cleart
 	hccap_bin salt;
 	strcpy(wpa_data.essid, (char*)username);
 	unsigned char* r_data = ((unsigned char*)&wpa_data) + 36;
-	for (unsigned int i = 0; i < (256+32+32+6+6); i++)
+	for (uint32_t i = 0; i < (256+32+32+6+6); i++)
 		r_data[i] = rand() & 0xff;
 	wpa_data.eapol_size = rand() & 0x7f;
 	wpa_data.keyver = (rand() & 1) + 1;
 
 	convert2wpa_salt(wpa_data, &salt);
 	// Convert essid_block
-	unsigned int essid_block[16];
-	unsigned int essid_len = (unsigned int)strlen(wpa_data.essid);
+	uint32_t essid_block[16];
+	uint32_t essid_len = (uint32_t)strlen(wpa_data.essid);
 	strcpy((char*)essid_block, wpa_data.essid);
 	memcpy(((char*)essid_block) + essid_len, "\x0\x0\x0\x1\x80", 5);
 	memset(((char*)essid_block) + essid_len + 5, 0, 60 - (essid_len + 5));
 	essid_block[15] = (64 + essid_len + 4) << 3;
-	for (unsigned int k = 0; k < 14; k++)
+	for (uint32_t k = 0; k < 14; k++)
 	{
 		SWAP_ENDIANNESS(essid_block[k], essid_block[k]);
 	}
@@ -483,7 +486,7 @@ static void apply_wpa(const unsigned char* username, const unsigned char* cleart
 	wpa_postprocess_c_code(&salt, crypt_result, sha1_hash, opad_state, ipad_state, W);
 
 	if (wpa_data.keyver != 1)
-		for (unsigned int i = 0; i < 4; i++)
+		for (uint32_t i = 0; i < 4; i++)
 		{
 			SWAP_ENDIANNESS(crypt_result[i], crypt_result[i]);
 		}
@@ -510,11 +513,11 @@ static void apply_wpa(const unsigned char* username, const unsigned char* cleart
 }
 static void apply_dcc2(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash)
 {
-	unsigned int crypt_result[12], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
-	unsigned int i;
-	unsigned int nt_buffer[16 * 64];
-	unsigned int salt_buffer[11];
-	unsigned int len = (unsigned int)strlen((char*)cleartext);
+	uint32_t crypt_result[12], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
+	uint32_t i;
+	uint32_t nt_buffer[16 * 64];
+	uint32_t salt_buffer[11];
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
 
 	// nt_buffer
 	memset(nt_buffer, 0, sizeof(nt_buffer));
@@ -525,7 +528,7 @@ static void apply_dcc2(const unsigned char* username, const unsigned char* clear
 	nt_buffer[14 * 64] = len << 4;
 
 	// Salt
-	len = (unsigned int)strlen((char*)username);
+	len = (uint32_t)strlen((char*)username);
 	memset(salt_buffer, 0, sizeof(salt_buffer));
 	for (i = 0; i < len / 2; i++)
 		salt_buffer[i] = tolower(username[2 * i]) + (tolower(username[2 * i + 1]) << 16);
@@ -537,19 +540,19 @@ static void apply_dcc2(const unsigned char* username, const unsigned char* clear
 	dcc_salt_part_c_code(salt_buffer, crypt_result);
 	dcc2_body_c_code(salt_buffer, crypt_result, sha1_hash, opad_state, ipad_state, W);
 
-	unsigned int a = crypt_result[8 + 0];
-	unsigned int b = crypt_result[8 + 1];
-	unsigned int c = crypt_result[8 + 2];
-	unsigned int d = crypt_result[8 + 3];
+	uint32_t a = crypt_result[8 + 0];
+	uint32_t b = crypt_result[8 + 1];
+	uint32_t c = crypt_result[8 + 2];
+	uint32_t d = crypt_result[8 + 3];
 
 	sprintf((char*)hash, "%s:%08x%08x%08x%08x", username, a, b, c, d);
 }
 static void apply_dcc(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash)
 {
-	unsigned int i;
-	unsigned int nt_buffer[16];
-	unsigned int salt_buffer[11];
-	unsigned int len = (unsigned int)strlen((char*)cleartext);
+	uint32_t i;
+	uint32_t nt_buffer[16];
+	uint32_t salt_buffer[11];
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
 
 	// nt_buffer
 	memset(nt_buffer, 0, sizeof(nt_buffer));
@@ -560,7 +563,7 @@ static void apply_dcc(const unsigned char* username, const unsigned char* cleart
 	nt_buffer[14] = len << 4;
 
 	// Salt
-	len = (unsigned int)strlen((char*)username);
+	len = (uint32_t)strlen((char*)username);
 	memset(salt_buffer, 0, sizeof(salt_buffer));
 	for (i = 0; i < len / 2; i++)
 		salt_buffer[i] = tolower(username[2 * i]) + (tolower(username[2 * i + 1]) << 16);
@@ -568,139 +571,139 @@ static void apply_dcc(const unsigned char* username, const unsigned char* cleart
 	salt_buffer[i] = (len % 2) ? tolower(username[2 * i]) + 0x800000 : 0x80;
 	salt_buffer[10] = (8 + len) << 4;
 
-	unsigned int a, b, c, d;
+	uint32_t a, b, c, d;
 
 	/* Round 1 */
-	a = 0xFFFFFFFF + nt_buffer[0]; a = rotate(a, 3);
-	d = INIT_D + (INIT_C ^ (a & 0x77777777)) + nt_buffer[1]; d = rotate(d, 7);
-	c = INIT_C + (INIT_B ^ (d & (a ^ INIT_B))) + nt_buffer[2]; c = rotate(c, 11);
-	b = INIT_B + (a ^ (c & (d ^ a))) + nt_buffer[3]; b = rotate(b, 19);
+	a = 0xFFFFFFFF + nt_buffer[0]; a = ROTATE(a, 3);
+	d = INIT_D + (INIT_C ^ (a & 0x77777777)) + nt_buffer[1]; d = ROTATE(d, 7);
+	c = INIT_C + (INIT_B ^ (d & (a ^ INIT_B))) + nt_buffer[2]; c = ROTATE(c, 11);
+	b = INIT_B + (a ^ (c & (d ^ a))) + nt_buffer[3]; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + nt_buffer[4]; a = rotate(a, 3);
-	d += (c ^ (a & (b ^ c))) + nt_buffer[5]; d = rotate(d, 7);
-	c += (b ^ (d & (a ^ b))) + nt_buffer[6]; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + nt_buffer[7]; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + nt_buffer[4]; a = ROTATE(a, 3);
+	d += (c ^ (a & (b ^ c))) + nt_buffer[5]; d = ROTATE(d, 7);
+	c += (b ^ (d & (a ^ b))) + nt_buffer[6]; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + nt_buffer[7]; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + nt_buffer[8]; a = rotate(a, 3);
-	d += (c ^ (a & (b ^ c))) + nt_buffer[9]; d = rotate(d, 7);
-	c += (b ^ (d & (a ^ b))) + nt_buffer[10]; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + nt_buffer[11]; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + nt_buffer[8]; a = ROTATE(a, 3);
+	d += (c ^ (a & (b ^ c))) + nt_buffer[9]; d = ROTATE(d, 7);
+	c += (b ^ (d & (a ^ b))) + nt_buffer[10]; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + nt_buffer[11]; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + nt_buffer[12]; a = rotate(a, 3);
-	d += (c ^ (a & (b ^ c))) + nt_buffer[13]; d = rotate(d, 7);
-	c += (b ^ (d & (a ^ b))) + nt_buffer[14]; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))); b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + nt_buffer[12]; a = ROTATE(a, 3);
+	d += (c ^ (a & (b ^ c))) + nt_buffer[13]; d = ROTATE(d, 7);
+	c += (b ^ (d & (a ^ b))) + nt_buffer[14]; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))); b = ROTATE(b, 19);
 
 	/* Round 2 */
-	a += ((b & (c | d)) | (c & d)) + nt_buffer[0] + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) + nt_buffer[4] + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) + nt_buffer[8] + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a)) + nt_buffer[12] + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + nt_buffer[0] + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) + nt_buffer[4] + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) + nt_buffer[8] + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a)) + nt_buffer[12] + SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + nt_buffer[1] + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) + nt_buffer[5] + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) + nt_buffer[9] + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a)) + nt_buffer[13] + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + nt_buffer[1] + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) + nt_buffer[5] + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) + nt_buffer[9] + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a)) + nt_buffer[13] + SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + nt_buffer[2] + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) + nt_buffer[6] + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) + nt_buffer[10] + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a)) + nt_buffer[14] + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + nt_buffer[2] + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) + nt_buffer[6] + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) + nt_buffer[10] + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a)) + nt_buffer[14] + SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + nt_buffer[3] + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) + nt_buffer[7] + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) + nt_buffer[11] + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a)) + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + nt_buffer[3] + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) + nt_buffer[7] + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) + nt_buffer[11] + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a)) + SQRT_2; b = ROTATE(b, 13);
 
 	/* Round 3 */
-	a += (d ^ c ^ b) + nt_buffer[0] + SQRT_3; a = rotate(a, 3);
-	d += (c ^ b ^ a) + nt_buffer[8] + SQRT_3; d = rotate(d, 9);
-	c += (b ^ a ^ d) + nt_buffer[4] + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c) + nt_buffer[12] + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + nt_buffer[0] + SQRT_3; a = ROTATE(a, 3);
+	d += (c ^ b ^ a) + nt_buffer[8] + SQRT_3; d = ROTATE(d, 9);
+	c += (b ^ a ^ d) + nt_buffer[4] + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c) + nt_buffer[12] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (d ^ c ^ b) + nt_buffer[2] + SQRT_3; a = rotate(a, 3);
-	d += (c ^ b ^ a) + nt_buffer[10] + SQRT_3; d = rotate(d, 9);
-	c += (b ^ a ^ d) + nt_buffer[6] + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c) + nt_buffer[14] + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + nt_buffer[2] + SQRT_3; a = ROTATE(a, 3);
+	d += (c ^ b ^ a) + nt_buffer[10] + SQRT_3; d = ROTATE(d, 9);
+	c += (b ^ a ^ d) + nt_buffer[6] + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c) + nt_buffer[14] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (d ^ c ^ b) + nt_buffer[1] + SQRT_3; a = rotate(a, 3);
-	d += (c ^ b ^ a) + nt_buffer[9] + SQRT_3; d = rotate(d, 9);
-	c += (b ^ a ^ d) + nt_buffer[5] + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c) + nt_buffer[13] + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + nt_buffer[1] + SQRT_3; a = ROTATE(a, 3);
+	d += (c ^ b ^ a) + nt_buffer[9] + SQRT_3; d = ROTATE(d, 9);
+	c += (b ^ a ^ d) + nt_buffer[5] + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c) + nt_buffer[13] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (d ^ c ^ b) + nt_buffer[3] + SQRT_3; a = rotate(a, 3);
-	d += (c ^ b ^ a) + nt_buffer[11] + SQRT_3; d = rotate(d, 9);
-	c += (b ^ a ^ d) + nt_buffer[7] + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c) + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + nt_buffer[3] + SQRT_3; a = ROTATE(a, 3);
+	d += (c ^ b ^ a) + nt_buffer[11] + SQRT_3; d = ROTATE(d, 9);
+	c += (b ^ a ^ d) + nt_buffer[7] + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c) + SQRT_3; b = ROTATE(b, 15);
 
-	unsigned int crypta = a + INIT_A;
-	unsigned int cryptb = b + INIT_B;
-	unsigned int cryptc = c + INIT_C;
-	unsigned int cryptd = d + INIT_D;
+	uint32_t crypta = a + INIT_A;
+	uint32_t cryptb = b + INIT_B;
+	uint32_t cryptc = c + INIT_C;
+	uint32_t cryptd = d + INIT_D;
 
 	//Another MD4_crypt for the salt
 	/* Round 1 */
-	a = 0xFFFFFFFF + crypta; a = rotate(a, 3);
-	d = INIT_D + (INIT_C ^ (a & 0x77777777)) + cryptb; d = rotate(d, 7);
-	c = INIT_C + (INIT_B ^ (d & (a ^ INIT_B))) + cryptc; c = rotate(c, 11);
-	b = INIT_B + (a ^ (c & (d ^    a))) + cryptd; b = rotate(b, 19);
+	a = 0xFFFFFFFF + crypta; a = ROTATE(a, 3);
+	d = INIT_D + (INIT_C ^ (a & 0x77777777)) + cryptb; d = ROTATE(d, 7);
+	c = INIT_C + (INIT_B ^ (d & (a ^ INIT_B))) + cryptc; c = ROTATE(c, 11);
+	b = INIT_B + (a ^ (c & (d ^    a))) + cryptd; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + salt_buffer[0]; a = rotate(a, 3);
-	d += (c ^ (a & (b ^ c))) + salt_buffer[1]; d = rotate(d, 7);
-	c += (b ^ (d & (a ^ b))) + salt_buffer[2]; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + salt_buffer[3]; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + salt_buffer[0]; a = ROTATE(a, 3);
+	d += (c ^ (a & (b ^ c))) + salt_buffer[1]; d = ROTATE(d, 7);
+	c += (b ^ (d & (a ^ b))) + salt_buffer[2]; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + salt_buffer[3]; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + salt_buffer[4]; a = rotate(a, 3);
-	d += (c ^ (a & (b ^ c))) + salt_buffer[5]; d = rotate(d, 7);
-	c += (b ^ (d & (a ^ b))) + salt_buffer[6]; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + salt_buffer[7]; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + salt_buffer[4]; a = ROTATE(a, 3);
+	d += (c ^ (a & (b ^ c))) + salt_buffer[5]; d = ROTATE(d, 7);
+	c += (b ^ (d & (a ^ b))) + salt_buffer[6]; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + salt_buffer[7]; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + salt_buffer[8]; a = rotate(a, 3);
-	d += (c ^ (a & (b ^ c))) + salt_buffer[9]; d = rotate(d, 7);
-	c += (b ^ (d & (a ^ b))) + salt_buffer[10]; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))); b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + salt_buffer[8]; a = ROTATE(a, 3);
+	d += (c ^ (a & (b ^ c))) + salt_buffer[9]; d = ROTATE(d, 7);
+	c += (b ^ (d & (a ^ b))) + salt_buffer[10]; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))); b = ROTATE(b, 19);
 
 	/* Round 2 */
-	a += ((b & (c | d)) | (c & d)) + crypta + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) + salt_buffer[0] + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) + salt_buffer[4] + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a)) + salt_buffer[8] + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + crypta + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) + salt_buffer[0] + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) + salt_buffer[4] + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a)) + salt_buffer[8] + SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + cryptb + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) + salt_buffer[1] + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) + salt_buffer[5] + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a)) + salt_buffer[9] + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + cryptb + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) + salt_buffer[1] + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) + salt_buffer[5] + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a)) + salt_buffer[9] + SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + cryptc + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) + salt_buffer[2] + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) + salt_buffer[6] + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a)) + salt_buffer[10] + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + cryptc + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) + salt_buffer[2] + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) + salt_buffer[6] + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a)) + salt_buffer[10] + SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + cryptd + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) + salt_buffer[3] + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) + salt_buffer[7] + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a)) + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + cryptd + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) + salt_buffer[3] + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) + salt_buffer[7] + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a)) + SQRT_2; b = ROTATE(b, 13);
 
 	/* Round 3 */
-	a += (b ^ c ^ d) + crypta + SQRT_3; a = rotate(a, 3);
-	d += (a ^ b ^ c) + salt_buffer[4] + SQRT_3; d = rotate(d, 9);
-	c += (d ^ a ^ b) + salt_buffer[0] + SQRT_3; c = rotate(c, 11);
-	b += (c ^ d ^ a) + salt_buffer[8] + SQRT_3; b = rotate(b, 15);
+	a += (b ^ c ^ d) + crypta + SQRT_3; a = ROTATE(a, 3);
+	d += (a ^ b ^ c) + salt_buffer[4] + SQRT_3; d = ROTATE(d, 9);
+	c += (d ^ a ^ b) + salt_buffer[0] + SQRT_3; c = ROTATE(c, 11);
+	b += (c ^ d ^ a) + salt_buffer[8] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (b ^ c ^ d) + cryptc + SQRT_3; a = rotate(a, 3);
-	d += (a ^ b ^ c) + salt_buffer[6] + SQRT_3; d = rotate(d, 9);
-	c += (d ^ a ^ b) + salt_buffer[2] + SQRT_3; c = rotate(c, 11);
-	b += (c ^ d ^ a) + salt_buffer[10] + SQRT_3; b = rotate(b, 15);
+	a += (b ^ c ^ d) + cryptc + SQRT_3; a = ROTATE(a, 3);
+	d += (a ^ b ^ c) + salt_buffer[6] + SQRT_3; d = ROTATE(d, 9);
+	c += (d ^ a ^ b) + salt_buffer[2] + SQRT_3; c = ROTATE(c, 11);
+	b += (c ^ d ^ a) + salt_buffer[10] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (b ^ c ^ d) + cryptb + SQRT_3; a = rotate(a, 3);
-	d += (a ^ b ^ c) + salt_buffer[5] + SQRT_3; d = rotate(d, 9);
-	c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = rotate(c, 11);
-	b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = rotate(b, 15);
+	a += (b ^ c ^ d) + cryptb + SQRT_3; a = ROTATE(a, 3);
+	d += (a ^ b ^ c) + salt_buffer[5] + SQRT_3; d = ROTATE(d, 9);
+	c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = ROTATE(c, 11);
+	b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (b ^ c ^ d) + cryptd + SQRT_3; a = rotate(a, 3);
-	d += (a ^ b ^ c) + salt_buffer[7] + SQRT_3; d = rotate(d, 9);
-	c += (d ^ a ^ b) + salt_buffer[3] + SQRT_3; c = rotate(c, 11);
-	b += (c ^ d ^ a) + SQRT_3; b = rotate(b, 15);
+	a += (b ^ c ^ d) + cryptd + SQRT_3; a = ROTATE(a, 3);
+	d += (a ^ b ^ c) + salt_buffer[7] + SQRT_3; d = ROTATE(d, 9);
+	c += (d ^ a ^ b) + salt_buffer[3] + SQRT_3; c = ROTATE(c, 11);
+	b += (c ^ d ^ a) + SQRT_3; b = ROTATE(b, 15);
 
 	a += INIT_A;
 	b += INIT_B;
@@ -715,6 +718,46 @@ static void apply_dcc(const unsigned char* username, const unsigned char* cleart
 	sprintf((char*)hash, "%s:%08x%08x%08x%08x", username, a, b, c, d);
 }
 
+static void apply_ssha1(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash)
+{
+	uint32_t nt_buffer[14];
+	uint32_t W[16];
+	uint32_t sha1_state[5];
+	// Salt
+	unsigned char salt[16];
+	uint32_t salt_len = 4 + rand() % 5;// from 4 to 8
+	for (uint32_t i = 0; i < salt_len; i++)
+		salt[i] = rand() & 0xff;
+
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
+
+	memset(nt_buffer, 0, sizeof(nt_buffer));
+	strcpy((char*)nt_buffer, (char*)cleartext);
+	memcpy(((char*)nt_buffer) + len, salt, salt_len);
+	((unsigned char*)nt_buffer)[len+salt_len] = 0x80;
+
+	// Copy to W
+	for (uint32_t i = 0; i < 14; i++)
+	{
+		SWAP_ENDIANNESS(W[i], nt_buffer[i]);
+	}
+	W[14] = 0;
+	W[15] = (len+salt_len) << 3;
+
+	// Hash
+	sha1_state[0] = INIT_A;
+	sha1_state[1] = INIT_B;
+	sha1_state[2] = INIT_C;
+	sha1_state[3] = INIT_D;
+	sha1_state[4] = INIT_E;
+	sha1_process_block_simd(sha1_state, W, 1);
+
+	// Encode as base64
+	swap_endianness_array(sha1_state, 5);
+	memcpy(W, sha1_state, 5 * sizeof(uint32_t));
+	memcpy(W + 5, salt, salt_len);
+	base64_encode_mime((unsigned char*)W, 5 * sizeof(uint32_t) + salt_len, (char*)hash);
+}
 // Binary salt type, also keeps the number of rounds and hash sub-type.
 typedef struct {
 	uint32_t salt[4];
@@ -728,7 +771,6 @@ typedef struct {
 } BF_ctx;
 
 extern "C" {
-	void swap_endianness_array(uint32_t* data, int count);
 	extern BF_ctx BF_init_state;
 	void BF_decode(uint32_t *dst, const unsigned char *src, int size);
 }
@@ -752,7 +794,7 @@ PRIVATE void BF_encode(unsigned char *dst, const uint32_t* src, int size)
 	const unsigned char *sptr = (const unsigned char *)src;
 	const unsigned char *end = sptr + size;
 	unsigned char *dptr = (unsigned char *)dst;
-	unsigned int c1, c2;
+	uint32_t c1, c2;
 
 	do {
 		c1 = *sptr++;
@@ -907,13 +949,13 @@ PRIVATE void bf_key(const char* key, BF_salt* salt, uint32_t* crypt_result)
 }
 PRIVATE void apply_bcrypt(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash)
 {
-	unsigned int crypt_result[6];
+	uint32_t crypt_result[6];
 	BF_salt salt;
 	int exponent = 5;
 
 	salt.rounds = 1 << exponent;
 	salt.sign_extension_bug = ((rand() & 3) == 3);
-	for (unsigned int i = 0; i < 4*4; i++)
+	for (uint32_t i = 0; i < 4*4; i++)
 		((unsigned char*)&salt.salt)[i] = rand() & 0xff;
 
 	bf_key((const char*)cleartext, &salt, crypt_result);
@@ -931,7 +973,7 @@ PRIVATE void apply_bcrypt(const unsigned char* username, const unsigned char* cl
 }
 PRIVATE void apply_bcrypt_bug(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash, uint32_t* given_salt)
 {
-	unsigned int crypt_result[6];
+	uint32_t crypt_result[6];
 	BF_salt salt;
 	int exponent = 5;
 
@@ -953,14 +995,134 @@ PRIVATE void apply_bcrypt_bug(const unsigned char* username, const unsigned char
 	hash[7 + 22 + 31] = '\0';
 }
 
+// md5crypt-----------------------------------------------------------------------------------------------
+typedef struct {
+	uint8_t salt[8];
+	uint8_t saltlen;
+	uint8_t prefix;		/** 0 when $1$ or 1 when $apr1$ or 2 for {smd5} which uses no prefix. **/
+} crypt_md5_salt;
+PRIVATE char* prefixs[] = { "$1$", "$apr1$", "" };
+PRIVATE char* prefixs_show[] = { "$1$", "$apr1$", "{smd5}" };
+PRIVATE void md5_one_block_c_code(uint32_t* state, const void* block)
+{
+	state[0] = INIT_A;
+	state[1] = INIT_B;
+	state[2] = INIT_C;
+	state[3] = INIT_D;
+	md5_process_block(state, block);
+}
+#define TO_BASE64(b1, b2, b3) \
+	value = out[b3] | (out[b2] << 8) | (out[b1] << 16);\
+	\
+	pos[0] = itoa64[(value    ) & 63];\
+	pos[1] = itoa64[(value>>6 ) & 63];\
+	pos[2] = itoa64[(value>>12) & 63];\
+	pos[3] = itoa64[(value>>18) & 63];\
+	pos += 4;
+
+PRIVATE void apply_md5crypt(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash)
+{
+	uint32_t md5_state[4];
+	uint8_t buffer[64];
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
+
+	crypt_md5_salt salt;
+	salt.saltlen = 8;// rand() % 8;
+	salt.prefix = rand() % 3;
+	for (int i = 0; i < salt.saltlen; i++)
+	{
+		uint8_t salt_char = 1 + rand() % 255;
+		while (salt_char == '$')
+			salt_char = 1 + rand() % 255;
+		salt.salt[i] = salt_char;
+	}
+
+	// 1st digest
+	memset(buffer, 0, sizeof(buffer));
+	uint32_t buffer_len = 0;
+	memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+	memcpy(buffer + buffer_len, salt.salt, salt.saltlen); buffer_len += salt.saltlen;
+	memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+	buffer[buffer_len] = 0x80;
+	((uint32_t*)buffer)[14] = buffer_len << 3;
+	md5_one_block_c_code(md5_state, buffer);
+
+	// 2nd digest
+	memset(buffer, 0, sizeof(buffer));
+	buffer_len = 0;
+	memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+	memcpy(buffer + buffer_len, prefixs[salt.prefix], strlen(prefixs[salt.prefix])); buffer_len += (uint32_t)strlen(prefixs[salt.prefix]);
+	memcpy(buffer + buffer_len, salt.salt, salt.saltlen); buffer_len += salt.saltlen;
+	memcpy(buffer + buffer_len, md5_state, len); buffer_len += len;
+	for (uint32_t j = len; j > 0; j >>= 1, buffer_len++)
+		buffer[buffer_len] = (j & 1) ? 0 : cleartext[0];
+	buffer[buffer_len] = 0x80;
+	((uint32_t*)buffer)[14] = buffer_len << 3;
+	md5_one_block_c_code(md5_state, buffer);
+
+	// Big cycle
+	for (int i = 0; i < 1000; i++)
+	{
+		memset(buffer, 0, sizeof(buffer));
+		uint32_t buffer_len = 0;
+
+		if (i & 1)
+		{
+			memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+		}
+		else
+		{
+			memcpy(buffer + buffer_len, md5_state, 16); buffer_len += 16;
+		}
+		if (i % 3)
+		{
+			memcpy(buffer + buffer_len, salt.salt, salt.saltlen); buffer_len += salt.saltlen;
+		}
+		if (i % 7)
+		{
+			memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+		}
+		if (i & 1)
+		{
+			memcpy(buffer + buffer_len, md5_state, 16); buffer_len += 16;
+		}
+		else
+		{
+			memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+		}
+
+		buffer[buffer_len] = 0x80;
+		((uint32_t*)buffer)[14] = buffer_len << 3;
+		md5_one_block_c_code(md5_state, buffer);
+	}
+
+	sprintf((char*)hash, "%s", prefixs_show[salt.prefix]);
+	hash += strlen((char*)hash);
+	memcpy(hash, salt.salt, salt.saltlen);
+	hash[salt.saltlen] = '$';
+
+	char* pos = (char*)hash + salt.saltlen + 1;
+	unsigned char* out = (unsigned char*)md5_state;
+	uint32_t value;
+
+	TO_BASE64(0, 6, 12);
+	TO_BASE64(1, 7, 13);
+	TO_BASE64(2, 8, 14);
+	TO_BASE64(3, 9, 15);
+	TO_BASE64(4, 10, 5);
+	pos[0] = itoa64[out[11] & 63];
+	pos[1] = itoa64[out[11] >> 6];
+	pos[2] = 0;
+}
+
 typedef void apply_format(const unsigned char* username, const unsigned char* cleartext, unsigned char* hash);
 PRIVATE apply_format* hash_format[MAX_NUM_FORMATS] = {
 	apply_lm, apply_ntlm, apply_md5, apply_sha1, apply_sha256, apply_sha512,
-	apply_dcc, apply_dcc2, apply_wpa, apply_bcrypt
+	apply_dcc, apply_ssha1, apply_md5crypt, apply_dcc2, apply_wpa, apply_bcrypt
 };
 
 extern "C" {
-	sqlite3_int64 insert_hash_account(ImportParam* param, const char* user_name, const char* ciphertext, int db_index, sqlite3_int64 tag_id);
+	sqlite3_int64 insert_hash_account1(ImportParam* param, const char* user_name, const char* ciphertext, int db_index);
 	sqlite3_int64 insert_when_necesary_tag(const char* tag);
 	sqlite3_int64 insert_hash_if_necesary(const char* hex, sqlite3_int64 format_id, ImportResultFormat* hash_stat);
 	extern sqlite3_stmt* insert_account_lm;
@@ -980,7 +1142,7 @@ PRIVATE void generate_hashes_db(cl_uint format_index)
 	BEGIN_TRANSACTION;
 	sqlite3_int64 tag_id = insert_when_necesary_tag("Testing");
 
-	for (unsigned int i = 0; i < tt_num_hashes_gen; i++)
+	for (uint32_t i = 0; i < tt_num_hashes_gen; i++)
 	{
 		hash_format[format_index](tt_usernames + i * 32, tt_cleartexts + i * 32, hash);
 		if (format_index == LM_INDEX)
@@ -988,7 +1150,7 @@ PRIVATE void generate_hashes_db(cl_uint format_index)
 			hash[16] = 0;
 			tt_hash_ids[i] = insert_hash_if_necesary((char*)hash, formats[LM_INDEX].db_id, param.result.formats_stat + LM_INDEX);
 
-			sqlite3_int64 account_id = insert_hash_account(&param, "u", "", NTLM_INDEX, tag_id);
+			sqlite3_int64 account_id = insert_hash_account1(&param, "u", "", NTLM_INDEX);
 
 			// Insert account lm
 			sqlite3_reset(insert_account_lm);
@@ -999,7 +1161,7 @@ PRIVATE void generate_hashes_db(cl_uint format_index)
 		}
 		else
 		{
-			tt_hash_ids[i] = insert_hash_if_necesary((char*)hash, formats[format_index].db_id, param.result.formats_stat + format_index);
+			tt_hash_ids[i] = insert_hash_if_necesary((char*)hash, format_index, param.result.formats_stat + format_index);
 			
 			sqlite3_reset(insert_account);
 			sqlite3_bind_text (insert_account, 1, "u", -1, SQLITE_STATIC);
@@ -1011,6 +1173,9 @@ PRIVATE void generate_hashes_db(cl_uint format_index)
 
 	END_TRANSACTION;
 	free(hash);
+
+	exist_hashes_release();
+	resize_fam();
 }
 
 typedef void setup_provider(cl_uint format_index);
@@ -1027,8 +1192,8 @@ LRESULT CMainFrame::OnExecuteInUI(WPARAM param1, LPARAM param2)
 // Charset
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 static unsigned char* tt_charset = NULL;
-static unsigned int charset_len;
-static unsigned int is_charset_consecutive = FALSE;
+static uint32_t charset_len;
+static uint32_t is_charset_consecutive = FALSE;
 static int check_only_lenght = -1;
 #ifdef _WIN32
 static void charset_change_ui(cl_uint format_index)
@@ -1062,11 +1227,14 @@ static void setup_charset(cl_uint format_index)
 {
 	unsigned char selected[256];
 	if (check_only_lenght < 0)
-		charset_len = (rand() & (formats[format_index].salt_size ? 31/*63*/ : 127)) + 2;
+		charset_len = (rand() & (formats[format_index].salt_size ? 63 : 127)) + 2;
 	else
 	{
 		int divider = ((format_index >= DCC2_INDEX) ? 1000 : 1);
 		if (format_index == BCRYPT_INDEX) divider = 40000;
+		if (format_index == MD5CRYPT_INDEX) divider = 640;
+		// High-end GPU
+		//if (format_index == MD5CRYPT_INDEX) divider = 128;
 		charset_len = CLIP_RANGE((cl_uint)pow(800000000. / divider, 1. / check_only_lenght), 2, 200);
 	}
 	tt_charset = (unsigned char*)malloc(charset_len + 1);
@@ -1076,12 +1244,12 @@ static void setup_charset(cl_uint format_index)
 	{
 		unsigned char min = rand() % (255 - charset_len);
 
-		for (unsigned int i = 0; i < charset_len; i++)
+		for (uint32_t i = 0; i < charset_len; i++)
 			tt_charset[i] = min + i;
 	}
 	else
 	{
-		for (unsigned int i = 0; i < charset_len; i++)
+		for (uint32_t i = 0; i < charset_len; i++)
 		{
 			unsigned char char2add = rand() % 254 + 1;
 			while (selected[char2add])
@@ -1109,12 +1277,12 @@ static void free_charset()
 }
 static void gen_charset(unsigned char* cleartext, cl_uint format_index)
 {
-#ifdef ANDROID
-	unsigned int len = check_only_lenght < 0 ? (rand() % (formats[format_index].salt_size ? 3 : 4)) : check_only_lenght;
+#ifdef __ANDROID__
+	uint32_t len = check_only_lenght < 0 ? (rand() % (formats[format_index].salt_size ? 3 : 4)) : check_only_lenght;
 #else
-	unsigned int len = check_only_lenght < 0 ? (rand() % (formats[format_index].salt_size ? 5 : 5/*6*/)) : check_only_lenght;
+	uint32_t len = check_only_lenght < 0 ? (rand() % (formats[format_index].salt_size ? 5 : 5/*6*/)) : check_only_lenght;
 #endif
-	for (unsigned int i = 0; i < len; i++)
+	for (uint32_t i = 0; i < len; i++)
 		cleartext[i] = tt_charset[rand() % charset_len];
 
 	cleartext[len] = 0;
@@ -1136,8 +1304,8 @@ static int ZIP_FILESIZE;
 
 static sqlite3_int64 wordlist_id;
 extern "C" {
-	extern unsigned int num_words;
-	extern unsigned int* word_pos;
+	extern uint32_t num_words;
+	extern uint32_t* word_pos;
 	extern unsigned char* words;
 }
 #ifdef _WIN32
@@ -1207,12 +1375,103 @@ static void free_wordlist()
 }
 static void gen_wordlist(unsigned char* cleartext, cl_uint format_index)
 {
-	unsigned int pos = (((rand() & 0x7FFF) << 15) + (rand() & 0x7FFF)) % num_words;
-	if (format_index == DCC2_INDEX)//|| use_rules)
+	uint32_t pos = (((rand() & 0x7FFF) << 15) + (rand() & 0x7FFF)) % num_words;
+	if (format_index >= MD5CRYPT_INDEX)
+		pos &= 0xfffff;
+	else if (format_index >= DCC2_INDEX)//|| use_rules)
 		pos &= 0xffff;
-	unsigned len = __min(word_pos[pos] >> 27, (unsigned int)formats[format_index].max_plaintext_lenght);
+
+	unsigned len = __min(word_pos[pos] >> 27, (uint32_t)formats[format_index].max_plaintext_lenght);
 	strncpy((char*)cleartext, (char*)words + (word_pos[pos] & 0x07ffffff), len);
 	cleartext[len] = 0;
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Phrases
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#ifdef _WIN32
+static void phrases_change_ui(cl_uint format_index)
+{
+	// Add to ribbon
+	CMFCRibbonButton* btn = new CMFCRibbonButton(ID_PHRASES_WORDLIST_BASE + m_phrases_wordlist_count, FILENAME);
+	btn->SetData((DWORD_PTR)wordlist_id);
+	m_PhrasesWordlistsGUI->AddSubItem(btn, m_phrases_wordlist_count);
+	m_phrases_wordlist_count++;
+	m_selected_phrases_wordlist = m_phrases_wordlist_count - 1;
+
+	phrases_prop->SetValue(FILENAME);
+
+	SET_EDIT_NUM(keyProvParams[PHRASES_INDEX].min_size->GetID(), 2);
+	SET_EDIT_NUM(keyProvParams[PHRASES_INDEX].max_size->GetID(), 2);
+	AfxGetApp()->GetMainWnd()->SendMessage(WM_COMMAND, MAKEWPARAM(ID_KEY_PROV_PARAM + 2 * PHRASES_INDEX, 0));
+
+	CMFCRibbonComboBox* _num = (CMFCRibbonComboBox*)m_wndRibbonBar.FindByID(ID_PHRASES_MAX_NUMBER_WORD, FALSE);
+	_itot(PHRASES_MAX_WORDS_READ, buffer_str, 10);
+	_num->SetEditText(buffer_str);
+	phrases_max_num_prop->SetNumber(PHRASES_MAX_WORDS_READ);
+}
+#endif
+static void setup_phrases(cl_uint format_index)
+{
+	key_providers[PHRASES_INDEX].use_rules = FALSE;
+	// Get all wordlist from 'PHRASES_WORDLISTS' folder
+	sqlite3_stmt* _insert_wordlist;
+	sqlite3_prepare_v2(db, "INSERT INTO PhrasesWordList (Name,FileName,Length) VALUES (?,?,?);", -1, &_insert_wordlist, NULL);
+
+	sqlite3_bind_text(_insert_wordlist, 1, FILENAME, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(_insert_wordlist, 2, FILEPATH, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_int64(_insert_wordlist, 3, FILESIZE);
+	sqlite3_step(_insert_wordlist);
+
+	sqlite3_finalize(_insert_wordlist);
+
+	// Get all wordlist from db
+	sqlite3_stmt* _select_wordlists;
+	sqlite3_prepare_v2(db, "SELECT ID FROM PhrasesWordList WHERE FileName=?;", -1, &_select_wordlists, NULL);
+	sqlite3_bind_text(_select_wordlists, 1, FILEPATH, -1, SQLITE_TRANSIENT);
+	sqlite3_step(_select_wordlists);
+	wordlist_id = sqlite3_column_int64(_select_wordlists, 0);
+
+	sqlite3_finalize(_select_wordlists);
+
+	PHRASES_MAX_WORDS_READ = 10000;
+	sprintf(buffer_str, "%lli", wordlist_id);
+	key_providers[PHRASES_INDEX].resume(1, 2, buffer_str, NULL, format_index);
+
+#ifdef _WIN32
+	AfxGetApp()->GetMainWnd()->SendMessage(WM_EXECUTE_IN_UI, (WPARAM)phrases_change_ui, format_index);
+#endif
+}
+
+static void free_phrases()
+{
+	key_providers[PHRASES_INDEX].finish();
+}
+static void gen_phrases(unsigned char* cleartext, cl_uint format_index)
+{
+	uint32_t pos, len, len2;
+	do
+	{
+		pos = (((rand() & 0x7FFF) << 15) + (rand() & 0x7FFF)) % num_words;
+		if (format_index >= DCC2_INDEX)
+			pos &= 0xffff;
+		len = word_pos[pos] >> 27;
+	}
+	while (len >= (uint32_t)formats[format_index].max_plaintext_lenght);
+
+	strncpy((char*)cleartext, (char*)words + (word_pos[pos] & 0x07ffffff), len);
+
+	// Second word
+	do
+	{
+		pos = (((rand() & 0x7FFF) << 15) + (rand() & 0x7FFF)) % num_words;
+		if (format_index >= DCC2_INDEX)
+			pos &= 0xffff;
+		len2 = word_pos[pos] >> 27;
+	}
+	while ((len+len2) > (uint32_t)formats[format_index].max_plaintext_lenght);
+
+	strncpy((char*)cleartext+len, (char*)words + (word_pos[pos] & 0x07ffffff), len2);
+	cleartext[len + len2] = 0;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Db info
@@ -1221,7 +1480,7 @@ static void setup_db_info(cl_uint format_index)
 {}
 static void gen_db_info(unsigned char* cleartext, cl_uint format_index)
 {
-	unsigned int pos = (unsigned int)(cleartext - tt_cleartexts) / 32;
+	uint32_t pos = (uint32_t)(cleartext - tt_cleartexts) / 32;
 	if (pos)
 		pos = (((rand() & 0x7FFF) << 15) + (rand() & 0x7FFF)) % pos;
 	strncpy((char*)cleartext, (char*)tt_usernames + pos * 32, formats[format_index].max_plaintext_lenght);
@@ -1236,6 +1495,7 @@ static int num_rules_active;
 static int my_rules_remap[32];
 static int check_all_rules;
 static int skip_intensive_rules;
+static int rule_active_index = -1;
 #ifdef _WIN32
 static void rules_change_ui(cl_uint format_index)
 {
@@ -1257,13 +1517,24 @@ static void setup_rules(cl_uint format_index)
 
 	for (int i = 0; i < num_rules; i++)
 		if (skip_intensive_rules && rules[i].multipler >= 95 * 95)
+		{
 			rules[i].checked = FALSE;
+		}
 		else
 		{
 			if (check_all_rules)
+			{
 				rules[i].checked = 1;
+			}
+			else if (rule_active_index >= 0)
+			{
+				rules[i].checked = (i == rule_active_index);
+			}
 			else
+			{
 				rules[i].checked = rand() & 1;
+			}
+
 			if (rules[i].checked)
 			{
 				my_rules_remap[num_rules_active] = i;
@@ -1318,7 +1589,7 @@ static int check_leet_cap(unsigned char* plain, cl_uint param)
 }
 static int check_lower(unsigned char* plain, cl_uint param)
 {
-	for (unsigned int i = 0; i < strlen((char*)plain); i++)
+	for (uint32_t i = 0; i < strlen((char*)plain); i++)
 		if ((plain[i] - 65u) <= 25u)
 			return TRUE;
 
@@ -1328,7 +1599,7 @@ static int check_cap(unsigned char* plain, cl_uint param)
 {
 	if ((plain[0] - 97u) <= 25u)
 		return TRUE;
-	for (unsigned int i = 1; i < strlen((char*)plain); i++)
+	for (uint32_t i = 1; i < strlen((char*)plain); i++)
 		if ((plain[i] - 65u) <= 25u)
 			return TRUE;
 
@@ -1336,7 +1607,7 @@ static int check_cap(unsigned char* plain, cl_uint param)
 }
 static int check_upper(unsigned char* plain, cl_uint param)
 {
-	for (unsigned int i = 0; i < strlen((char*)plain); i++)
+	for (uint32_t i = 0; i < strlen((char*)plain); i++)
 		if ((plain[i] - 97u) <= 25u)
 			return TRUE;
 
@@ -1344,7 +1615,7 @@ static int check_upper(unsigned char* plain, cl_uint param)
 }
 static int check_upper_last(unsigned char* plain, cl_uint param)
 {
-	unsigned int i;
+	uint32_t i;
 	for (i = 0; i < (strlen((char*)plain) - 1); i++)
 		if ((plain[i] - 65u) <= 25u)
 			return TRUE;
@@ -1363,7 +1634,7 @@ rule_all_gen, rule_all_gen, rule_all_gen, rule_all_gen, rule_all_gen, rule_all_g
 rule_all_gen, rule_all_gen, rule_all_gen, rule_all_gen, rule_all_gen };
 static void gen_rules(unsigned char* cleartext, cl_uint format_index)
 {
-	unsigned int param = 0;
+	uint32_t param = 0;
 	unsigned char plain[32];
 	int rule_check_gen = FALSE;
 
@@ -1382,7 +1653,7 @@ static void gen_rules(unsigned char* cleartext, cl_uint format_index)
 		{
 			int sum_len = (int)len + rules[rule_used1].key_lenght_sum;
 
-			unsigned int mul = rules[rule_used1].multipler / RULE_LENGHT_COMMON;
+			uint32_t mul = rules[rule_used1].multipler / RULE_LENGHT_COMMON;
 			if (rules[rule_used1].ocl.max_param_value)
 			{
 				param = (rand() % sum_len - rules[rule_used1].key_lenght_sum) << 8;
@@ -1414,12 +1685,12 @@ typedef void generate_cleartext(unsigned char* cleartext, cl_uint format_index);
 typedef void free_provider();
 
 
-setup_provider* setup_providers[] = { setup_charset, setup_wordlist, NULL, NULL, setup_db_info, NULL, NULL, setup_rules };
-generate_cleartext* gen_provider_cleartext[] = { gen_charset, gen_wordlist, NULL, NULL, gen_db_info, NULL, NULL, gen_rules };
-free_provider* free_providers[] = { free_charset, free_wordlist, NULL, NULL, free_db_info, NULL, NULL, free_wordlist };
+setup_provider* setup_providers[] = { setup_charset, setup_wordlist, NULL, setup_phrases, setup_db_info, NULL, NULL, setup_rules };
+generate_cleartext* gen_provider_cleartext[] = { gen_charset, gen_wordlist, NULL, gen_phrases, gen_db_info, NULL, NULL, gen_rules };
+free_provider* free_providers[] = { free_charset, free_wordlist, NULL, free_phrases, free_db_info, NULL, NULL, free_wordlist };
 static void remove_cleartext_duplicates()
 {
-	unsigned int size_table = 1;
+	uint32_t size_table = 1;
 	while(size_table < tt_num_hashes_gen)
 		size_table = (size_table << 1) + 1;
 	// 3 bits more into account
@@ -1427,18 +1698,18 @@ static void remove_cleartext_duplicates()
 		size_table = (size_table << 1) + 1;
 
 	// Create hashtable
-	unsigned int* table          = (unsigned int*)malloc(sizeof(unsigned int) * (size_table+1));
-	unsigned int* same_hash_next = (unsigned int*)malloc(sizeof(unsigned int) * tt_num_hashes_gen);
+	uint32_t* table          = (uint32_t*)malloc(sizeof(uint32_t) * (size_table+1));
+	uint32_t* same_hash_next = (uint32_t*)malloc(sizeof(uint32_t) * tt_num_hashes_gen);
 	char* to_remove = (char*)calloc(tt_num_hashes_gen, 1);
 
 	// Initialize
-	memset(table, 0xff, sizeof(unsigned int) * (size_table+1));
-	memset(same_hash_next, 0xff, sizeof(unsigned int) * tt_num_hashes_gen);
+	memset(table, 0xff, sizeof(uint32_t) * (size_table+1));
+	memset(same_hash_next, 0xff, sizeof(uint32_t) * tt_num_hashes_gen);
 
-	for (unsigned int i = 0; i < tt_num_hashes_gen; i++)
+	for (uint32_t i = 0; i < tt_num_hashes_gen; i++)
 	{
 		unsigned char* cleartext = tt_cleartexts + 32 * i;
-		unsigned int value_map = 5381;
+		uint32_t value_map = 5381;
 
 		// Public domain hash function by DJ Bernstein
 		int len = (int)strlen((char*)cleartext);
@@ -1453,7 +1724,7 @@ static void remove_cleartext_duplicates()
 		}
 		else
 		{
-			unsigned int last_index = table[value_map];
+			uint32_t last_index = table[value_map];
 			if (!strcmp((char*)cleartext, (char*)tt_cleartexts + 32 * last_index))
 			{
 				to_remove[i] = TRUE;
@@ -1481,7 +1752,7 @@ static void remove_cleartext_duplicates()
 
 	cl_uint num_unique = 0;
 	unsigned char* tt_unique_cleartext = (unsigned char*)malloc(32 * tt_num_hashes_gen);
-	for (unsigned int i = 0; i < tt_num_hashes_gen; i++)
+	for (uint32_t i = 0; i < tt_num_hashes_gen; i++)
 		if (!to_remove[i])
 		{
 			strcpy((char*)tt_unique_cleartext + 32 * num_unique, (char*)tt_cleartexts + 32 * i);
@@ -1503,14 +1774,19 @@ static void generate_accounts(cl_uint format_index, cl_uint provider_index)
 
 	setup_providers[provider_index](format_index);
 
-	for (unsigned int i = 0; i < tt_num_hashes_gen; i++)
+	for (uint32_t i = 0; i < tt_num_hashes_gen; i++)
 	{
-		unsigned int len = rand() % 19 + 1;
-		for (unsigned int j = 0; j < len; j++)
+		uint32_t len = rand() % 19 + 1;
+		for (uint32_t j = 0; j < len; j++)
 			tt_usernames[i * 32 + j] = name_chars[rand() % name_chars_size];
 
 		tt_usernames[i * 32 + len] = 0;
-		gen_provider_cleartext[provider_index](tt_cleartexts + 32 * i, format_index);
+		size_t text_len = formats[format_index].max_plaintext_lenght + 1;
+		while (text_len > formats[format_index].max_plaintext_lenght)
+		{
+			gen_provider_cleartext[provider_index](tt_cleartexts + 32 * i, format_index);
+			text_len = strlen((char*)tt_cleartexts + 32 * i);
+		}
 	}
 
 	free_providers[provider_index]();
@@ -1548,46 +1824,46 @@ static void attack_cycle(cl_uint format_index, cl_uint provider_index)
 	while (m_is_cracking)
 		Sleep(500ll);
 
-	if (num_hashes_by_formats[format_index] != num_hashes_found_by_format[format_index])
+	if (num_hashes_by_formats1[format_index] != num_hashes_found_by_format1[format_index])
 	{
 #ifdef _WIN32
-		hs_log(HS_LOG_ERROR, "Test Suite", "%i hashes not found.\n%s %s", num_hashes_by_formats[format_index] - num_hashes_found_by_format[format_index],
+		hs_log(HS_LOG_ERROR, "Test Suite", "%i hashes not found.\n%s %s", num_hashes_by_formats1[format_index] - num_hashes_found_by_format1[format_index],
 			app_num_threads ? "CPU" : "GPU", app_num_threads ? (current_cpu.capabilites[CPU_CAP_AVX2] ? "AVX2" : (current_cpu.capabilites[CPU_CAP_AVX] ? "AVX" : "SSE2")) : "");
 #else
 		hs_log(HS_LOG_ERROR, "Test Suite", "%i hashes not found.\n%s %s", num_hashes_by_formats[format_index] - num_hashes_found_by_format[format_index],
 			app_num_threads ? "CPU" : "GPU", app_num_threads ? (current_cpu.capabilites[CPU_CAP_NEON] ? "Neon" : "") : "");
 #endif
-		//sqlite3_stmt* _select_cleartext;
-		//sqlite3_prepare_v2(db, "SELECT ClearText FROM (FindHash INNER JOIN Hash ON FindHash.ID=Hash.ID) WHERE Hash.ID=?;", -1, &_select_cleartext, NULL);
-
-		//// Show hashes that fail
-		//for (cl_uint i = 0; i < tt_num_hashes_gen; i++)
-		//{
-		//	sqlite3_reset(_select_cleartext);
-		//	sqlite3_bind_int64(_select_cleartext, 1, tt_hash_ids[i]);
-
-		//	if (sqlite3_step(_select_cleartext) != SQLITE_ROW)
-		//	{
-		//		if (testing_use_rules)
-		//			sprintf(buffer_str, "Fail rule: %s with param %i\n%s", rules[rule_used_clear[i]].name, rule_param_used_clear[i], tt_cleartexts + i * 32);
-		//		else
-		//			sprintf(buffer_str, "Len: %i Cleartext: %s", (int)strlen((char*)tt_cleartexts + i * 32), tt_cleartexts + i * 32);
-		//		
-		//		hs_log(HS_LOG_ERROR, "Hash not found", "%s", buffer_str);
-		//	}
-		//}
-
-		//sqlite3_finalize(_select_cleartext);
+		sqlite3_stmt* _select_cleartext;
+		sqlite3_prepare_v2(db, "SELECT ClearText FROM (FindHash INNER JOIN Hash ON FindHash.HashID=Hash.ID) WHERE Hash.ID=?;", -1, &_select_cleartext, NULL);
+		
+		// Show hashes that fail
+		for (cl_uint i = 0; i < tt_num_hashes_gen; i++)
+		{
+			sqlite3_reset(_select_cleartext);
+			sqlite3_bind_int64(_select_cleartext, 1, tt_hash_ids[i]);
+		
+			if (sqlite3_step(_select_cleartext) != SQLITE_ROW)
+			{
+				if (testing_use_rules)
+					sprintf(buffer_str, "Fail rule: %s with param %i\n%s", rules[rule_used_clear[i]].name, rule_param_used_clear[i], tt_cleartexts + i * 32);
+				else
+					sprintf(buffer_str, "Len: %i Cleartext: %s", (int)strlen((char*)tt_cleartexts + i * 32), tt_cleartexts + i * 32);
+				
+				hs_log(HS_LOG_ERROR, "Hash not found", "%s", buffer_str);
+			}
+		}
+		
+		sqlite3_finalize(_select_cleartext);
 	}
 	else
 	{
 		sqlite3_stmt* _select_cleartext;
-		sqlite3_prepare_v2(db, "SELECT ClearText,Hex FROM (FindHash INNER JOIN Hash ON FindHash.ID=Hash.ID) WHERE Hash.ID=?;", -1, &_select_cleartext, NULL);
+		sqlite3_prepare_v2(db, "SELECT ClearText FROM FindHash WHERE FindHash.PK==?;", -1, &_select_cleartext, NULL);
 
-		for (int i = 0; i < num_hashes_found_by_format[format_index]; i++)
+		for (uint32_t i = 0; i < num_hashes_found_by_format1[format_index]; i++)
 		{
 			sqlite3_reset(_select_cleartext);
-			sqlite3_bind_int64(_select_cleartext, 1, tt_hash_ids[i]);
+			sqlite3_bind_int64(_select_cleartext, 1, load_fam(tt_hash_ids[i]));
 
 			if (sqlite3_step(_select_cleartext) == SQLITE_ROW)
 			{
@@ -1609,7 +1885,8 @@ static void attack_cycle(cl_uint format_index, cl_uint provider_index)
 					int is_collision = FALSE;
 					if (format_index == BCRYPT_INDEX)
 					{
-						const unsigned char* hex = sqlite3_column_text(_select_cleartext, 1);
+						// TODO: Do something here
+						const unsigned char hex[] = "ERROR NEED TO DO SOMETHING";//sqlite3_column_text(_select_cleartext, 1);
 						if (hex[2] == 'x')//sign_extension_bug
 						{
 							uint32_t salt[4];
@@ -1700,7 +1977,7 @@ static void random_body_hashes(cl_uint format_index, cl_uint provider_index)
 
 	// C code
 #ifndef _M_X64
-	//attack_cycle(format_index, provider_index);
+	// attack_cycle(format_index, provider_index);
 #endif
 
 #ifdef _WIN32
@@ -1744,6 +2021,7 @@ static void random_body_hashes(cl_uint format_index, cl_uint provider_index)
 	free(rule_param_used_clear);
 	free(rule_used_clear);
 }
+static int test_num_hashes = 0;
 static void random_body_cycle(int format_index, cl_uint provider_index)
 {
 	key_providers[provider_index].use_rules = testing_use_rules;
@@ -1756,16 +2034,29 @@ static void random_body_cycle(int format_index, cl_uint provider_index)
 #endif
 
 	// 1 hash
-	tt_num_hashes_gen = 1;
-	random_body_hashes(format_index, provider_index);
+	if (!test_num_hashes)
+	{
+		tt_num_hashes_gen = 1;
+		random_body_hashes(format_index, provider_index);
+	}
 
 	// Variuos hashes
-#ifdef ANDROID
-	unsigned int mask = (format_index == DCC_INDEX) ? 63 : ((format_index == DCC2_INDEX||format_index == WPA_INDEX||format_index == BCRYPT_INDEX) ? 3 : 0xffff);
+#ifdef __ANDROID__
+	uint32_t mask = 0xffff;
 #else
-	unsigned int mask = (format_index == DCC_INDEX) ? 63 : ((format_index == DCC2_INDEX||format_index == WPA_INDEX||format_index == BCRYPT_INDEX) ? 3 : 0xfffff);
+	uint32_t mask = 0xfffff;
 #endif
-	tt_num_hashes_gen = ((((rand() & 0x7FFF) << 15) + (rand() & 0x7FFF)) & mask) + 2;
+	if(format_index >= DCC_INDEX)
+		mask = 63;
+	if (format_index >= MD5CRYPT_INDEX)
+		mask = 15;
+	if(format_index >= DCC2_INDEX)
+		mask = 3;
+
+	if (!test_num_hashes)
+		tt_num_hashes_gen = ((((rand() & 0x7FFF) << 15) + (rand() & 0x7FFF)) & mask) + 2;
+	else
+		tt_num_hashes_gen = test_num_hashes;
 	random_body_hashes(format_index, provider_index);
 }
 #ifdef _WIN32
@@ -1782,16 +2073,16 @@ static void* random_body(void* unused)
 	is_testing = TRUE;
 	hs_log(HS_LOG_INFO, "Test Suite", "Random test begin.");
 
-	int format_index = LM_INDEX;
+	int format_index = SSHA_INDEX;
 	// Db Info
 	//random_body_cycle(format_index, DB_INFO_INDEX);
 
 	//for (size_t i = 0; i < 10; i++)
 	{
 		is_charset_consecutive = FALSE;
-		random_body_cycle(format_index, CHARSET_INDEX);
+		//random_body_cycle(format_index, CHARSET_INDEX);
 		is_charset_consecutive = TRUE;
-		random_body_cycle(format_index, CHARSET_INDEX);
+		//random_body_cycle(format_index, CHARSET_INDEX);
 	}
 
 	// Charset
@@ -1799,16 +2090,16 @@ static void* random_body(void* unused)
 	{
 		//hs_log(HS_LOG_INFO, "Test Suite", "Charset random %i-%i", check_only_lenght, check_only_lenght);
 		is_charset_consecutive = FALSE;
-		random_body_cycle(format_index, CHARSET_INDEX);
+		//random_body_cycle(format_index, CHARSET_INDEX);
 
 		//hs_log(HS_LOG_INFO, "Test Suite", "Charset consecutive %i-%i", check_only_lenght, check_only_lenght);
 		is_charset_consecutive = TRUE;
-		random_body_cycle(format_index, CHARSET_INDEX);
+		//random_body_cycle(format_index, CHARSET_INDEX);
 	}
 	check_only_lenght = -1;
 
 	// Wordlist
-#ifdef ANDROID
+#ifdef __ANDROID__
 	#define DEBUG_DIR "/sdcard/"
 #else
 	#define DEBUG_DIR "C:\\Users\\alain\\Desktop\\"
@@ -1817,9 +2108,11 @@ static void* random_body(void* unused)
 	FILEPATH = DEBUG_DIR"wikipedia-wordlist-sraveau-20090325.txt";
 	FILENAME = "wikipedia-wordlist-sraveau-20090325.txt";
 	FILESIZE = 743503440;
+
 	//hs_log(HS_LOG_INFO, "Test Suite", "Wordlist wikipedia");
-	//for (cl_uint i = 0; i < 100; i++)
-	//random_body_cycle(format_index, WORDLIST_INDEX);
+	//for (test_num_hashes = 9500; test_num_hashes < 10000; test_num_hashes++)
+		//random_body_cycle(format_index, WORDLIST_INDEX);
+	//test_num_hashes = 0;
 
 	// Compressed
 	use_zip_file = TRUE;
@@ -1862,14 +2155,25 @@ static void* random_body(void* unused)
 	//random_body_cycle(format_index, WORDLIST_INDEX);
 
 	// Big wordlist with random rules
-	FILEPATH = DEBUG_DIR"wikipedia-wordlist-sraveau-20090325.txt";
-	FILENAME = "wikipedia-wordlist-sraveau-20090325.txt";
-	FILESIZE = 743503440;
+	//FILEPATH = DEBUG_DIR"wikipedia-wordlist-sraveau-20090325.txt";
+	//FILENAME = "wikipedia-wordlist-sraveau-20090325.txt";
+	//FILESIZE = 743503440;
 	skip_intensive_rules = TRUE;
 
 	//check_all_rules = TRUE;
-	//for (cl_uint i = 0; i < 100; i++)
-	//random_body_cycle(format_index, WORDLIST_INDEX);
+	//skip_intensive_rules = FALSE;
+	//for (rule_active_index = 0; rule_active_index < (num_rules-4); rule_active_index++)
+	//	random_body_cycle(format_index, WORDLIST_INDEX);
+
+	rule_active_index = -1;
+
+	// Phrases-----------------------------------------------------------------------
+	FILEPATH = DEBUG_DIR"wordlist_small.lst";
+	FILENAME = "wordlist_small.lst";
+	FILESIZE = 22338;
+	testing_use_rules = FALSE;
+	//random_body_cycle(format_index, PHRASES_INDEX);
+	// ------------------------------------------------------------------------------
 
 	hs_log(HS_LOG_INFO, "Test Suite", "Random test had finished.");
 	is_testing = FALSE;

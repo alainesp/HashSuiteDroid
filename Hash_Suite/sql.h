@@ -1,108 +1,75 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2013, 2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2013, 2015, 2016 by Alain Espinosa. See LICENSE.
 
-#ifdef HS_TESTING
-	#define CREATE_ACCOUNT_HASH									 \
-	"CREATE TABLE IF NOT EXISTS Account (						 \
-		ID INTEGER PRIMARY KEY,								     \
-		UserName TEXT NOT NULL,									 \
-		Hash INTEGER,                                            \
-		Fixed INTEGER NOT NULL DEFAULT 0,						 \
-		Privilege INTEGER NOT NULL DEFAULT 1,					 \
-		FOREIGN KEY(Hash) REFERENCES Hash(ID)					 \
-	);															 \
-																 \
-	CREATE TABLE IF NOT EXISTS Hash (							 \
-		ID INTEGER PRIMARY KEY,									 \
-		Hex TEXT NOT NULL,									     \
-		DateInserted DATETIME NOT NULL DEFAULT (datetime('now')),\
-		Type INTEGER NOT NULL,									 \
-		FOREIGN KEY(Type) REFERENCES Format(ID)				     \
-	);"		
-#else
-	#define CREATE_ACCOUNT_HASH									 \
-	"CREATE TABLE IF NOT EXISTS Account (						 \
-		ID INTEGER PRIMARY KEY,								     \
-		UserName TEXT NOT NULL,									 \
-		Hash INTEGER,                                            \
-		Fixed INTEGER NOT NULL DEFAULT 0,						 \
-		Privilege INTEGER NOT NULL DEFAULT 1,					 \
-		FOREIGN KEY(Hash) REFERENCES Hash(ID),					 \
-		UNIQUE(UserName,Hash)									 \
-	);															 \
-																 \
-	CREATE TABLE IF NOT EXISTS Hash (							 \
-		ID INTEGER PRIMARY KEY,									 \
-		Hex TEXT NOT NULL,									     \
-		DateInserted DATETIME NOT NULL DEFAULT (datetime('now')),\
-		Type INTEGER NOT NULL,									 \
-		FOREIGN KEY(Type) REFERENCES Format(ID),				 \
-		UNIQUE(Hex,Type)                                         \
-	);"												
-#endif
+#define CREATE_ACCOUNT_HASH									\
+"CREATE TABLE IF NOT EXISTS Account (						\
+	ID INTEGER PRIMARY KEY,									\
+	UserName TEXT NOT NULL,									\
+	Hash INTEGER REFERENCES Hash,							\
+	Fixed INTEGER NOT NULL DEFAULT 0,						\
+	Privilege INTEGER NOT NULL DEFAULT 1					\
+);															\
+															\
+CREATE TABLE IF NOT EXISTS Hash (							\
+	ID INTEGER PRIMARY KEY,									\
+	Bin BLOB NOT NULL,										\
+	Type INTEGER NOT NULL REFERENCES Format					\
+);"												
 
 #define CREATE_OTHER_SCHEMA										\
 "CREATE TABLE IF NOT EXISTS AccountLM (							\
-    ID INTEGER PRIMARY KEY,								        \
-	LM1 INTEGER,												\
-	LM2 INTEGER,												\
-	FOREIGN KEY(LM1) REFERENCES Hash(ID),					    \
-	FOREIGN KEY(LM2) REFERENCES Hash(ID),					    \
-	FOREIGN KEY(ID) REFERENCES Account(ID)					    \
+	ID INTEGER PRIMARY KEY REFERENCES Account,					\
+	LM1 INTEGER REFERENCES Hash,								\
+	LM2 INTEGER REFERENCES Hash									\
 );																\
 																\
 CREATE TABLE IF NOT EXISTS Tag (								\
-    ID INTEGER PRIMARY KEY,									    \
-    Name TEXT NOT NULL UNIQUE									\
+	ID INTEGER PRIMARY KEY,										\
+	Name TEXT NOT NULL UNIQUE									\
 );																\
 																\
 CREATE TABLE IF NOT EXISTS TagAccount (							\
-    TagID INTEGER,												\
-    AccountID INTEGER,											\
-	PRIMARY KEY(TagID, AccountID),								\
-	FOREIGN KEY(TagID) REFERENCES Tag(ID),					    \
-	FOREIGN KEY(AccountID) REFERENCES Account(ID)		        \
+	TagID INTEGER REFERENCES Tag,								\
+	FirstAccountID INTEGER REFERENCES Account,					\
+	LastAccountID INTEGER REFERENCES Account					\
 );																\
 																\
 CREATE TABLE IF NOT EXISTS Format (								\
-    ID INTEGER PRIMARY KEY,								        \
-    Name TEXT NOT NULL UNIQUE,									\
+	ID INTEGER PRIMARY KEY,										\
+	Name TEXT NOT NULL UNIQUE,									\
 	Description TEXT											\
 );																\
 																\
 CREATE TABLE IF NOT EXISTS KeyProvider (						\
-    ID INTEGER PRIMARY KEY,							            \
-    Name TEXT NOT NULL UNIQUE,									\
+	ID INTEGER PRIMARY KEY,										\
+	Name TEXT NOT NULL UNIQUE,									\
 	Description TEXT											\
 );																\
 																\
 CREATE TABLE IF NOT EXISTS Attack (								\
-    ID INTEGER PRIMARY KEY,								        \
-    Begin DATETIME NOT NULL DEFAULT (datetime('now')),			\
+	ID INTEGER PRIMARY KEY,										\
+	Begin DATETIME NOT NULL DEFAULT (datetime('now')),			\
 	End DATETIME,												\
 	ElapsedTime INTEGER NOT NULL DEFAULT 0,						\
 	ResumeArg TEXT,												\
 	Param TEXT,													\
-	MinLenght INTEGER,                                          \
-	MaxLenght INTEGER,                                          \
+	MinLenght INTEGER,											\
+	MaxLenght INTEGER,											\
 	NumKeysServed INTEGER NOT NULL DEFAULT 0,					\
-	Provider INTEGER,											\
-	Format INTEGER,												\
-	FOREIGN KEY(Provider) REFERENCES KeyProvider(ID),           \
-	FOREIGN KEY(Format) REFERENCES Format(ID)				    \
+	Provider INTEGER REFERENCES KeyProvider,					\
+	Format INTEGER REFERENCES Format							\
 );																\
 																\
 CREATE TABLE IF NOT EXISTS FindHash (							\
-    ID INTEGER PRIMARY KEY,								        \
+	PK INTEGER PRIMARY KEY,										\
+	HashID INTEGER REFERENCES Hash,								\
 	ClearText TEXT NOT NULL,									\
 	ElapsedFind INTEGER NOT NULL,								\
-	AttackUsed INTEGER,											\
-	FOREIGN KEY(ID) REFERENCES Hash(ID),			            \
-	FOREIGN KEY(AttackUsed) REFERENCES Attack(ID)			    \
+	AttackUsed INTEGER REFERENCES Attack						\
 );																\
 																\
 CREATE TABLE IF NOT EXISTS Charset (							\
-    ID INTEGER PRIMARY KEY,								        \
+	ID INTEGER PRIMARY KEY,										\
 	Name TEXT NOT NULL UNIQUE,									\
 	Value TEXT NOT NULL UNIQUE,									\
 	Description TEXT											\
@@ -119,15 +86,14 @@ INSERT OR IGNORE INTO Tag (ID, Name) VALUES (29, 'Languages');	\
 INSERT OR IGNORE INTO Tag (ID, Name) VALUES (30, 'Huge');		\
 																\
 CREATE TABLE IF NOT EXISTS WordList (							\
-    ID INTEGER PRIMARY KEY,								        \
+	ID INTEGER PRIMARY KEY,										\
 	Name TEXT NOT NULL UNIQUE,									\
 	FileName TEXT NOT NULL UNIQUE,								\
 	Url TEXT,													\
 	Length INTEGER,												\
 	State INTEGER DEFAULT 0,									\
-	Category INTEGER DEFAULT 14,								\
-	Description TEXT,											\
-	FOREIGN KEY(Category) REFERENCES Tag(ID)					\
+	Category INTEGER DEFAULT 14 REFERENCES Tag,					\
+	Description TEXT											\
 );																\
 																\
 																\
@@ -152,14 +118,14 @@ INSERT OR IGNORE INTO WordList (ID, Name, FileName, Url, Length, State, Category
 																\
 																\
 CREATE TABLE IF NOT EXISTS PhrasesWordList (					\
-    ID INTEGER PRIMARY KEY,								        \
+	ID INTEGER PRIMARY KEY,										\
 	Name TEXT NOT NULL UNIQUE,									\
 	FileName TEXT NOT NULL UNIQUE,								\
 	Length INTEGER												\
 );																\
 																\
 CREATE TABLE IF NOT EXISTS Keyboard (							\
-    ID INTEGER PRIMARY KEY,								        \
+	ID INTEGER PRIMARY KEY,									\
 	Name TEXT NOT NULL UNIQUE,									\
 	Chars TEXT NOT NULL UNIQUE,									\
 	Description TEXT											\
@@ -174,30 +140,39 @@ INSERT OR IGNORE INTO Keyboard (ID, Name, Chars, Description) VALUES (6, 'PT_pt_
 INSERT OR IGNORE INTO Keyboard (ID, Name, Chars, Description) VALUES (7, 'PT_br_Qwerty',    '''1234567890-=qwertyuiop´[]asdfghjklç~]zxcvbnm,.;'  , 'Brazilian Qwerty keyboard layout');	\
 																\
 CREATE TABLE IF NOT EXISTS Settings (							\
-    ID INTEGER PRIMARY KEY,								        \
+	ID INTEGER PRIMARY KEY,										\
 	Value INTEGER NOT NULL										\
 );																\
 																\
 CREATE TABLE IF NOT EXISTS Batch (								\
-    ID INTEGER PRIMARY KEY,								        \
+	ID INTEGER PRIMARY KEY,										\
 	Name TEXT NOT NULL,											\
 	Description TEXT NOT NULL									\
 );																\
 																\
 CREATE TABLE IF NOT EXISTS BatchAttack (						\
-    BatchID INTEGER,											\
+	BatchID INTEGER,											\
 	AttackID INTEGER,											\
 	PRIMARY KEY(BatchID, AttackID)								\
 );																\
 																\
 CREATE TABLE IF NOT EXISTS ReportFormats (						\
-    ID INTEGER PRIMARY KEY,								        \
+	ID INTEGER PRIMARY KEY,										\
 	Format TEXT NOT NULL,										\
 	Description TEXT NOT NULL									\
 );																\
 																\
+CREATE TABLE IF NOT EXISTS Queries (							\
+	ID INTEGER PRIMARY KEY,										\
+	Name TEXT NOT NULL,											\
+	Query TEXT NOT NULL											\
+);																\
+																\
+INSERT OR IGNORE INTO Queries(Name, Query) VALUES('DB Schema', 'SELECT tbl_name,sql FROM sqlite_master WHERE type==''table''');\
+INSERT OR IGNORE INTO Queries(Name, Query) VALUES('Attack Time', 'SELECT ((strftime(''%j'', ''00:00:00'', sum(ElapsedTime)||'' seconds'')-strftime(''%j'', ''00:00:00'')) || strftime(''d %H:%M:%S'', ''00:00:00'', sum(ElapsedTime)||'' seconds'')) AS total_time FROM Attack');\
+																\
 CREATE TABLE IF NOT EXISTS Reports (							\
-    ID INTEGER PRIMARY KEY,								        \
+	ID INTEGER PRIMARY KEY,										\
 	Name TEXT NOT NULL,											\
 	Description TEXT NOT NULL									\
 );"

@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2014-2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2014-2015,2019 by Alain Espinosa. See LICENSE.
 
 #define ROTATE(reg1,reg2,rot,t1,t2)	\
     vshr.u32 t1  , reg1, #(32-rot);\
@@ -135,58 +135,6 @@
 #define SET_REG(reg,val)	\
 	movw	reg, #(val & 0xffff);\
 	movt	reg, #(val >> 16)
-
-#define TABLE_LOOKUP(reg_val1,reg_val2,INDEXS_POS) \
-  vdup.u32 t5, size_bit_table_reg;\
-  vmov.u32 t6, #31;\
-\
-  vand.u32 t1, reg_val1, t5;\
-  vand.u32 t2, reg_val2, t5;\
-  vand.u32 t3, t1, t6;\
-  vand.u32 t4, t2, t6;\
-  vshr.u32 t1, t1, #(5-2);\
-  vshr.u32 t2, t2, #(5-2);\
-  vbic.u32 t1, t1, #3;\
-  vbic.u32 t2, t2, #3;\
-  vneg.s32 t3, t3;\
-  vneg.s32 t4, t4;\
-\
-  vmov.u32 r12, t1_0;\
-  vmov.u32 r9 , t2_0;\
-  ldr r12, [table_ptr, r12];\
-  ldr r9 , [table_ptr, r9];\
-  vmov.u32 t5_0, r12;\
-  vmov.u32 t6_0, r9;\
-\
-  vmov.u32 r12, t1_1;\
-  vmov.u32 r9 , t2_1;\
-  ldr r12, [table_ptr, r12];\
-  ldr r9 , [table_ptr, r9];\
-  vmov.u32 t5_1, r12;\
-  vmov.u32 t6_1, r9;\
-\
-  vmov.u32 r12, t1_2;\
-  vmov.u32 r9 , t2_2;\
-  ldr r12, [table_ptr, r12];\
-  ldr r9 , [table_ptr, r9];\
-  vmov.u32 t5_2, r12;\
-  vmov.u32 t6_2, r9;\
-\
-  vmov.u32 r12, t1_3;\
-  vmov.u32 r9 , t2_3;\
-  ldr r12, [table_ptr, r12];\
-  ldr r9 , [table_ptr, r9];\
-  vmov.u32 t5_3, r12;\
-  vmov.u32 t6_3, r9;\
-\
-  vshl.u32 t5, t5, t3;\
-  vmov.u32 t1, #1;\
-  vshl.u32 t6, t6, t4;\
-  vand.u32 t5, t5, t1;\
-  vand.u32 t6, t6, t1;\
-\
-  add nt_buffer, nt_buffer_base, #(INDEXS_POS*4*NT_NUM_KEYS);\
-  vst1.u32 {t5,t6}, [nt_buffer:128];
  
 	.text
 	.align	2
@@ -279,32 +227,28 @@ while1:
   STEP3(reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, 1 , 3 , NT_NUM_KEYS,sqrt_3)
   STEP3(reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, 9 , 9 , NT_NUM_KEYS,sqrt_3)
   STEP3(reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, 5 , 11, NT_NUM_KEYS,sqrt_3)
+  STEP3(reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, 13, 15, NT_NUM_KEYS,sqrt_3)
   
-  // Save a, c, d
-  add nt_buffer, nt_buffer_base, #(16*4*NT_NUM_KEYS+0*4*NT_NUM_KEYS)
-  vst1.u32 {reg_a1,reg_a2}, [nt_buffer:128]
-  add nt_buffer, nt_buffer_base, #(16*4*NT_NUM_KEYS+3*4*NT_NUM_KEYS)
-  vst1.u32 {reg_d1,reg_d2}, [nt_buffer:128]
-  add nt_buffer, nt_buffer_base, #(16*4*NT_NUM_KEYS+2*4*NT_NUM_KEYS)
-  vst1.u32 {reg_c1,reg_c2}, [nt_buffer:128]
-  
-  add nt_buffer, nt_buffer_base, #(4*13*NT_NUM_KEYS)
+  add nt_buffer, nt_buffer_base, #(4*3*NT_NUM_KEYS)
   vld1.u32 {t3,t4}, [nt_buffer:128]
-  vadd.u32 reg_b1, reg_b1, t3
-  vadd.u32 reg_b2, reg_b2, t4
-  veor.u32 t1, reg_a1, reg_d1
-  veor.u32 t2, reg_a2, reg_d2
+  vadd.u32 reg_a1, reg_a1, t3
+  vadd.u32 reg_a2, reg_a2, t4
+  veor.u32 t1, reg_b1, reg_d1
+  veor.u32 t2, reg_b2, reg_d2
   veor.u32 t1, t1, reg_c1
   veor.u32 t2, t2, reg_c2
-  vadd.u32 reg_b1, reg_b1, t1
-  vadd.u32 reg_b2, reg_b2, t2
+  vadd.u32 reg_a1, reg_a1, t1
+  vadd.u32 reg_a2, reg_a2, t2
   
-  // Save b
+  // Save a, b, c, d
+  add nt_buffer, nt_buffer_base, #(16*4*NT_NUM_KEYS+0*4*NT_NUM_KEYS)
+  vst1.u32 {reg_a1,reg_a2}, [nt_buffer:128]
   add nt_buffer, nt_buffer_base, #(16*4*NT_NUM_KEYS+1*4*NT_NUM_KEYS)
   vst1.u32 {reg_b1,reg_b2}, [nt_buffer:128]
-  
-  // Table look-up
-  TABLE_LOOKUP(reg_b1,reg_b2,20)
+  add nt_buffer, nt_buffer_base, #(16*4*NT_NUM_KEYS+2*4*NT_NUM_KEYS)
+  vst1.u32 {reg_c1,reg_c2}, [nt_buffer:128]
+  add nt_buffer, nt_buffer_base, #(16*4*NT_NUM_KEYS+3*4*NT_NUM_KEYS)
+  vst1.u32 {reg_d1,reg_d2}, [nt_buffer:128]
 
   add i,i,#1
   add nt_buffer_base, nt_buffer_base, #(2*16)
@@ -391,8 +335,8 @@ while1:
 
 #define MD5_STEP4(a1,b1,c1,d1,a2,b2,c2,d2,index,rot,t1,t2,t_const,const_val) \
 	MD5_LOAD_BUFFER_ ## index (a1,a2,t_const,const_val,t1,t2)\
-	vorn.u32 t1, b1, d1;\
-	vorn.u32 t2, b2, d2;\
+	vorn t1, b1, d1;\
+	vorn t2, b2, d2;\
 	vadd.u32 a1, a1, t_const;\
 	vadd.u32 a2, a2, t_const;\
 	veor.u32 t1, t1, c1;\
@@ -517,23 +461,22 @@ md5_while1:
   MD5_STEP4( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, 8, 6 ,t1,t2,t3,0x6fa87e4f)
   MD5_STEP4( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, 8, 10,t1,t2,t3,0xfe2ce6e0)
   MD5_STEP4( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, 6, 15,t1,t2,t3,0xa3014314)
+  MD5_STEP4( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, 8, 21,t1,t2,t3,0x4e0811a1)
+  
   add nt_buffer, nt_buffer_base, #(4*2*NT_NUM_KEYS)
   vld1.u32 {t1,t2}, [nt_buffer:128]
   vadd.u32 reg_c1, reg_c1, t1
   vadd.u32 reg_c2, reg_c2, t2
   
   // Save a, c, d, b
-   add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+1*4*NT_NUM_KEYS)
-  vst1.u32 {reg_b1,reg_b2}, [nt_buffer:128]
   add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+0*4*NT_NUM_KEYS)
   vst1.u32 {reg_a1,reg_a2}, [nt_buffer:128]
+  add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+1*4*NT_NUM_KEYS)
+  vst1.u32 {reg_b1,reg_b2}, [nt_buffer:128]
   add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+3*4*NT_NUM_KEYS)
   vst1.u32 {reg_d1,reg_d2}, [nt_buffer:128]
   add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+2*4*NT_NUM_KEYS)
   vst1.u32 {reg_c1,reg_c2}, [nt_buffer:128]
-  
-  // Table look-up
-  TABLE_LOOKUP(reg_c1,reg_c2,12)
   
   add i,i,#1
   add nt_buffer_base, nt_buffer_base, #(2*REG_BYTE_SIZE)
@@ -541,6 +484,174 @@ md5_while1:
   blo md5_while1
 	
   pop  {r8,r9,r10,r11}
+  pop  {r4,r5,r6,r7}
+  vpop {q4,q5,q6,q7}
+  bx lr
+  
+  
+#define MD5_LOAD_BUFFER(a1,a2,index,t_const,const_val,t1,t2)	\
+	add nt_buffer, nt_buffer_base, #(index*2*16);\
+	vld1.u32 {t1,t2}, [nt_buffer:128];\
+	vadd.u32 a1, a1, t1;\
+	vadd.u32 a2, a2, t2;\
+	MD5_LOAD_CONST(t_const,const_val)
+  
+#define MD5_LOAD_BUFFER_0(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2, 0,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_1(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2, 1,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_2(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2, 2,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_3(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2, 3,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_4(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2, 4,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_5(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2, 5,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_6(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2, 6,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_7(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2, 7,t_const,const_val,t1,t2)
+                                                                                       
+#define MD5_LOAD_BUFFER_8(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2, 8,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_9(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2, 9,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_10(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2,10,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_11(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2,11,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_12(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2,12,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_13(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2,13,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_14(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2,14,t_const,const_val,t1,t2)
+#define MD5_LOAD_BUFFER_15(a1,a2,t_const,const_val,t1,t2)		MD5_LOAD_BUFFER(a1,a2,15,t_const,const_val,t1,t2)
+  
+#define md5_state r2
+  
+	.text
+	.align	2
+	.global	md5_one_block_neon
+	.type	md5_one_block_neon, %function
+md5_one_block_neon:
+  vpush {q4,q5,q6,q7}
+  push	{r4,r5,r6,r7}
+  
+  mov md5_state, r0
+  mov r0, r1
+  
+  // Init
+  SET_REG(r4,0x67452301);
+  vdup.u32 reg_a1, r4;
+  vdup.u32 reg_a2, r4;
+  SET_REG(r5,0xefcdab89);
+  vdup.u32 reg_b1, r5;
+  vdup.u32 reg_b2, r5; 
+  SET_REG(r6,0x98badcfe);
+  vdup.u32 reg_c1, r6;
+  vdup.u32 reg_c2, r6;
+  SET_REG(r7,0x10325476);
+  vdup.u32 reg_d1, r7;
+  vdup.u32 reg_d2, r7;
+  
+  MD5_STEP1( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, reg_b1, reg_b2, 0 , 7 ,t1,t2,t3,0xd76aa478)
+  MD5_STEP1( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, reg_a1, reg_a2, 1 , 12,t1,t2,t3,0xe8c7b756)
+  MD5_STEP1( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, reg_d1, reg_d2, 2 , 17,t1,t2,t3,0x242070db)
+  MD5_STEP1( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, reg_c1, reg_c2, 3 , 22,t1,t2,t3,0xc1bdceee)
+                                                                                               
+  MD5_STEP1( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, reg_b1, reg_b2, 4 , 7 ,t1,t2,t3,0xf57c0faf)
+  MD5_STEP1( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, reg_a1, reg_a2, 5 , 12,t1,t2,t3,0x4787c62a)
+  MD5_STEP1( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, reg_d1, reg_d2, 6 , 17,t1,t2,t3,0xa8304613)
+  MD5_STEP1( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, reg_c1, reg_c2, 7 , 22,t1,t2,t3,0xfd469501)
+                                                                                               
+  MD5_STEP1( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, reg_b1, reg_b2, 8 , 7 ,t1,t2,t3,0x698098d8)
+  MD5_STEP1( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, reg_a1, reg_a2, 9 , 12,t1,t2,t3,0x8b44f7af)
+  MD5_STEP1( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, reg_d1, reg_d2, 10, 17,t1,t2,t3,0xffff5bb1)
+  MD5_STEP1( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, reg_c1, reg_c2, 11, 22,t1,t2,t3,0x895cd7be)
+                                                                                             
+  MD5_STEP1( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, reg_b1, reg_b2, 12, 7 ,t1,t2,t3,0x6b901122)
+  MD5_STEP1( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, reg_a1, reg_a2, 13, 12,t1,t2,t3,0xfd987193)
+  MD5_STEP1( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, reg_d1, reg_d2, 14, 17,t1,t2,t3,0xa679438e)
+  MD5_STEP1( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, reg_c1, reg_c2, 15, 22,t1,t2,t3,0x49b40821)
+  
+// Round 2
+  MD5_STEP1( reg_a1, reg_d1, reg_b1, reg_c1, reg_a2, reg_d2, reg_b2, reg_c2, reg_b1, reg_b2, 1 , 5 ,t1,t2,t3,0xf61e2562)
+  MD5_STEP1( reg_d1, reg_c1, reg_a1, reg_b1, reg_d2, reg_c2, reg_a2, reg_b2, reg_a1, reg_a2, 6 , 9 ,t1,t2,t3,0xc040b340)
+  MD5_STEP1( reg_c1, reg_b1, reg_d1, reg_a1, reg_c2, reg_b2, reg_d2, reg_a2, reg_d1, reg_d2, 11, 14,t1,t2,t3,0x265e5a51)
+  MD5_STEP1( reg_b1, reg_a1, reg_c1, reg_d1, reg_b2, reg_a2, reg_c2, reg_d2, reg_c1, reg_c2, 0 , 20,t1,t2,t3,0xe9b6c7aa)
+                                                                                             
+  MD5_STEP1( reg_a1, reg_d1, reg_b1, reg_c1, reg_a2, reg_d2, reg_b2, reg_c2, reg_b1, reg_b2, 5 , 5 ,t1,t2,t3,0xd62f105d)
+  MD5_STEP1( reg_d1, reg_c1, reg_a1, reg_b1, reg_d2, reg_c2, reg_a2, reg_b2, reg_a1, reg_a2, 10, 9 ,t1,t2,t3,0x02441453)
+  MD5_STEP1( reg_c1, reg_b1, reg_d1, reg_a1, reg_c2, reg_b2, reg_d2, reg_a2, reg_d1, reg_d2, 15, 14,t1,t2,t3,0xd8a1e681)
+  MD5_STEP1( reg_b1, reg_a1, reg_c1, reg_d1, reg_b2, reg_a2, reg_c2, reg_d2, reg_c1, reg_c2, 4 , 20,t1,t2,t3,0xe7d3fbc8)
+                                                                                             
+  MD5_STEP1( reg_a1, reg_d1, reg_b1, reg_c1, reg_a2, reg_d2, reg_b2, reg_c2, reg_b1, reg_b2, 9 , 5 ,t1,t2,t3,0x21e1cde6)
+  MD5_STEP1( reg_d1, reg_c1, reg_a1, reg_b1, reg_d2, reg_c2, reg_a2, reg_b2, reg_a1, reg_a2, 14, 9 ,t1,t2,t3,0xc33707d6)
+  MD5_STEP1( reg_c1, reg_b1, reg_d1, reg_a1, reg_c2, reg_b2, reg_d2, reg_a2, reg_d1, reg_d2, 3 , 14,t1,t2,t3,0xf4d50d87)
+  MD5_STEP1( reg_b1, reg_a1, reg_c1, reg_d1, reg_b2, reg_a2, reg_c2, reg_d2, reg_c1, reg_c2, 8 , 20,t1,t2,t3,0x455a14ed)
+                                                                                             
+  MD5_STEP1( reg_a1, reg_d1, reg_b1, reg_c1, reg_a2, reg_d2, reg_b2, reg_c2, reg_b1, reg_b2, 13, 5 ,t1,t2,t3,0xa9e3e905)
+  MD5_STEP1( reg_d1, reg_c1, reg_a1, reg_b1, reg_d2, reg_c2, reg_a2, reg_b2, reg_a1, reg_a2, 2 , 9 ,t1,t2,t3,0xfcefa3f8)
+  MD5_STEP1( reg_c1, reg_b1, reg_d1, reg_a1, reg_c2, reg_b2, reg_d2, reg_a2, reg_d1, reg_d2, 7 , 14,t1,t2,t3,0x676f02d9)
+  MD5_STEP1( reg_b1, reg_a1, reg_c1, reg_d1, reg_b2, reg_a2, reg_c2, reg_d2, reg_c1, reg_c2, 12, 20,t1,t2,t3,0x8d2a4c8a)
+  
+// Round 3
+  MD5_STEP3( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, 5 , 4 ,t1,t2,t3,0xfffa3942)
+  MD5_STEP3( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, 8 , 11,t1,t2,t3,0x8771f681)
+  MD5_STEP3( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, 11, 16,t1,t2,t3,0x6d9d6122)
+  MD5_STEP3( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, 14, 23,t1,t2,t3,0xfde5380c)
+                                                                             
+  MD5_STEP3( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, 1 , 4 ,t1,t2,t3,0xa4beea44)
+  MD5_STEP3( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, 4 , 11,t1,t2,t3,0x4bdecfa9)
+  MD5_STEP3( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, 7 , 16,t1,t2,t3,0xf6bb4b60)
+  MD5_STEP3( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, 10, 23,t1,t2,t3,0xbebfbc70)
+                                                                             
+  MD5_STEP3( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, 13, 4 ,t1,t2,t3,0x289b7ec6)
+  MD5_STEP3( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, 0 , 11,t1,t2,t3,0xeaa127fa)
+  MD5_STEP3( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, 3 , 16,t1,t2,t3,0xd4ef3085)
+  MD5_STEP3( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, 6 , 23,t1,t2,t3,0x04881d05)
+                                                                             
+  MD5_STEP3( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, 9 , 4 ,t1,t2,t3,0xd9d4d039)
+  MD5_STEP3( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, 12, 11,t1,t2,t3,0xe6db99e5)
+  MD5_STEP3( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, 15, 16,t1,t2,t3,0x1fa27cf8)
+  MD5_STEP3( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, 2 , 23,t1,t2,t3,0xc4ac5665)
+  
+// Round 4
+  MD5_STEP4( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, 0 , 6 ,t1,t2,t3,0xf4292244)
+  MD5_STEP4( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, 7 , 10,t1,t2,t3,0x432aff97)
+  MD5_STEP4( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, 14, 15,t1,t2,t3,0xab9423a7)
+  MD5_STEP4( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, 5 , 21,t1,t2,t3,0xfc93a039)
+                                                                             
+  MD5_STEP4( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, 12, 6 ,t1,t2,t3,0x655b59c3)
+  MD5_STEP4( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, 3 , 10,t1,t2,t3,0x8f0ccc92)
+  MD5_STEP4( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, 10, 15,t1,t2,t3,0xffeff47d)
+  MD5_STEP4( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, 1 , 21,t1,t2,t3,0x85845dd1)
+                                                                             
+  MD5_STEP4( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, 8 , 6 ,t1,t2,t3,0x6fa87e4f)
+  MD5_STEP4( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, 15, 10,t1,t2,t3,0xfe2ce6e0)
+  MD5_STEP4( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, 6 , 15,t1,t2,t3,0xa3014314)
+  MD5_STEP4( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, 13, 21,t1,t2,t3,0x4e0811a1)
+                                                                             
+  MD5_STEP4( reg_a1, reg_b1, reg_c1, reg_d1, reg_a2, reg_b2, reg_c2, reg_d2, 4 , 6 ,t1,t2,t3,0xf7537e82)
+  MD5_STEP4( reg_d1, reg_a1, reg_b1, reg_c1, reg_d2, reg_a2, reg_b2, reg_c2, 11, 10,t1,t2,t3,0xbd3af235)
+  MD5_STEP4( reg_c1, reg_d1, reg_a1, reg_b1, reg_c2, reg_d2, reg_a2, reg_b2, 2 , 15,t1,t2,t3,0x2ad7d2bb)
+  MD5_STEP4( reg_b1, reg_c1, reg_d1, reg_a1, reg_b2, reg_c2, reg_d2, reg_a2, 9 , 21,t1,t2,t3,0xeb86d391)
+  
+  // Sum init
+  SET_REG(r4,0x67452301);
+  SET_REG(r5,0xefcdab89);
+  SET_REG(r6,0x98badcfe);
+  SET_REG(r7,0x10325476);
+  vdup.u32 t1, r4;
+  vdup.u32 t2, r5;
+  vdup.u32 t3, r6;
+  vdup.u32 t4, r7;
+  
+  vadd.u32 reg_a1, reg_a1, t1
+  vadd.u32 reg_a2, reg_a2, t1
+  vadd.u32 reg_b1, reg_b1, t2
+  vadd.u32 reg_b2, reg_b2, t2
+  vadd.u32 reg_c1, reg_c1, t3
+  vadd.u32 reg_c2, reg_c2, t3
+  vadd.u32 reg_d1, reg_d1, t4
+  vadd.u32 reg_d2, reg_d2, t4
+  
+  // Save a, b, c, d
+  vst1.u32 {reg_a1,reg_a2}, [md5_state:128];
+  add md5_state, md5_state, #(2*16);
+  vst1.u32 {reg_b1,reg_b2}, [md5_state:128];
+  add md5_state, md5_state, #(2*16);
+  vst1.u32 {reg_c1,reg_c2}, [md5_state:128];
+  add md5_state, md5_state, #(2*16);
+  vst1.u32 {reg_d1,reg_d2}, [md5_state:128];
+	
   pop  {r4,r5,r6,r7}
   vpop {q4,q5,q6,q7}
   bx lr
@@ -1024,7 +1135,8 @@ sha1_while1:
     SHA1_STEP4(step_const,reg_d1, reg_e1, reg_a1, reg_b1, reg_c1, reg_d2, reg_e2, reg_a2, reg_b2, reg_c2, t1, t2, t3, t4, 7 , 4 , 15, 9  )
     SHA1_STEP4(step_const,reg_c1, reg_d1, reg_e1, reg_a1, reg_b1, reg_c2, reg_d2, reg_e2, reg_a2, reg_b2, t1, t2, t3, t4, 8 , 5 , 0 , 10 )
     SHA1_STEP4(step_const,reg_b1, reg_c1, reg_d1, reg_e1, reg_a1, reg_b2, reg_c2, reg_d2, reg_e2, reg_a2, t1, t2, t3, t4, 9 , 6 , 1 , 11 )
-    SHA1_STEP4_NO_ROT(step_const,reg_a1, reg_b1, reg_c1, reg_d1, reg_e1, reg_a2, reg_b2, reg_c2, reg_d2, reg_e2, t1, t2, t3, t4, 10, 7 , 2 , 12)
+    SHA1_STEP4(step_const,reg_a1, reg_b1, reg_c1, reg_d1, reg_e1, reg_a2, reg_b2, reg_c2, reg_d2, reg_e2, t1, t2, t3, t4, 10, 7 , 2 , 12 )
+	SHA1_STEP4_NO_ROT(step_const,reg_e1, reg_a1, reg_b1, reg_c1, reg_d1, reg_e2, reg_a2, reg_b2, reg_c2, reg_d2, t1, t2, t3, t4, 11, 8, 3, 13)
 	
 	SHA1_R(t1,t2,t3,t4,12, 9, 4, 14)
 	SHA1_R(t1,t2,t3,t4,15, 12, 7, 1)
@@ -1033,19 +1145,16 @@ sha1_while1:
 	vadd.u32 reg_a2, reg_a2, t2
 	
   // Save a, c, d, b, e
-  add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+4*4*NT_NUM_KEYS)
-  vst1.u32 {reg_b1,reg_b2}, [nt_buffer:128]
   add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+2*4*NT_NUM_KEYS)
   vst1.u32 {reg_a1,reg_a2}, [nt_buffer:128]
-  add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+16*4*NT_NUM_KEYS)
-  vst1.u32 {reg_d1,reg_d2}, [nt_buffer:128]
+  add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+4*4*NT_NUM_KEYS)
+  vst1.u32 {reg_b1,reg_b2}, [nt_buffer:128]  
   add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+9*4*NT_NUM_KEYS)
   vst1.u32 {reg_c1,reg_c2}, [nt_buffer:128]
-  add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+17*4*NT_NUM_KEYS)
+  add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+8*4*NT_NUM_KEYS)
+  vst1.u32 {reg_d1,reg_d2}, [nt_buffer:128]
+  add nt_buffer, nt_buffer_base, #(8*4*NT_NUM_KEYS+3*4*NT_NUM_KEYS)
   vst1.u32 {reg_e1,reg_e2}, [nt_buffer:128]
-  
-  // Table look-up
-  TABLE_LOOKUP(reg_a1,reg_a2,26)
   
   add i,i,#1
   add nt_buffer_base, nt_buffer_base, #(2*REG_BYTE_SIZE)
@@ -2292,8 +2401,8 @@ sha256_while1:\
 	SHA256_ROUNDW(reg_d,reg_a,reg_c,reg_b,0x391C0CB3,reg_h,reg_e,reg_f,reg_g,t0,t1,t2,t3,t4,t5,t6,step_const,4 ,4 ,2 ,13,5,NT_NUM_KEYS);\
 	SHA256_ROUNDW(reg_c,reg_h,reg_b,reg_a,0x4ED8AA4A,reg_g,reg_d,reg_e,reg_f,t0,t1,t2,t3,t4,t5,t6,step_const,5 ,5 ,3 ,14,6,NT_NUM_KEYS);\
 	SHA256_ROUNDW(reg_b,reg_g,reg_a,reg_h,0x5B9CCA4F,reg_f,reg_c,reg_d,reg_e,t0,t1,t2,t3,t4,t5,t6,step_const,6 ,6 ,4 ,15,7,NT_NUM_KEYS);\
-	SHA256_ROUNDW(reg_a,reg_f,reg_h,reg_g,0x682E6FF3,reg_e,reg_b,reg_c,reg_d,t0,t1,t2,t3,t4,t5,t6,step_const,7 ,7 ,5 ,0 ,8,NT_NUM_KEYS);\
-	SHA256_RW_1SUM0(8,8 ,6,1,9 ,t0,t1,t2,t3,t4,t5,t6,step_const,NT_NUM_KEYS);\
+	SHA256_ROUNDW(reg_a,reg_f,reg_h,reg_g,0x682E6FF3,reg_e,reg_b,reg_c,reg_d,t0,t1,t2,t3,t4,t5,t6,step_const,7 ,7 ,5 , 0,8,NT_NUM_KEYS);\
+	SHA256_ROUNDW(reg_h,reg_e,reg_g,reg_f,0x748F82EE,reg_d,reg_a,reg_b,reg_c,t0,t1,t2,t3,t4,t5,t6,step_const,8 ,8 ,6 , 1,9,NT_NUM_KEYS);\
 	SHA256_RW_1SUM0(9,9 ,7,2,10,t0,t1,t2,t3,t4,t5,t6,step_const,NT_NUM_KEYS);\
 	SHA256_RW_1SUM0(2,11,9,4,12,t0,t1,t2,t3,t4,t5,t6,step_const,NT_NUM_KEYS);\
 	SHA256_RW_1SUM0(1,13,2,6,14,t0,t1,t2,t3,t4,t5,t6,step_const,NT_NUM_KEYS);\
@@ -2309,7 +2418,7 @@ sha256_while1:\
 	add nt_buffer, nt_buffer_base, #((8+19)*4*NT_NUM_KEYS); vst1.u32 {reg_e}, [nt_buffer:128];\
 	add nt_buffer, nt_buffer_base, #((8+20)*4*NT_NUM_KEYS); vst1.u32 {reg_f}, [nt_buffer:128];\
 	add nt_buffer, nt_buffer_base, #((8+21)*4*NT_NUM_KEYS); vst1.u32 {reg_g}, [nt_buffer:128];\
-	add nt_buffer, nt_buffer_base, #((8+22)*4*NT_NUM_KEYS); vst1.u32 {reg_h}, [nt_buffer:128];\
+	add nt_buffer, nt_buffer_base, #((8+6 )*4*NT_NUM_KEYS); vst1.u32 {reg_h}, [nt_buffer:128];\
 \
 	add i,i,#1;\
 	add nt_buffer_base, nt_buffer_base, #16;\
@@ -2335,19 +2444,6 @@ crypt_sha256_neon_kernel_asm:
   
   CRYPT_SHA256_AVX_KERNEL_ASM_BODY(128,q0,q1,q2,q3,q4,q5,q6,q7,q8,q9,q10,q11,q12,q13,q14,q15)
   
-  sub nt_buffer_base, nt_buffer_base, #(4*NT_NUM_KEYS)
-  add r5, nt_buffer_base, #((8+4 )*4*NT_NUM_KEYS)
-  mov i, #0
-sha256_while_table_lookup:
-	vld1.u32 {q0,q1}, [r5:128]!
-	
-	TABLE_LOOKUP(q0,q1,14)
-
-	add i,i,#1
-	add nt_buffer_base, nt_buffer_base, #(16*2)
-	cmp i, #(NT_NUM_KEYS/8)
-	blo sha256_while_table_lookup
-  
   pop  {r4,r5}
   vpop {q4,q5,q6,q7}
   bx lr
@@ -2356,7 +2452,7 @@ sha256_while_table_lookup:
 // SHA512 format
 /////////////////////////////////////////////////////////////////////////////////////////////////
 #undef nt_buffer
-#define sha512_const_array r3
+#define sha512_const_array r1
 #define nt_buffer r5
 
 #define SHA512_ROUND1(reg_h,reg_e,reg_g,reg_f,const_index,reg_d,reg_a,reg_b,reg_c,t0,t1,t2,t3,t4,t5,t6,t7) \

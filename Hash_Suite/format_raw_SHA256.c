@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2015,2018 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
@@ -17,10 +17,10 @@
 #define BINARY_SIZE			32
 #define NTLM_MAX_KEY_LENGHT	27
 
-#define R_E(x) (rotate(x,26) ^ rotate(x,21) ^ rotate(x,7 ))
-#define R_A(x) (rotate(x,30) ^ rotate(x,19) ^ rotate(x,10))
-#define R0(x)  (rotate(x,25) ^ rotate(x,14) ^ (x>>3))
-#define R1(x)  (rotate(x,15) ^ rotate(x,13) ^ (x>>10))
+#define R_E(x) (ROTATE(x,26) ^ ROTATE(x,21) ^ ROTATE(x,7 ))
+#define R_A(x) (ROTATE(x,30) ^ ROTATE(x,19) ^ ROTATE(x,10))
+#define R0(x)  (ROTATE(x,25) ^ ROTATE(x,14) ^ (x>>3))
+#define R1(x)  (ROTATE(x,15) ^ ROTATE(x,13) ^ (x>>10))
 
 PRIVATE int is_valid(char* user_name, char* sha256, char* unused, char* unused1)
 {
@@ -35,18 +35,18 @@ PRIVATE int is_valid(char* user_name, char* sha256, char* unused, char* unused1)
 	return FALSE;
 }
 
-PRIVATE void add_hash_from_line(ImportParam* param, char* user_name, char* sha256, char* unused, char* unused1, sqlite3_int64 tag_id)
+PRIVATE sqlite3_int64 add_hash_from_line(ImportParam* param, char* user_name, char* sha256, char* unused, char* unused1)
 {
 	if (user_name)
 	{
 		char* hash = sha256 ? sha256 : user_name;
-		char* user = sha256 ? user_name : "user";
+		char* user = sha256 ? user_name : NULL;
 
 		if (valid_hex_string(hash, 64))
-			insert_hash_account(param, user, _strupr(hash), SHA256_INDEX, tag_id);
+			return insert_hash_account1(param, user, _strupr(hash), SHA256_INDEX);
 
 		if (!memcmp(hash, "$SHA256$", 8) && valid_hex_string(hash+8, 64))
-			insert_hash_account(param, user, _strupr(hash+8), SHA256_INDEX, tag_id);
+			return insert_hash_account1(param, user, _strupr(hash+8), SHA256_INDEX);
 
 		if (valid_base64_string(hash, 43) || (!memcmp(hash, "$cisco4$", 8) && valid_base64_string(hash + 8, 43)))
 		{
@@ -57,7 +57,7 @@ PRIVATE void add_hash_from_line(ImportParam* param, char* user_name, char* sha25
 			
 			while(*p)
 			{
-				unsigned int ch, b;
+				uint32_t ch, b;
 
 				// Get 1st byte of input (1st and 2nd)
 				ch = *p++;
@@ -82,17 +82,21 @@ PRIVATE void add_hash_from_line(ImportParam* param, char* user_name, char* sha25
 			}
 			hex[64] = 0;
 
-			insert_hash_account(param, user, hex, SHA256_INDEX, tag_id);
+			return insert_hash_account1(param, user, hex, SHA256_INDEX);
 		}
 	}
-}
-PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, void* salt)
-{
-	unsigned int* out = (unsigned int*)binary;
 
-	for (unsigned int i = 0; i < 8; i++)
+	return -1;
+}
+#define VALUE_MAP_INDEX0 0
+#define VALUE_MAP_INDEX1 7
+PRIVATE uint32_t get_binary(const unsigned char* ciphertext, void* binary, void* salt)
+{
+	uint32_t* out = (uint32_t*)binary;
+
+	for (uint32_t i = 0; i < 8; i++)
 	{
-		unsigned int temp = (hex_to_num[ciphertext[i * 8 + 0]]) << 28;
+		uint32_t temp = (hex_to_num[ciphertext[i * 8 + 0]]) << 28;
 		temp |= (hex_to_num[ciphertext[i * 8 + 1]]) << 24;
 		
 		temp |= (hex_to_num[ciphertext[i * 8 + 2]]) << 20;
@@ -127,10 +131,10 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	out[2] -= R_A(out[3]) + ((out[3] & out[4]) | (out[5] & (out[3] | out[4])));
 
 	// G += C;                         D += R_A(E) + ((E & F) | (G & (E | F)));
-	unsigned int G = out[6] - out[2]; out[3] -= R_A(out[4]) + ((out[4] & out[5]) | (G & (out[4] | out[5])));
+	uint32_t G = out[6] - out[2]; out[3] -= R_A(out[4]) + ((out[4] & out[5]) | (G & (out[4] | out[5])));
 
 	// H += D;                        E += R_A(F) + ((F & G) | (H & (F | G)));
-	unsigned int H = out[7] - out[3]; out[4] -= R_A(out[5]) + ((out[5] & G) | (H & (out[5] | G)));
+	uint32_t H = out[7] - out[3]; out[4] -= R_A(out[5]) + ((out[5] & G) | (H & (out[5] | G)));
 
 	// F += R_A(G)
 	out[5] -= R_A(G);
@@ -138,7 +142,44 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	// A += E;
 	out[0] -= out[4];
 
+	out[7] -= out[3];
+
 	return out[0];
+}
+PRIVATE void binary2hex(const void* binary, const void* salt, unsigned char* ciphertext)
+{
+	uint32_t bin[BINARY_SIZE / sizeof(uint32_t)];
+	memcpy(bin, binary, BINARY_SIZE);
+
+	bin[7] += bin[3];
+
+	// A += E;
+	bin[0] += bin[4];
+	// F += R_A(G)
+	uint32_t G = bin[6] - bin[2];
+	bin[5] += R_A(G);
+	// H += D;                        E += R_A(F) + ((F & G) | (H & (F | G)));
+	uint32_t H = bin[7] - bin[3]; bin[4] += R_A(bin[5]) + ((bin[5] & G) | (H & (bin[5] | G)));
+	// G += C;                         D += R_A(E) + ((E & F) | (G & (E | F)));
+	bin[3] += R_A(bin[4]) + ((bin[4] & bin[5]) | (G & (bin[4] | bin[5])));
+	// C += R_A(D) + ((D & E) | (F & (D | E)));
+	bin[2] += R_A(bin[3]) + ((bin[3] & bin[4]) | (bin[5] & (bin[3] | bin[4])));
+	//B += R_A(C) + ((C & D) | (E & (C | D)));                                   F += B;            B    +=   R_E(G)    + 0xBEF9A3F7
+	bin[1] += R_E(bin[6]) + 0xBEF9A3F7; bin[5] += bin[1]; bin[1] += R_A(bin[2]) + ((bin[2] & bin[3]) | (bin[4] & (bin[2] | bin[3])));
+	//A += R_A(B) + ((B & C) | (D & (B | C)));										E += A;			A += R_E(F) + (H ^ (F & (G ^ H))) + 0xC67178F2;
+	bin[0] += R_E(bin[5]) + (bin[7] ^ (bin[5] & (bin[6] ^ bin[7]))) + 0xC67178F2; bin[4] += bin[0]; bin[0] += R_A(bin[1]) + ((bin[1] & bin[2]) | (bin[3] & (bin[1] | bin[2])));
+
+	// Reverse
+	bin[0] += INIT_A;
+	bin[1] += INIT_B;
+	bin[2] += INIT_C;
+	bin[3] += INIT_D;
+	bin[4] += INIT_E;
+	bin[5] += INIT_F;
+	bin[6] += INIT_G;
+	bin[7] += INIT_H;
+
+	binary_to_hex(bin, ciphertext, BINARY_SIZE / sizeof(uint32_t), FALSE);
 }
 
 #ifdef HS_ARM
@@ -149,74 +190,104 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	#define NT_NUM_KEYS		    256
 #endif
 
+PRIVATE uint32_t compare_elem(uint32_t i, uint32_t cbg_table_pos, uint32_t* unpacked_W)
+{
+	if (cbg_table_pos == NO_ELEM) return FALSE;
+
+	uint32_t* bin = ((uint32_t*)binary_values) + cbg_table_pos * 8;
+
+	uint32_t* unpacked_as = unpacked_W + 4 * NT_NUM_KEYS;
+	uint32_t* unpacked_bs = unpacked_W + 16 * NT_NUM_KEYS;
+	uint32_t* unpacked_cs = unpacked_bs + NT_NUM_KEYS;
+	uint32_t* unpacked_ds = unpacked_cs + NT_NUM_KEYS;
+	uint32_t* unpacked_es = unpacked_ds + NT_NUM_KEYS;
+	uint32_t* unpacked_fs = unpacked_es + NT_NUM_KEYS;
+	uint32_t* unpacked_gs = unpacked_fs + NT_NUM_KEYS;
+	uint32_t* unpacked_hs = unpacked_W + 6 * NT_NUM_KEYS;
+
+	if (unpacked_as[i] != bin[0] || unpacked_hs[i] != bin[7]) return FALSE;
+
+	uint32_t aa = unpacked_as[i], bb, cc, dd, ee, ff, gg, hh, W10, W12, W14;
+	uint32_t* W = unpacked_W + i;
+
+	// W-> 0,1,2 ,4, 6
+	aa -= W[0  * NT_NUM_KEYS];
+	W10 = W[10 * NT_NUM_KEYS] + R1(W[8 * NT_NUM_KEYS])+ W[3 * NT_NUM_KEYS] + R0(W[11 * NT_NUM_KEYS]);
+	W12 = W[12 * NT_NUM_KEYS] + R1(W10)               + W[5 * NT_NUM_KEYS] + R0(W[13 * NT_NUM_KEYS]);
+	W14 = W[14 * NT_NUM_KEYS] + R1(W12)               + W[7 * NT_NUM_KEYS] + R0(W[15 * NT_NUM_KEYS]);
+
+	bb = unpacked_bs[i];
+	cc = unpacked_cs[i];
+	dd = unpacked_ds[i];
+	ee = unpacked_es[i];
+	ff = unpacked_fs[i];
+	gg = unpacked_gs[i];
+	hh = unpacked_hs[i];
+
+	gg += R_E(dd) + (ff ^ (dd & (ee ^ ff))) + 0x78A5636F + W[9 * NT_NUM_KEYS]; cc += gg; gg += R_A(hh) + ((hh & aa) | (bb & (hh | aa)));
+	ff += R_E(cc) + (ee ^ (cc & (dd ^ ee))) + 0x84C87814 + W10               ; bb += ff; ff +=           ((gg & hh) | (aa & (gg | hh)));
+	ee += R_E(bb) + (dd ^ (bb & (cc ^ dd))) + 0x8CC70208 + W[2 * NT_NUM_KEYS]; aa += ee;
+	dd += R_E(aa) + (cc ^ (aa & (bb ^ cc))) + 0x90BEFFFA + W12               ; hh += dd;
+	cc += R_E(hh) + (bb ^ (hh & (aa ^ bb))) + 0xA4506CEB + W[1 * NT_NUM_KEYS]; gg += cc;
+	bb +=           (aa ^ (gg & (hh ^ aa)))              + W14 ;
+
+	if (bb != bin[1] || cc != bin[2] || dd != bin[3] || ee != bin[4] || ff != bin[5] || gg != bin[6])
+		return FALSE;
+
+	return TRUE;
+}
+
 PRIVATE void crypt_utf8_coalesc_protocol_body(CryptParam* param, crypt_kernel_asm_func* crypt_kernel_asm)
 {
-	unsigned int* nt_buffer = (unsigned int*)_aligned_malloc((8+16+7) * sizeof(unsigned int) * NT_NUM_KEYS, 32);
+	uint32_t* nt_buffer = (uint32_t*)_aligned_malloc((8+16+6) * sizeof(uint32_t) * NT_NUM_KEYS, 64);
 
-	unsigned int* unpacked_W  = nt_buffer   + 8  * NT_NUM_KEYS;
-	unsigned int* unpacked_as = unpacked_W  + 4  * NT_NUM_KEYS;
-	unsigned int* unpacked_bs = unpacked_W  + 16 * NT_NUM_KEYS;
-	unsigned int* unpacked_cs = unpacked_bs + NT_NUM_KEYS;
-	unsigned int* unpacked_ds = unpacked_cs + NT_NUM_KEYS;
-	unsigned int* unpacked_es = unpacked_ds + NT_NUM_KEYS;
-	unsigned int* unpacked_fs = unpacked_es + NT_NUM_KEYS;
-	unsigned int* unpacked_gs = unpacked_fs + NT_NUM_KEYS;
-	unsigned int* unpacked_hs = unpacked_gs + NT_NUM_KEYS;
-	unsigned int* indexs	  = unpacked_W  + 6 * NT_NUM_KEYS;
+	uint32_t* unpacked_W  = nt_buffer  + 8 * NT_NUM_KEYS;
+	uint32_t* unpacked_as = unpacked_W + 4 * NT_NUM_KEYS;
+	uint32_t* unpacked_hs = unpacked_W + 6 * NT_NUM_KEYS;
 
 	unsigned char key[MAX_KEY_LENGHT_SMALL];
 
-	memset(nt_buffer, 0, 8 * sizeof(unsigned int)* NT_NUM_KEYS);
+	memset(nt_buffer, 0, 8 * sizeof(uint32_t)* NT_NUM_KEYS);
 	memset(key, 0, sizeof(key));
 
 	while (continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
 	{
-		crypt_kernel_asm(nt_buffer, bit_table, size_bit_table);
+		crypt_kernel_asm(nt_buffer);
 
-		for (unsigned int i = 0; i < NT_NUM_KEYS; i++)
-			if (indexs[i])
+		for (uint32_t i = 0; i < NT_NUM_KEYS; i++)
+		{
+			uint32_t up0 = unpacked_as[i];
+			uint32_t up1 = unpacked_hs[i];
+
+			uint32_t pos = up0 & cbg_mask;
+			uint_fast16_t data = cbg_filter[pos];
+			if (((data ^ up1) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], unpacked_W))
+				password_was_found(cbg_table[pos], utf8_coalesc2utf8_key(nt_buffer, key, NT_NUM_KEYS, i));// Total match
+
+			// 2nd pos
+			if (data & 0b110)
 			{
-				unsigned int indx = table[unpacked_as[i] & size_table];
-				// Partial match
-				while (indx != NO_ELEM)
+				pos += data & 0b1 ? -1 : 1;
+				uint_fast16_t hash = cbg_filter[pos];
+				if (((hash ^ up1) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], unpacked_W))
+					password_was_found(cbg_table[pos], utf8_coalesc2utf8_key(nt_buffer, key, NT_NUM_KEYS, i));// Total match
+
+				// Unluky bucket
+				if (data & 0b10)
 				{
-					unsigned int aa = unpacked_as[i], bb, cc, dd, ee, ff, gg, hh, W10, W12, W14;
-					unsigned int* bin = ((unsigned int*)binary_values) + indx * 8;
-					unsigned int* W = unpacked_W + i;
+					pos = up1 & cbg_mask;
+					data = cbg_filter[pos];
+					if (((data ^ up0) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], unpacked_W))
+						password_was_found(cbg_table[pos], utf8_coalesc2utf8_key(nt_buffer, key, NT_NUM_KEYS, i));// Total match
 
-					if (aa != bin[0]) goto next_iteration;
-					// W-> 0,1,2 ,4, 6
-					aa -= W[0  * NT_NUM_KEYS];
-					W10 = W[10 * NT_NUM_KEYS] + R1(W[8 * NT_NUM_KEYS])+ W[3 * NT_NUM_KEYS] + R0(W[11 * NT_NUM_KEYS]);
-					W12 = W[12 * NT_NUM_KEYS] + R1(W10)               + W[5 * NT_NUM_KEYS] + R0(W[13 * NT_NUM_KEYS]);
-					W14 = W[14 * NT_NUM_KEYS] + R1(W12)               + W[7 * NT_NUM_KEYS] + R0(W[15 * NT_NUM_KEYS]);
-
-					bb = unpacked_bs[i];
-					cc = unpacked_cs[i];
-					dd = unpacked_ds[i];
-					ee = unpacked_es[i];
-					ff = unpacked_fs[i];
-					gg = unpacked_gs[i];
-					hh = unpacked_hs[i];
-
-					hh += R_E(ee) + (gg ^ (ee & (ff ^ gg))) + 0x748F82EE + W[8 * NT_NUM_KEYS]; dd += hh; hh += R_A(aa) + ((aa & bb) | (cc & (aa | bb)));
-					gg += R_E(dd) + (ff ^ (dd & (ee ^ ff))) + 0x78A5636F + W[9 * NT_NUM_KEYS]; cc += gg; gg += R_A(hh) + ((hh & aa) | (bb & (hh | aa)));
-					ff += R_E(cc) + (ee ^ (cc & (dd ^ ee))) + 0x84C87814 + W10               ; bb += ff; ff +=           ((gg & hh) | (aa & (gg | hh)));
-					ee += R_E(bb) + (dd ^ (bb & (cc ^ dd))) + 0x8CC70208 + W[2 * NT_NUM_KEYS]; aa += ee;
-					dd += R_E(aa) + (cc ^ (aa & (bb ^ cc))) + 0x90BEFFFA + W12               ; hh += dd;
-					cc += R_E(hh) + (bb ^ (hh & (aa ^ bb))) + 0xA4506CEB + W[1 * NT_NUM_KEYS]; gg += cc;
-					bb +=           (aa ^ (gg & (hh ^ aa)))              + W14 ;
-
-					if (bb != bin[1] || cc != bin[2] || dd != bin[3] || ee != bin[4] || ff != bin[5] || gg != bin[6] || hh != bin[7])
-						goto next_iteration;
-
-					// Total match
-					password_was_found(indx, utf8_coalesc2utf8_key(nt_buffer, key, NT_NUM_KEYS, i));
-
-				next_iteration:
-					indx = same_hash_next[indx];
+					// 2nd pos
+					pos += data & 0b1 ? -1 : 1;
+					hash = cbg_filter[pos];
+					if (((hash ^ up0) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], unpacked_W))
+						password_was_found(cbg_table[pos], utf8_coalesc2utf8_key(nt_buffer, key, NT_NUM_KEYS, i));// Total match
 				}
 			}
+		}
 
 		report_keys_processed(NT_NUM_KEYS);
 	}
@@ -229,10 +300,10 @@ PRIVATE void crypt_utf8_coalesc_protocol_body(CryptParam* param, crypt_kernel_as
 // C code
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifndef _M_X64
-PRIVATE void crypt_kernel_c_code(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table)
+PRIVATE void crypt_kernel_c_code(uint32_t* nt_buffer)
 {
-	unsigned int A, B, C, D, E, F, G, H;
-	unsigned int* W = nt_buffer + 8 * NT_NUM_KEYS;
+	uint32_t A, B, C, D, E, F, G, H;
+	uint32_t* W = nt_buffer + 8 * NT_NUM_KEYS;
 
 	for (int i = 0; i < NT_NUM_KEYS; i++, nt_buffer++, W++)
 	{
@@ -305,7 +376,8 @@ PRIVATE void crypt_kernel_c_code(unsigned int* nt_buffer, unsigned int* bit_tabl
 		W[ 5 * NT_NUM_KEYS] += R1(W[3  * NT_NUM_KEYS]) + W[14 * NT_NUM_KEYS] + R0(W[6  * NT_NUM_KEYS]); C += R_E(H) + (B ^ (H & (A ^ B))) + 0x4ED8AA4A + W[ 5 * NT_NUM_KEYS]; G += C; C += R_A(D) + ((D & E) | (F & (D | E)));
 		W[ 6 * NT_NUM_KEYS] += R1(W[4  * NT_NUM_KEYS]) + W[15 * NT_NUM_KEYS] + R0(W[7  * NT_NUM_KEYS]); B += R_E(G) + (A ^ (G & (H ^ A))) + 0x5B9CCA4F + W[ 6 * NT_NUM_KEYS]; F += B; B += R_A(C) + ((C & D) | (E & (C | D)));
 		W[ 7 * NT_NUM_KEYS] += R1(W[5  * NT_NUM_KEYS]) + W[0  * NT_NUM_KEYS] + R0(W[8  * NT_NUM_KEYS]); A += R_E(F) + (H ^ (F & (G ^ H))) + 0x682E6FF3 + W[ 7 * NT_NUM_KEYS]; E += A; A += R_A(B) + ((B & C) | (D & (B | C)));
-		W[ 8 * NT_NUM_KEYS] += R1(W[6  * NT_NUM_KEYS]) + W[1  * NT_NUM_KEYS] + R0(W[9  * NT_NUM_KEYS]);
+		W[ 8 * NT_NUM_KEYS] += R1(W[6  * NT_NUM_KEYS]) + W[1  * NT_NUM_KEYS] + R0(W[9  * NT_NUM_KEYS]); H += R_E(E) + (G ^ (E & (F ^ G))) + 0x748F82EE + W[ 8 * NT_NUM_KEYS]; D += H; H += R_A(A) + ((A & B) | (C & (A | B)));
+		//W[ 8 * NT_NUM_KEYS] += R1(W[6  * NT_NUM_KEYS]) + W[1  * NT_NUM_KEYS] + R0(W[9  * NT_NUM_KEYS]);
 		W[ 9 * NT_NUM_KEYS] += R1(W[7  * NT_NUM_KEYS]) + W[2  * NT_NUM_KEYS] + R0(W[10 * NT_NUM_KEYS]);
 		W[2 * NT_NUM_KEYS] = W[11 * NT_NUM_KEYS] + R1(W[9 * NT_NUM_KEYS]) + W[4  * NT_NUM_KEYS] + R0(W[12 * NT_NUM_KEYS]);
 		W[1 * NT_NUM_KEYS] = W[13 * NT_NUM_KEYS] + R1(W[2 * NT_NUM_KEYS]) + W[6  * NT_NUM_KEYS] + R0(W[14 * NT_NUM_KEYS]);
@@ -318,11 +390,7 @@ PRIVATE void crypt_kernel_c_code(unsigned int* nt_buffer, unsigned int* bit_tabl
 		W[19 * NT_NUM_KEYS] = E;
 		W[20 * NT_NUM_KEYS] = F;
 		W[21 * NT_NUM_KEYS] = G;
-		W[22 * NT_NUM_KEYS] = H;
-
-		// Search for a match
-		unsigned int val = A & size_bit_table;
-		W[6 * NT_NUM_KEYS] = (bit_table[val >> 5] >> (val & 31)) & 1;
+		W[6  * NT_NUM_KEYS] = H;
 	}
 }
 PRIVATE void crypt_utf8_coalesc_protocol_c_code(CryptParam* param)
@@ -336,7 +404,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_c_code(CryptParam* param)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_ARM
 
-void crypt_sha256_neon_kernel_asm(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table);
+void crypt_sha256_neon_kernel_asm(uint32_t* nt_buffer);
 PRIVATE void crypt_utf8_coalesc_protocol_neon(CryptParam* param)
 {
 	crypt_utf8_coalesc_protocol_body(param, crypt_sha256_neon_kernel_asm);
@@ -361,7 +429,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_neon(CryptParam* param)
 #define R0(x)  SSE2_3XOR(SSE2_ROTATE(x,25), SSE2_ROTATE(x,14), SSE2_SR(x,3))
 #define R1(x)  SSE2_3XOR(SSE2_ROTATE(x,15), SSE2_ROTATE(x,13), SSE2_SR(x,10))
 
-PRIVATE void crypt_kernel_sse2(SSE2_WORD* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table)
+PRIVATE void crypt_kernel_sse2(SSE2_WORD* nt_buffer)
 {
 	SSE2_WORD* W = nt_buffer + 8 * SHA1_NUM;
 	SSE2_WORD mask = SSE2_CONST(0x00FF00FF);
@@ -438,7 +506,7 @@ PRIVATE void crypt_kernel_sse2(SSE2_WORD* nt_buffer, unsigned int* bit_table, un
 		W[ 5 * SHA1_NUM] = SSE2_4ADD(W[ 5 * SHA1_NUM], R1(W[3  * SHA1_NUM]), W[14 * SHA1_NUM], R0(W[6  * SHA1_NUM])); C = SSE2_5ADD(C, R_E(H), SSE2_XOR(B, SSE2_AND(H, SSE2_XOR(A, B))), SSE2_CONST(0x4ED8AA4A), W[ 5 * SHA1_NUM]); G = SSE2_ADD(G, C); C = SSE2_3ADD(C, R_A(D), SSE2_OR(SSE2_AND(D, E), SSE2_AND(F, SSE2_OR(D, E))));
 		W[ 6 * SHA1_NUM] = SSE2_4ADD(W[ 6 * SHA1_NUM], R1(W[4  * SHA1_NUM]), W[15 * SHA1_NUM], R0(W[7  * SHA1_NUM])); B = SSE2_5ADD(B, R_E(G), SSE2_XOR(A, SSE2_AND(G, SSE2_XOR(H, A))), SSE2_CONST(0x5B9CCA4F), W[ 6 * SHA1_NUM]); F = SSE2_ADD(F, B); B = SSE2_3ADD(B, R_A(C), SSE2_OR(SSE2_AND(C, D), SSE2_AND(E, SSE2_OR(C, D))));
 		W[ 7 * SHA1_NUM] = SSE2_4ADD(W[ 7 * SHA1_NUM], R1(W[5  * SHA1_NUM]), W[0  * SHA1_NUM], R0(W[8  * SHA1_NUM])); A = SSE2_5ADD(A, R_E(F), SSE2_XOR(H, SSE2_AND(F, SSE2_XOR(G, H))), SSE2_CONST(0x682E6FF3), W[ 7 * SHA1_NUM]); E = SSE2_ADD(E, A); A = SSE2_3ADD(A, R_A(B), SSE2_OR(SSE2_AND(B, C), SSE2_AND(D, SSE2_OR(B, C))));
-		W[ 8 * SHA1_NUM] = SSE2_4ADD(W[ 8 * SHA1_NUM], R1(W[6  * SHA1_NUM]), W[1  * SHA1_NUM], R0(W[9  * SHA1_NUM]));
+		W[ 8 * SHA1_NUM] = SSE2_4ADD(W[ 8 * SHA1_NUM], R1(W[6  * SHA1_NUM]), W[1  * SHA1_NUM], R0(W[9  * SHA1_NUM])); H = SSE2_5ADD(H, R_E(E), SSE2_XOR(G, SSE2_AND(E, SSE2_XOR(F, G))), SSE2_CONST(0x748F82EE), W[ 8 * SHA1_NUM]); D = SSE2_ADD(D, H); H = SSE2_3ADD(H, R_A(A), SSE2_OR(SSE2_AND(A, B), SSE2_AND(C, SSE2_OR(A, B))));
 		W[ 9 * SHA1_NUM] = SSE2_4ADD(W[ 9 * SHA1_NUM], R1(W[7  * SHA1_NUM]), W[2  * SHA1_NUM], R0(W[10 * SHA1_NUM]));
 		W[ 2 * SHA1_NUM] = SSE2_4ADD(W[11 * SHA1_NUM], R1(W[9  * SHA1_NUM]), W[4  * SHA1_NUM], R0(W[12 * SHA1_NUM]));
 		W[ 1 * SHA1_NUM] = SSE2_4ADD(W[13 * SHA1_NUM], R1(W[2  * SHA1_NUM]), W[6  * SHA1_NUM], R0(W[14 * SHA1_NUM]));
@@ -451,16 +519,7 @@ PRIVATE void crypt_kernel_sse2(SSE2_WORD* nt_buffer, unsigned int* bit_table, un
 		W[19 * SHA1_NUM] = E;
 		W[20 * SHA1_NUM] = F;
 		W[21 * SHA1_NUM] = G;
-		W[22 * SHA1_NUM] = H;
-
-		// Search for a match
-		A = SSE2_AND(A, SSE2_CONST(size_bit_table));
-		for (int j = 0; j < 4; j++)
-		{
-			unsigned int val = ((unsigned int*)(&A))[j];
-
-			((unsigned int*)W)[6 * NT_NUM_KEYS + j] = (bit_table[val >> 5] >> (val & 31)) & 1;
-		}
+		W[6  * SHA1_NUM] = H;
 	}
 }
 PRIVATE void crypt_utf8_coalesc_protocol_sse2(CryptParam* param)
@@ -473,7 +532,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_sse2(CryptParam* param)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_X86
 
-void crypt_sha256_avx_kernel_asm(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table);
+void crypt_sha256_avx_kernel_asm(uint32_t* nt_buffer);
 PRIVATE void crypt_utf8_coalesc_protocol_avx(CryptParam* param)
 {
 	crypt_utf8_coalesc_protocol_body(param, crypt_sha256_avx_kernel_asm);
@@ -485,7 +544,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_avx(CryptParam* param)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_X86
 
-void crypt_sha256_avx2_kernel_asm(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table);
+void crypt_sha256_avx2_kernel_asm(uint32_t* nt_buffer);
 PRIVATE void crypt_utf8_coalesc_protocol_avx2(CryptParam* param)
 {
 	crypt_utf8_coalesc_protocol_body(param, crypt_sha256_avx2_kernel_asm);
@@ -501,9 +560,9 @@ PRIVATE void crypt_utf8_coalesc_protocol_avx2(CryptParam* param)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #undef R1
 #undef R0
-#define R0(x)  (rotate(x,25u)^rotate(x,14u)^((x)>>3u))
-#define R1(x)  (rotate(x,15u)^rotate(x,13u)^((x)>>10u))
-PRIVATE void ocl_write_sha256_header(char* source, GPUDevice* gpu, cl_uint ntlm_size_bit_table)
+#define R0(x)  (ROTATE(x,25u)^ROTATE(x,14u)^((x)>>3u))
+#define R1(x)  (ROTATE(x,15u)^ROTATE(x,13u)^((x)>>10u))
+PRIVATE void ocl_write_sha256_header(char* source, GPUDevice* gpu, cl_uint ntlm_size_bit_table1)
 {
 	source[0] = 0;
 	// Header definitions
@@ -543,14 +602,9 @@ PRIVATE void ocl_write_sha256_header(char* source, GPUDevice* gpu, cl_uint ntlm_
 		"#define R_A(x) (rotate(x,30u)^rotate(x,19u)^rotate(x,10u))\n"
 		"#define R0(x) (rotate(x,25u)^rotate(x,14u)^((x)>>3u))\n"
 		"#define R1(x) (rotate(x,15u)^rotate(x,13u)^((x)>>10u))\n");
-
-	if (num_passwords_loaded > 1)
-		sprintf(source + strlen(source),
-		"#define SIZE_TABLE %uu\n"
-		"#define SIZE_BIT_TABLE %uu\n", size_table, ntlm_size_bit_table);
 }
 
-PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uint vector_size, cl_uint ntlm_size_bit_table, cl_uint output_size, DivisionParams div_param, char** str_comp, cl_bool value_map_collission, cl_uint workgroup)
+PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uint vector_size, cl_uint ntlm_size_bit_table1, cl_uint output_size, DivisionParams div_param, char** str_comp, cl_bool value_map_collission1, cl_uint workgroup)
 {
 	char* nt_buffer[] = { "+nt_buffer0", "+nt_buffer1", "+nt_buffer2", "+nt_buffer3", "+nt_buffer4", "+nt_buffer5", "+nt_buffer6" };
 
@@ -680,63 +734,101 @@ PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uin
 		"W4+=R1(W2)+W13+R0(W5);D+=R_E(A)+bs(C,B,A)+0x391C0CB3U+W4;H+=D;D+=R_A(E)+MAJ(E,F,G);"
 		"W5+=R1(W3)+W14+R0(W6);C+=R_E(H)+bs(B,A,H)+0x4ED8AA4AU+W5;G+=C;C+=R_A(D)+MAJ(D,E,F);"
 		"W6+=R1(W4)+W15+R0(W7);B+=R_E(G)+bs(A,H,G)+0x5B9CCA4FU+W6;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-		"W7+=R1(W5)+W0+R0(W8);A+=R_E(F)+bs(H,G,F)+0x682E6FF3U+W7;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-		"W8+=R1(W6)+W1+R0(W9);"
-		"W9+=R1(W7)+W2+R0(W10);"
-		"W2=W11+R1(W9)+W4+R0(W12);"
-		"W1=W13+R1(W2)+W6+R0(W14);"
-		"W0=W15+R1(W1)+W8+R0(W0);A+=W0;");
+		"W7+=R1(W5)+W0+R0(W8);A+=R_E(F)+bs(H,G,F)+0x682E6FF3U+W7;E+=A;A+=R_A(B)+MAJ(B,C,D);");
 
 	// Find match
 	if (num_passwords_loaded == 1)
 	{
-		unsigned int* bin = (unsigned int*)binary_values;
+		uint32_t* bin = (uint32_t*)binary_values;
 		sprintf(source + strlen(source),
-				"if(A==%uu)"
+			"W8+=R1(W6)+W1+R0(W9);"
+			"W9+=R1(W7)+W2+R0(W10);"
+			"W2=W11+R1(W9)+W4+R0(W12);"
+			"W1=W13+R1(W2)+W6+R0(W14);"
+			"W0=W15+R1(W1)+W8+R0(W0);A+=W0;"
+
+			"if(A==%uu)"
+			"{"
+				"A-=W0;"
+				"W10+=R1(W8)+W3+R0(W11);"
+				"W12+=R1(W10)+W5+R0(W13);"
+				"W14+=R1(W12)+W7+R0(W15);"
+
+				"H+=R_E(E)+bs(G,F,E)+0x748F82EEU+W8;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+				"G+=R_E(D)+bs(F,E,D)+0x78A5636FU+W9;C+=G;G+=R_A(H)+MAJ(H,A,B);"
+				"F+=R_E(C)+bs(E,D,C)+0x84C87814U+W10;B+=F;F+=MAJ(G,H,A);"
+				"E+=R_E(B)+bs(D,C,B)+0x8CC70208U+W2;A+=E;"
+				"D+=R_E(A)+bs(C,B,A)+0x90BEFFFAU+W12;H+=D;"
+				"C+=R_E(H)+bs(B,A,H)+0xA4506CEBU+W1;G+=C;"
+				"B+=bs(A,H,G)+W14;"
+				"H-=D;"
+
+				"if(B==%uu&&C==%uu&&D==%uu&&E==%uu&&F==%uu&&G==%uu&&H==%uu)"
 				"{"
-					"A-=W0;"
-					"W10+=R1(W8)+W3+R0(W11);"
-					"W12+=R1(W10)+W5+R0(W13);"
-					"W14+=R1(W12)+W7+R0(W15);"
-
-					"H+=R_E(E)+bs(G,F,E)+0x748F82EEU+W8;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-					"G+=R_E(D)+bs(F,E,D)+0x78A5636FU+W9;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-					"F+=R_E(C)+bs(E,D,C)+0x84C87814U+W10;B+=F;F+=MAJ(G,H,A);"
-					"E+=R_E(B)+bs(D,C,B)+0x8CC70208U+W2;A+=E;"
-					"D+=R_E(A)+bs(C,B,A)+0x90BEFFFAU+W12;H+=D;"
-					"C+=R_E(H)+bs(B,A,H)+0xA4506CEBU+W1;G+=C;"
-					"B+=bs(A,H,G)+W14;"
-
-					"if(B==%uu&&C==%uu&&D==%uu&&E==%uu&&F==%uu&&G==%uu&&H==%uu)"
-					"{"
-						"output[0]=1u;"
-						"output[1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
-						"output[2]=0;"
-					"}"
+					"output[0]=1u;"
+					"output[1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
+					"output[2]=0;"
 				"}"
-				, bin[0], bin[1], bin[2], bin[3], bin[4], bin[5], bin[6], bin[7]);
+			"}"
+			, bin[0], bin[1], bin[2], bin[3], bin[4], bin[5], bin[6], bin[7]);
 	}
 	else
 	{
 		sprintf(source + strlen(source),
-			"indx=A&SIZE_BIT_TABLE;"
-			"if((bit_table[indx>>5u]>>(indx&31u))&1u)"
-			"{"
-				"indx=table[A & SIZE_TABLE];"
+			"W8+=R1(W6)+W1+R0(W9);H+=R_E(E)+bs(G,F,E)+0x748F82EEU+W8;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+			"W9+=R1(W7)+W2+R0(W10);"
+			"W2=W11+R1(W9)+W4+R0(W12);"
+			"W1=W13+R1(W2)+W6+R0(W14);"
+			"W0=W15+R1(W1)+W8+R0(W0);A+=W0;");
 
-				"while(indx!=0xffffffff)"
-				//"if(indx!=0xffffffff)"
-				"{"
-					"if(A==binary_values[indx*8u])"
-					"{"
+		// Find match
+		sprintf(source + strlen(source), "uint xx=A&%uu;uint fdata;", cbg_mask);
+		
+		sprintf(source + strlen(source),
+			"fdata=(uint)(cbg_filter[xx]);"
+
+			"if(((fdata^H)&0xFFF8)==0){"
+				"indx=cbg_table[xx];"
+				"if(indx!=0xffffffff&&A==binary_values[indx*8u]&&H==binary_values[indx*8u+7u]){"
+
+					"uint aa=A-W0;"
+					"W4=W10+R1(W8)+W3+R0(W11);"
+					"W6=W12+R1(W4)+W5+R0(W13);"
+					"uint ww14=W14+R1(W6)+W7+R0(W15);"
+
+					"uint bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+					"gg+=R_E(dd)+bs(ff,ee,dd)+0x78A5636FU+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+					"ff+=R_E(cc)+bs(ee,dd,cc)+0x84C87814U+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+					"ee+=R_E(bb)+bs(dd,cc,bb)+0x8CC70208U+W2;aa+=ee;"
+					"dd+=R_E(aa)+bs(cc,bb,aa)+0x90BEFFFAU+W6;hh+=dd;"
+					"cc+=R_E(hh)+bs(bb,aa,hh)+0xA4506CEBU+W1;gg+=cc;"
+					"bb+=bs(aa,hh,gg)+ww14;"
+
+					"if(bb==binary_values[indx*8u+1u]&&cc==binary_values[indx*8u+2u]&&dd==binary_values[indx*8u+3u]"
+					 "&&ee==binary_values[indx*8u+4u]&&ff==binary_values[indx*8u+5u]&&gg==binary_values[indx*8u+6u]){"
+						"uint found=atomic_inc(output);"
+						"if(found<%uu){"
+							"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
+							"output[2*found+2]=indx;}"
+					"}"
+				"}"
+			"}", output_size);
+				
+		sprintf(source + strlen(source),
+			"if(fdata&4){"// Is second
+				"xx+=fdata&1?-1:1;"
+				"if(((((uint)cbg_filter[xx])^H)&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"if(indx!=0xffffffff&&A==binary_values[indx*8u]&&H==binary_values[indx*8u+7u]){"
+
 						"uint aa=A-W0;"
 						"W4=W10+R1(W8)+W3+R0(W11);"
 						"W6=W12+R1(W4)+W5+R0(W13);"
 						"uint ww14=W14+R1(W6)+W7+R0(W15);"
-						
+
 						"uint bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
-						
-						"hh+=R_E(ee)+bs(gg,ff,ee)+0x748F82EEU+W8;dd+=hh;hh+=R_A(aa)+MAJ(aa,bb,cc);"
+
 						"gg+=R_E(dd)+bs(ff,ee,dd)+0x78A5636FU+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
 						"ff+=R_E(cc)+bs(ee,dd,cc)+0x84C87814U+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
 						"ee+=R_E(bb)+bs(dd,cc,bb)+0x8CC70208U+W2;aa+=ee;"
@@ -744,287 +836,349 @@ PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uin
 						"cc+=R_E(hh)+bs(bb,aa,hh)+0xA4506CEBU+W1;gg+=cc;"
 						"bb+=bs(aa,hh,gg)+ww14;"
 
-						"if(bb==binary_values[indx*8u+1u]&&cc==binary_values[indx*8u+2u]&&dd==binary_values[indx*8u+3u]&&"
-						   "ee==binary_values[indx*8u+4u]&&ff==binary_values[indx*8u+5u]&&gg==binary_values[indx*8u+6u]&&"
-						   "hh==binary_values[indx*8u+7u])"
-						"{"
+						"if(bb==binary_values[indx*8u+1u]&&cc==binary_values[indx*8u+2u]&&dd==binary_values[indx*8u+3u]"
+						"&&ee==binary_values[indx*8u+4u]&&ff==binary_values[indx*8u+5u]&&gg==binary_values[indx*8u+6u]){"
 							"uint found=atomic_inc(output);"
 							"if(found<%uu){"
 								"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
 								"output[2*found+2]=indx;}"
-						"}", output_size);
-
-	strcat(source, "}"
-					"indx=same_hash_next[indx];"
+						"}"
+					"}"
 				"}"
-			"}");
+			"}", output_size);
+
+		sprintf(source + strlen(source),
+			"if(fdata&2){"// Is unlucky
+				"xx=H&%uu;"
+				"fdata=(uint)(cbg_filter[xx]);"
+				"if(((fdata^A)&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"if(indx!=0xffffffff&&A==binary_values[indx*8u]&&H==binary_values[indx*8u+7u]){"
+
+						"uint aa=A-W0;"
+						"W4=W10+R1(W8)+W3+R0(W11);"
+						"W6=W12+R1(W4)+W5+R0(W13);"
+						"uint ww14=W14+R1(W6)+W7+R0(W15);"
+
+						"uint bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+						"gg+=R_E(dd)+bs(ff,ee,dd)+0x78A5636FU+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+						"ff+=R_E(cc)+bs(ee,dd,cc)+0x84C87814U+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+						"ee+=R_E(bb)+bs(dd,cc,bb)+0x8CC70208U+W2;aa+=ee;"
+						"dd+=R_E(aa)+bs(cc,bb,aa)+0x90BEFFFAU+W6;hh+=dd;"
+						"cc+=R_E(hh)+bs(bb,aa,hh)+0xA4506CEBU+W1;gg+=cc;"
+						"bb+=bs(aa,hh,gg)+ww14;"
+
+						"if(bb==binary_values[indx*8u+1u]&&cc==binary_values[indx*8u+2u]&&dd==binary_values[indx*8u+3u]"
+						"&&ee==binary_values[indx*8u+4u]&&ff==binary_values[indx*8u+5u]&&gg==binary_values[indx*8u+6u]){"
+							"uint found=atomic_inc(output);"
+							"if(found<%uu){"
+								"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
+								"output[2*found+2]=indx;}"
+						"}"
+					"}"
+				"}"
+			, cbg_mask, output_size);
+
+		sprintf(source + strlen(source),
+				"if(fdata&4){"// Is second
+					"xx+=fdata&1?-1:1;"
+					"if(((((uint)cbg_filter[xx])^A)&0xFFF8)==0){"
+						"indx=cbg_table[xx];"
+						"if(indx!=0xffffffff&&A==binary_values[indx*8u]&&H==binary_values[indx*8u+7u]){"
+
+							"uint aa=A-W0;"
+							"W4=W10+R1(W8)+W3+R0(W11);"
+							"W6=W12+R1(W4)+W5+R0(W13);"
+							"uint ww14=W14+R1(W6)+W7+R0(W15);"
+
+							"uint bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+							"gg+=R_E(dd)+bs(ff,ee,dd)+0x78A5636FU+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+							"ff+=R_E(cc)+bs(ee,dd,cc)+0x84C87814U+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+							"ee+=R_E(bb)+bs(dd,cc,bb)+0x8CC70208U+W2;aa+=ee;"
+							"dd+=R_E(aa)+bs(cc,bb,aa)+0x90BEFFFAU+W6;hh+=dd;"
+							"cc+=R_E(hh)+bs(bb,aa,hh)+0xA4506CEBU+W1;gg+=cc;"
+							"bb+=bs(aa,hh,gg)+ww14;"
+
+							"if(bb==binary_values[indx*8u+1u]&&cc==binary_values[indx*8u+2u]&&dd==binary_values[indx*8u+3u]"
+							"&&ee==binary_values[indx*8u+4u]&&ff==binary_values[indx*8u+5u]&&gg==binary_values[indx*8u+6u]){"
+								"uint found=atomic_inc(output);"
+								"if(found<%uu){"
+									"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
+									"output[2*found+2]=indx;}"
+							"}"
+						"}"
+					"}"
+				"}"
+			"}", output_size);
 	}
 
 	strcat(source, "}}");
 }
 
-PRIVATE uint32_t sha256_one_char[8*256]={
-0xa9d34cc5, 0xb40ea40f, 0xd7c2c05e, 0xb7854398, 0xbf6e6169, 0x1c4e0266, 0x658dc95b, 0xbbced304,
-0x8866b527, 0x3034aeab, 0xa0264b6f, 0xd463d9d7, 0x0526a0bb, 0x51507e5b, 0xb8490891, 0x1ba47881,
-0x8c73ccea, 0xeca461b2, 0xd69fe65a, 0xf8bfecb2, 0x11f9e9f9, 0x99b3c3f8, 0x2bf310ed, 0x08770c6d,
-0x8c1f052d, 0xa0915880, 0x1c1cb6aa, 0xe7034348, 0xcde1a0ff, 0x3a937b4e, 0xf23280ef, 0x521e5cac,
-0xb90ab6f1, 0x5f0d3c76, 0x28d27338, 0xc4be8f59, 0x41977f8c, 0xc4439b7a, 0x431cc2f8, 0x25e7d158,
-0x2cdfb78b, 0x91cbfd3a, 0x348d2961, 0x58169921, 0x5e5ba2ee, 0x9591f14f, 0x6a672bf1, 0xfed676c2,
-0x293c2c31, 0x8ff47005, 0xbba888e4, 0x13c8c997, 0x06c3617b, 0x7f0f71f1, 0xd9196ddb, 0xace51fdd,
-0xd4e0d0b8, 0x6ebf8d18, 0x5d7c5515, 0x51a09e69, 0xe8b04e62, 0x33321951, 0x5e43e574, 0xa47e1b60,
-0xb7aad1b6, 0xf2828342, 0x7aded40d, 0x1d4ba982, 0x295cfaf2, 0xc7038148, 0x91a4d96d, 0x31e0b581,
-0x35acdf65, 0xab878814, 0x7a6612f6, 0x311e4014, 0x8e02c392, 0x8db2426c, 0x6c00e11b, 0x093b6fa0,
-0x34eb4e3f, 0x0a5d4137, 0x507c0aff, 0xd513b654, 0xd1e9d6b2, 0xc7f2f263, 0xd00bbe5a, 0x7ee98752,
-0x65f0f6e4, 0x651828c0, 0x6b5f1651, 0x47c77b77, 0xf9a467e9, 0x763a3769, 0xf529f986, 0xef9bf68d,
-0x422d4b28, 0xace71780, 0x4012af00, 0x4cced208, 0x715824da, 0x2aee7a13, 0x967cf9de, 0x3f63fc5e,
-0x6ca4cba2, 0x94f2d221, 0x364cdeb1, 0x5d97c6f7, 0x6e7ddd2a, 0x5fda3d5a, 0xd38ae083, 0xb554ccab,
-0x619c5e9a, 0x2edeaa4c, 0xda3bcac4, 0x014fa1d7, 0x23db4969, 0xfd00c5a8, 0xead2630a, 0x3e2c422e,
-0xba6fa118, 0x013e1f53, 0x59ca3cdf, 0x8671f0a1, 0x6081f185, 0xa5eab71c, 0x72b70012, 0x872ebf9f,
-0xb9bd3607, 0xa2006bdc, 0x94947e12, 0xcb8642c2, 0x8ec194dc, 0xca7102d7, 0x2959588c, 0x2dd7c1ca,
-0x8ea1be74, 0xf214a648, 0xb3c32420, 0xfdc47a0f, 0x1c048924, 0x78c52d95, 0xa558cf0a, 0xc16ddaf1,
-0xb2b36a67, 0x4a10963f, 0x13c94c56, 0x0ddba4c7, 0xa940b85d, 0x9138a6eb, 0x5737e593, 0x8d3da7f3,
-0xc0e4301d, 0x22d5539f, 0x3a1ff093, 0x35c11b16, 0x6c266266, 0x57bf994d, 0x39d4c45b, 0xd42995c9,
-0x44a8aa20, 0xe96a7544, 0xdb6e561f, 0xbba9b6ee, 0xfe22b009, 0x04ae3979, 0x8736e0fd, 0x58720b60,
-0x661065c1, 0xc2eeb008, 0xf3519277, 0xa77f8f15, 0x421bde16, 0x1b6509f4, 0x1b56fef5, 0x1414b8ef,
-0x42513b32, 0xccfc3af5, 0xd7458f63, 0x583d2e09, 0x502ed7e2, 0x798fcf62, 0x8f2d15dd, 0x7e976ca1,
-0xa261c606, 0xd79d87d1, 0x54a26b9b, 0xd766ccc0, 0x07625759, 0x2f793bfa, 0xdde501bb, 0xdec2a31b,
-0x56a080b3, 0x9ec96f08, 0xc67c44cf, 0x1945fd37, 0x0146925e, 0x152a08ec, 0xf57a3b46, 0x6283ea36,
-0x8496e58f, 0xecf16176, 0x271bae39, 0xd40dea89, 0x9275a7ec, 0xffb6ac6e, 0x23ecc261, 0x3fe316bb,
-0x524f1ea7, 0x1d32eb96, 0x1e702fdd, 0xe03d1c39, 0x21ba8809, 0x286a52ca, 0x14c1d112, 0x0888a634,
-0xc77da159, 0x50f8e913, 0xd3249533, 0xf1c43ec7, 0x11f6729a, 0xe8f96309, 0xa3ed21d1, 0xb96d94e4,
-0x787b5008, 0x4698b485, 0xc52e0c03, 0xb1226447, 0xf2e704b8, 0x44a3e1af, 0xe7bfa829, 0x910d32ff,
-0xeda0ab9f, 0x18871ba6, 0x6467ea05, 0xba36a7f6, 0x2d9dac82, 0x153a805d, 0x98e15ca4, 0xe58706b4,
-0xf5afdc9f, 0xebd1ec2c, 0xd8bee125, 0xf0cebabb, 0x1e3a10db, 0x1c319b84, 0x6d1fbf28, 0xbaa2ad61,
-0x317e066b, 0x1b9a914e, 0xdc7fdb9c, 0x69ed9fd0, 0xb18fbd8d, 0xd90baa2b, 0xefd57109, 0xe1412d05,
-0x787fa7da, 0x59639ccb, 0x168a5db2, 0x3f040d6f, 0xe1bcd212, 0x202464a2, 0x2f6ff24f, 0x5a33834f,
-0x031fcfbc, 0x952b074b, 0xe62e1b73, 0x8dd762e5, 0x61b7d8f1, 0x6d7b204e, 0x47732f81, 0xdfc36e49,
-0x74ba4dfc, 0xc5cf8c53, 0x21e58d11, 0x97b859e9, 0xacecc695, 0x184d1dd9, 0xd50801ac, 0x45e562ee,
-0xabe23d05, 0xd7f6181d, 0x98d6b9e9, 0x946e058b, 0x42d99ce0, 0x1efafea1, 0xf00c3e7f, 0xa63f2f72,
-0x6a389e61, 0xa0d656de, 0xe3eabfd6, 0x03aa0b46, 0x1dcbe6cd, 0x9fe27119, 0xcd7d4650, 0x3af31832,
-0x3bcdff79, 0x0f2bff62, 0x7863e902, 0x02e6b566, 0x522c00fd, 0x5be5074c, 0x58f67382, 0x6c51ebd3,
-0x23cc9c15, 0x78b791dc, 0x87beffd4, 0xf44b6041, 0x16efa048, 0x349a4704, 0x533b86fb, 0x00b7561f,
-0xc15722f6, 0x0561a0e5, 0x83239496, 0x66a52382, 0xcb95c02d, 0xbbfa81b9, 0x165d42e3, 0x198787f0,
-0x3fadd532, 0xfe42858a, 0xc413712a, 0xaaf4f433, 0x120e7379, 0x7572d842, 0xf34035ff, 0xf6a9c4b0,
-0x6620700d, 0x3859c299, 0x96c9171c, 0x965cac65, 0xdeae7b6a, 0xbee66f1b, 0x30d6b419, 0xabe434d5,
-0x7cb9723d, 0xebfc8073, 0x58530e57, 0x2399ecf8, 0x836cc018, 0x38726112, 0x9c5de75e, 0x036882a8,
-0xce7da949, 0xd4029dbf, 0x28964f84, 0x6d303f6a, 0x1c0ede3a, 0x65657aed, 0x45aec8c1, 0x49afa022,
-0x8ce57656, 0x85829fe5, 0x54260fc7, 0xb2c6a3ef, 0xf12b8c3a, 0x70ca41ad, 0x2d6c0de8, 0x722a66ce,
-0xf9ba7bfc, 0x47353e37, 0x0ca9f1d4, 0x47962e4e, 0xc88aa0ff, 0x54df7358, 0x2a7f3b33, 0x3dbe83f9,
-0x0a815cb0, 0xe326cf40, 0x95fe37c1, 0x42df36e1, 0xcaf16d3b, 0x4f0f288e, 0x177828fd, 0xd2376c8f,
-0x8d8cba42, 0x35ad8b61, 0xf0dfbae2, 0x4f62a656, 0x9276aaca, 0xdbc8aa00, 0xf4b3afd1, 0x621dd3d8,
-0x61a50e23, 0x7b9585c6, 0xe5254325, 0xde4ee123, 0x3b40357c, 0x6096c76c, 0x47a5fd8f, 0xcc1a8ad0,
-0x00f4bada, 0x0bdb687d, 0x97b11512, 0x1cb1fb02, 0x502db559, 0x13bf25ee, 0xa09a7932, 0x5ba68e32,
-0x055a4a59, 0x743775c7, 0x4f43768e, 0x60e8468b, 0x31870f5e, 0xf383644f, 0xbab68cc3, 0x9032de1c,
-0x3c82ca9c, 0xfb8d5f52, 0x245f6792, 0xa680f1c3, 0xd8281103, 0xdef98d83, 0x4487a49c, 0xcdd3d2b5,
-0x20e94e63, 0x358d5acf, 0xf2855933, 0x57b49142, 0xc8b04afe, 0x7d1ac0e2, 0x6bd15851, 0x50f9f271,
-0x36d71327, 0xfa107867, 0x589ac42f, 0x03153a42, 0x74a801e3, 0x6e751ef3, 0x9f43b5aa, 0x08cf1684,
-0x77368310, 0xecc26d04, 0x68a8a310, 0xb945f67a, 0x7da6dd93, 0xaf1fc83c, 0xdd77a83b, 0x94b0c96a,
-0xda610abd, 0xd7ae9f26, 0x0dfd49c3, 0x9fc89f33, 0x866ebcb1, 0xe00528f1, 0x0623009e, 0xac3a5738,
-0x29375795, 0xff4a9d67, 0xe2e974ba, 0x62761be0, 0xf86eaaf3, 0xfeab9672, 0xb98b16c4, 0x831a978a,
-0x7072fe18, 0x3da79d4a, 0xb667e350, 0xb3b7a37b, 0xf9b79e98, 0x122e1fe5, 0xcf801e18, 0xa59ae89e,
-0xbf56255d, 0x81fd63d6, 0xc3faed9c, 0x03d39303, 0x9626749e, 0x0ab94c32, 0xe2459c31, 0xa47e6d4e,
-0x6930c3f1, 0x577cd80c, 0xe888e78a, 0x14fd1522, 0x00fcac74, 0xed2131f4, 0x0f84a6d9, 0x37b3d4cb,
-0x1db3542a, 0x8b5cb8f1, 0x1ce32835, 0xb13e141c, 0x24178f13, 0xbe806c09, 0xbbd274fa, 0x9d0ee159,
-0x439bf08e, 0xb5251554, 0xf1b91fdf, 0x43b8bf5f, 0x1e11c46b, 0xff136358, 0x344c5e19, 0xe7be64aa,
-0x6ae4de37, 0xa154f23b, 0xfba97273, 0x6a222d94, 0xff57d6eb, 0x8aba76f5, 0x3426d68a, 0x74d5e508,
-0x3e5e0d1d, 0xb4619da3, 0x20031bf0, 0x4a750a4a, 0x8f1d33fb, 0xda3e8f4a, 0x9cb2055a, 0x7d885bc8,
-0x93088d36, 0x5311833e, 0xdcdcf9f5, 0x7648b6f5, 0xcd672966, 0x0354e72d, 0x0a4717ec, 0x73e1cc95,
-0x9efea9c4, 0x7b75b0d0, 0x5b4efba4, 0x793cc5c6, 0x0aae6678, 0xa9750495, 0xcf6f40dd, 0x44af12e4,
-0x71225f91, 0x337bb6b5, 0xd0e644b1, 0xdee2ec19, 0xecbff905, 0x15f4b15a, 0x7d299430, 0xa7513d43,
-0x50fa7790, 0xd08704f4, 0x187af7cd, 0xf73f15f4, 0xd26c5373, 0x27b932cd, 0xfdb5c2ba, 0xffa6c6f4,
-0xce350060, 0xd04aa41b, 0xb3943b47, 0x1d5cbda7, 0x784d036c, 0xfc94883b, 0xba962841, 0xa993902a,
-0x241f73ab, 0x5abbb7d1, 0x9646f6e6, 0xf2569058, 0x0e671a76, 0x1f956cb7, 0x0283deed, 0xb6531f3f,
-0x5584581c, 0x68d73bdd, 0x198988a8, 0xaa19796b, 0x99d44be7, 0x8f644bd9, 0x079ffe14, 0x50dd5b90,
-0xf595d37b, 0x44eedab3, 0x5ffb2655, 0x659835f0, 0x02fdb15b, 0x0b5d8706, 0x8f65152b, 0x7b20c48a,
-0x901c8332, 0xdc1f8b99, 0x59e05ddb, 0xcda35c11, 0x6971b221, 0x07ff1417, 0x5044c66f, 0x0817cf08,
-0x8d7a80c2, 0x1403d495, 0x54aa091f, 0x5a2d6845, 0x7c8d4b46, 0x4041a26c, 0x001bc795, 0x546fbf53,
-0x7cb3d93f, 0x7ba8f713, 0x52670e61, 0x245984c5, 0xd7a615f7, 0x6658f129, 0xf4a53c5f, 0xffdc489c,
-0x866aa730, 0x5a89c5af, 0xf353b9ab, 0x23ac597d, 0xc5aede41, 0xce53ad24, 0xcf6217e0, 0x8c0ce45e,
-0xf2acf883, 0x390893c0, 0xf62a2f43, 0xf0260878, 0x5fd07e4b, 0xf55eb430, 0x93256130, 0x8e2f95e1,
-0xb9d3e893, 0xa2a90b12, 0x3861aec8, 0xf52cc495, 0xc2d5b4bd, 0xdd80647f, 0xa543f4b2, 0x4f93a6d8,
-0x429e6b8f, 0xf48b2e7d, 0xc8a0aa43, 0x08a6bf7c, 0xde8b168c, 0x7043b53a, 0x58564c18, 0x0da75752,
-0x97534b9f, 0xa2933018, 0xc7320482, 0x570d2e27, 0xa40f4d10, 0xa80a6d0a, 0x3bebe91a, 0x0abfdd73,
-0x08c7376e, 0xcfd0e97b, 0xff6df31c, 0xbfa9a06b, 0xc752becc, 0x174c1e4a, 0xff0700b0, 0xbeac59b9,
-0x687fd48f, 0xe07564bb, 0xaf35b6ad, 0x3a18b954, 0x7abc6a11, 0xb4706bad, 0xff65e660, 0x30e26547,
-0xeddb4f99, 0x479fa542, 0xa7a5ff90, 0xa0ee739a, 0x7ae58cbe, 0x46ffd2ef, 0xb99a5855, 0x30ee7493,
-0x1bb9b73a, 0xd29a76f8, 0x02474c06, 0x7b9d3bf6, 0x1a3e58ed, 0x1f403403, 0xc2b3d878, 0x536a092a,
-0xcda35b5f, 0x3597b8e6, 0xe67b3748, 0x734cb7b3, 0x36468f79, 0xc7046a7c, 0xd2c933c4, 0x35ef9cba,
-0x5e5ca563, 0xcf44d58b, 0xac27007e, 0xb46ccacf, 0x96f73013, 0xfd22289b, 0xd8374b97, 0x1a5f5ace,
-0xad020e0b, 0x71e852d2, 0xe193bc88, 0x11d938d7, 0x246f4a91, 0x1f8d50b5, 0xafb31f7a, 0x456003b3,
-0x04e88a1c, 0x6520e269, 0xefa8da6d, 0xe6f60bb8, 0x9314fbd5, 0xa4a3743c, 0x132c4026, 0x17b229db,
-0xcd2edcd5, 0xe3afe0d6, 0x68205816, 0xda969f35, 0xe3e289ae, 0xee85a80a, 0xbe2a10b2, 0x9a6ab2fc,
-0x20555ddf, 0x94d8034f, 0xb16cadf7, 0x85153d6f, 0x9b378ad5, 0x385db55c, 0x8be8dde8, 0xbf914839,
-0xa12c720d, 0x660f4f24, 0x43217ce0, 0xa04ace80, 0x26691a51, 0xd5233a2b, 0x775f915a, 0xf2e4e26a,
-0xf31aca5b, 0x280d79d1, 0xc203f9b9, 0x8f22eabb, 0x99b4141f, 0x7529bef1, 0x1dbf0eb8, 0x7682baf8,
-0xfd738a15, 0x25e408f7, 0x2439adf5, 0x0e59e24b, 0xccfef2be, 0xc67f0105, 0x6c951fd4, 0x7bc2ba52,
-0xfb0fb0f9, 0xcf4cb388, 0xd2b170f4, 0x66236143, 0x8807ec4e, 0x138055ea, 0x63894a31, 0x977972e6,
-0xd711fde3, 0xc2762c39, 0x1808a921, 0xca0083b7, 0x9a77bef6, 0x3205639d, 0x416dda9b, 0xf51950b2,
-0x368a216b, 0x7744e490, 0x50733d71, 0x3e55fa09, 0x2fbad000, 0xa0ccea2d, 0xe7863c95, 0xb3d5c2c5,
-0xbbad3a78, 0x87c6d7eb, 0xb7525d7f, 0x0c0f67a6, 0x9075446f, 0x3ad20758, 0xeb4facb7, 0x1a5e46ba,
-0xb634acf4, 0x908c5863, 0x35a56967, 0x174515c6, 0x7f863d00, 0xd417a6b0, 0x99fc9dda, 0x540d7ba2,
-0xadeb0bb7, 0x2438a967, 0x005fa86a, 0x82fd5afa, 0x0179d942, 0x643115d2, 0xabf01503, 0x79bb3384,
-0x627c8cbd, 0x3df35194, 0x9456476a, 0xc0f47cd8, 0xa49c4a9f, 0x38b12a44, 0x79ee8bf6, 0x467a22ad,
-0x2a5ca6c6, 0x33641a41, 0xb7ba5007, 0xdb4683a8, 0x40d763dd, 0x39daead1, 0x638bd55e, 0xd9142bcb,
-0x3638a1de, 0xddba18bc, 0x775497c0, 0xe9ede9a0, 0x46e17d71, 0x02000d36, 0x18afa1dd, 0x6e23a0d1,
-0xdefb309d, 0x390e6de1, 0x4667c167, 0x17ec888c, 0x2cdec071, 0x41cabc12, 0x6a534adf, 0x26f923f8,
-0xe68bba11, 0x141b5b4d, 0x38b624af, 0xc6a40e89, 0x33df0097, 0x124efa19, 0x45291378, 0xe0ba3110,
-0x28f44e66, 0xc01fcf9a, 0x65bcbae0, 0xd4e138c1, 0x10c0706c, 0x5718375d, 0x8aa461c6, 0x8a6ce40a,
-0x22ad4846, 0xa5d72622, 0xc6170ad5, 0x6547bcad, 0x4e5cb097, 0x15bba0d5, 0x99a317fa, 0x4c0698be,
-0x8cee8b39, 0xe7f3028d, 0x1796cf4e, 0x05fe33b9, 0xd0f1a5f6, 0x4cdc944c, 0xefd59500, 0xd2378a9e,
-0x42c21c4c, 0x938466af, 0xbf93efc4, 0xd8e03f96, 0xca516688, 0xdb0a6a55, 0xf52b6986, 0x08674061,
-0x98b7a1d4, 0xc40784db, 0x9f16cacb, 0xc314da32, 0x200f3bb6, 0x55565817, 0xcd5dcad8, 0xffb329d7,
-0x267db957, 0x220b229a, 0x7e9f5927, 0x7e84f39d, 0xcdba1f91, 0x07d81eda, 0x1d658908, 0x4ff56f41,
-0x97f2b729, 0xb9c87530, 0x50da78cf, 0xedfdddc4, 0x9dadd894, 0xa53312c3, 0xcc2435d7, 0xdae770a0,
-0x51a06107, 0xf07208db, 0x836080c7, 0xc62d02ac, 0xebad869f, 0xe9c6ba8c, 0xb4c5b805, 0x307825b9,
-0x6df62278, 0x58623c82, 0x03c0833b, 0xa591a31a, 0xd2bcf861, 0xb31bbedd, 0xdaa5d2d2, 0x83e9cc27,
-0x912f7c25, 0x2b4d3286, 0xcb196bec, 0x2d6cd753, 0x29eec655, 0x95e9255d, 0x7c66a8fb, 0x5e772ab6,
-0x3c4de6e5, 0x3f660623, 0xe61785e7, 0x373932c8, 0x753ea99c, 0x8b4389a1, 0x45345607, 0xb814c688,
-0x9927fa71, 0xe9990bd6, 0xc32fc44f, 0xeb1903c9, 0x88a249ad, 0x0e28e4b3, 0x200e8363, 0xf6dde270,
-0xb2c59db1, 0x54f83fff, 0x8b44dad9, 0x2ea2f91a, 0x9413776e, 0x0c10f976, 0xccbd6680, 0x9a4670bf,
-0x04bd6988, 0xe1b98edf, 0x19a721ab, 0x377bf209, 0x0c0bfb3f, 0xc2b37928, 0xa08893d4, 0xc33b3dbd,
-0x297d7057, 0x4a464f31, 0xc448ae1b, 0xa92d11a9, 0x02059add, 0xd672662d, 0x309cb4a7, 0x136f9367,
-0x4be0ea24, 0xb479b520, 0x65aeb867, 0xfea3d064, 0x999ac287, 0xc9956c3a, 0x3dad2b70, 0xb3fcf60d,
-0x3de47646, 0xa26ba456, 0x26e6fac6, 0xd4c25295, 0xc94dc89f, 0x73ffc37f, 0xe2a1ad6c, 0x36397b68,
-0xd03a6f20, 0xb741aea2, 0xdbed7ba7, 0x3a3f0ed5, 0x095ab976, 0xea2f7898, 0x7bb3f706, 0xb567e3e1,
-0x5660643c, 0x87d682cc, 0x0229acb8, 0x22a05582, 0xd819b664, 0x8d49aabf, 0xb08aab1a, 0xc8f5aded,
-0xf167600c, 0x023551ee, 0x7b0080ef, 0x60251db0, 0xfb59e2ff, 0xda209242, 0x4c391940, 0x5828b07d,
-0xd0c024c2, 0x3064f276, 0xa80e89ac, 0x9561dc29, 0xc42cd07f, 0x66a801c7, 0x80e68b66, 0x740ea78e,
-0x854f7723, 0xfbb353db, 0x62dda745, 0x5dcd69da, 0xb0e6b221, 0xdd8b9625, 0x730934e8, 0xda0878b9,
-0xe6a46c2a, 0x09392564, 0x656f8e64, 0xc4aba2a4, 0xf6d40c8d, 0xc3aa5925, 0x2a776965, 0x2f73628b,
-0x9edc2d84, 0x42daea29, 0x3c38f1ed, 0x75d7537c, 0x718b5996, 0xb382e614, 0x341293f6, 0xa6abea18,
-0x1c8d37b1, 0x4c5507ea, 0x34655a40, 0x53df034e, 0xd5d279a6, 0xb7d5200c, 0xb82cd5eb, 0x2db4df58,
-0xd79106ee, 0x01968417, 0x22ddaf3d, 0xb807952a, 0x2bf3c5ad, 0x163698b5, 0x707ff7d4, 0xb8e3738d,
-0x1baeb275, 0x813c48b5, 0xee8ddca5, 0x571c35bd, 0x023b050b, 0x5cc0d792, 0x9748f20b, 0xf0b064b5,
-0x980a6f08, 0x7f889654, 0x9468531f, 0x0a2a92a7, 0xefde53a4, 0xc75784a8, 0xad11046e, 0x8daddc92,
-0x30852c2d, 0x9cc94f74, 0x418cc095, 0xf48dc2ee, 0xd134f3d2, 0xfea624a6, 0x5a2b8f09, 0xe3751aac,
-0xbc20da6a, 0x33a5ce00, 0x7607d1e2, 0x576be69f, 0xaadb07a5, 0x2bf7f96c, 0x49c3b304, 0xcbe8a563,
-0xe6eed45a, 0xad73664b, 0x98b7a678, 0x3f4e41e6, 0x193d394f, 0x207f26d4, 0xb20f5920, 0x9eeadaaf,
-0x3ad3f8c5, 0x01a13b8b, 0x4481f4c2, 0x415497ba, 0xea96c286, 0xb63bc6eb, 0x8032ae08, 0x093e3184,
-0x5dc66779, 0x6b992fd6, 0xce9e5037, 0xbdb78f58, 0x41e92a8f, 0xfdae4873, 0x7a7129c1, 0x6fc8f931,
-0x7ce27673, 0x484ae2dc, 0xde0b9a7c, 0x645b1db2, 0xef195a94, 0x9b6895b8, 0x7dfee290, 0x8a28f57b,
-0xfc9c5412, 0x6d036b75, 0xde9de836, 0xfa492eaa, 0x9cde6306, 0x03bb0532, 0x12106395, 0x7896fb77,
-0x25537502, 0xa2c9d478, 0x762108aa, 0xa6782a21, 0x7397d8a6, 0x2a6bd4fa, 0x3c6a3d0b, 0x8e6150b7,
-0xde5ef639, 0x79d1a7d9, 0x3d9819f0, 0x0619c03b, 0x5fc6b565, 0x648ccd33, 0x3ef309f9, 0x5bb4392f,
-0x3d1dfba7, 0x71162e9a, 0xd53e8781, 0xc50044fb, 0xe873a1f4, 0xb0858c4b, 0xeef9db9a, 0x0163c36d,
-0x6f250daf, 0xc1cb4111, 0x7738a7db, 0xd9d20f06, 0x757acb65, 0x8c9f109e, 0x8de4e70e, 0x37101a96,
-0x59fcad8b, 0x9fb163f1, 0xf2223f1a, 0x48213643, 0x7bc8fb93, 0xebda1191, 0x49285414, 0x6621874b,
-0x95a3028a, 0x94360053, 0x61569c95, 0xab489c89, 0x2c39a5cc, 0x2b109ade, 0xce6ae59e, 0xa7bf17a4,
-0xfe2735e3, 0x0160c575, 0x8c4717d1, 0xf4e8c9a2, 0x05b3017a, 0x023851b4, 0x65434362, 0x8818cf83,
-0x3983869d, 0xc67ef8e4, 0xe7bc2c4a, 0x76b74ce6, 0x23517d64, 0xea2fbb96, 0x3b4b094f, 0x4b7c92c4,
-0x5efb151c, 0x0eaad0be, 0x82d2e54b, 0xf7f3175e, 0x7fb23e6a, 0xa2131c0b, 0xa8c0a612, 0x98e2b482,
-0x5f60ce35, 0x90dbfd93, 0x428dd144, 0x8c42b364, 0x2cb80a7c, 0xef306a21, 0x32aaa4a1, 0x3f779864,
-0x818faace, 0xaa4c64dc, 0x73faa6da, 0x70e4aa2a, 0x60597b4c, 0xdca739be, 0x398c0a31, 0x4f2b6682,
-0x4ba590d1, 0xec4ee9b6, 0xb6c395c4, 0xa78b2892, 0x3467907e, 0x1f7f05e7, 0x7063b941, 0x93afc5ca,
-0x0b53a797, 0x69df0f8a, 0xd5c03b8b, 0xbf80071b, 0x5854eaa4, 0x07025cf6, 0x5a6fbd41, 0x10cbfdba,
-0xf451d0ac, 0x4b15d5a0, 0xed6c9fe3, 0x2b814c0c, 0x660dbb4d, 0xd34b4b7e, 0x904e90ef, 0xf33fa031,
-0xedd50356, 0xc3251157, 0xca65e921, 0xabd3dda5, 0xd107ee66, 0x77382a98, 0xf1e972e5, 0x0f63283f,
-0xef65c20f, 0xa22c4c5c, 0x2a44baf7, 0x8a3dc37a, 0xc5b79304, 0xc692775e, 0xa816c745, 0xe5792228,
-0x454cdcf4, 0x55489a7a, 0xcea78207, 0x1ac739df, 0x140b1d90, 0xeafc331e, 0xe7ec19ea, 0x68579c45,
-0x01f892cb, 0xa1bcf7c1, 0xd9b61dda, 0xffafd217, 0x8bfd6096, 0x4f1d69a1, 0xd689664f, 0x9e49793b,
-0x2cb44ab6, 0x7bc6443d, 0xa860ba8f, 0x927bc6af, 0x98a1aaf2, 0x8204401a, 0x67c6dbd4, 0x341a3915,
-0x95afde1a, 0xf23c45e9, 0xfc29fdcf, 0x32da17d0, 0x8f346b20, 0xc2f36c3e, 0x8a034280, 0x9ff9de19,
-0xbb7c5b99, 0x4282619d, 0xf05bee16, 0x5a4cd051, 0x8c7877ec, 0x0ecb339b, 0x41689d73, 0x3f55fd38,
-0x4454b7c0, 0x29e57fb2, 0xf44fd75d, 0x89d9929c, 0xa5d31d5e, 0x5398b048, 0x2bfe0289, 0x00998987,
-0xd46d144c, 0xb917a6d7, 0xb895d528, 0xed988a4e, 0xb7afefdd, 0x4dee4c69, 0x560ccc74, 0xd108d43e,
-0xae0e6fb9, 0x6a4a9061, 0x9890c060, 0x0ef51d7f, 0x260e48ea, 0x6c9a289d, 0x7849a74e, 0x6d8c0c61,
-0xb52fc228, 0x7b4c9db5, 0xbc925ed5, 0x3c15b90e, 0xdec489dd, 0x63e60772, 0x8ddd1ac6, 0x96e76632,
-0x38e65d44, 0x08996b89, 0x1b450dae, 0x216f2df8, 0x31aa10a2, 0x4cbb4124, 0x27fb8ab5, 0xae7a0106,
-0xca925ede, 0x9017819f, 0xaa030a09, 0x13580386, 0x65233376, 0xcd137d6c, 0xdd2fd42f, 0xe7d81d19,
-0xe9747bcd, 0x1d7829a1, 0xb1f9f4ec, 0xb0a44cbc, 0x4a86a9ac, 0x2fb9b0fc, 0xa865eb0b, 0x97f2f202,
-0x510457dc, 0x9c04cf59, 0x3c8f43b5, 0xbc5978c2, 0x9243853a, 0x16a79f01, 0x1c42b7ba, 0x8b6a55d4,
-0xfac9d6e5, 0x230714f8, 0x68e7e4f0, 0x87b35e29, 0x51899c06, 0xf5297317, 0x9102eaef, 0xd9ac5d50,
-0x5d5f45e4, 0xdbd8e13f, 0xba167f6f, 0x4269e679, 0x1c0d86ae, 0xa7f88ad4, 0x9fcb6d58, 0x5ff50b14,
-0x6f9d6f4a, 0x393c4e1e, 0xd9e4258b, 0xe7196b8e, 0xeeed71c4, 0xb6db404e, 0x431aacc7, 0x38204d64,
-0x7fb6c142, 0x964580c8, 0x06ac166b, 0x11525d6c, 0x8e7afc49, 0x3b72cccf, 0x750dc09b, 0x0f656b18,
-0x1a6ca55d, 0xc59bea8b, 0x6e1b34df, 0xceb07a52, 0x7ae492fb, 0x56432898, 0xeb9cb88f, 0xcbb3f209,
-0x0e8c5721, 0xae24861a, 0xd225b885, 0xfaee35ea, 0x48908007, 0xe7441205, 0x7e2f8614, 0x0722bcab,
-0xd380c315, 0x9a2e3a8e, 0x15e2d981, 0x7df6a77e, 0xb87d864c, 0x2f0f24ec, 0x24e9a7be, 0xf14ee690,
-0x731655aa, 0x90b79802, 0x0b827087, 0x3a05efb6, 0xaaa9c34b, 0xe3b8e168, 0x15b8ba0c, 0x52781e24,
-0x49c69cde, 0xc159a8ef, 0x90880b6c, 0xd3c5e9c3, 0x7f801f94, 0xabc7e98c, 0xc4063b5c, 0x1da73a1c,
-0xaa1aa595, 0x50777770, 0xb3536d3f, 0x853c25d2, 0x4314a071, 0x364936a7, 0x0d495d15, 0x13688144,
-0x35bfb42d, 0x8ad30fa6, 0x0a7dc879, 0xbe956435, 0x7499caec, 0xedcc27d9, 0x312291ba, 0x6d358681,
-0xf7bd09c7, 0x52c5cc59, 0xf0c2b520, 0xca9136cc, 0xff0504de, 0x0e0e5969, 0x9d84491e, 0x7fd46203,
-0x7e50f755, 0x29fd1c8e, 0xa80c9ef6, 0xafc8a98f, 0xc76c02c6, 0xe2c25665, 0x36a1a53c, 0x29e749f8,
-0xf1297e2a, 0x4469abac, 0x3d9a4fe5, 0x19a431c8, 0xdbd4b37c, 0x092fea0a, 0xb06f9333, 0xf3b07ef9,
-0x4638f5fc, 0x61fe4c3c, 0xc1f6f1dd, 0x37254b73, 0xf9953e18, 0x47df1505, 0x532c74f8, 0xc711c197,
-0x96488578, 0xa46aabd1, 0x0d797f38, 0x9fe94ac1, 0x8fa81f8c, 0x47dd5b29, 0xc812103f, 0xb80eb034,
-0x469a9151, 0xf3e9eb69, 0x311863a1, 0xc4a2defc, 0xb7f16fca, 0x0d9ed944, 0x2d01ce93, 0xace35079,
-0x99d68545, 0xbd569429, 0xdd7b1489, 0x36c7eabe, 0xa30ea606, 0x4dfc7e3d, 0xf683ee84, 0xaa4f7938,
-0x08a1bf82, 0x5a749c6f, 0xd3d92aff, 0xe50aaea7, 0xcd5a128a, 0x6959cfe6, 0x6ee073f7, 0xd30eb46d,
-0x33e89d4b, 0x5fae4e6e, 0x1a92475e, 0x639f1ec2, 0x92af5dc5, 0x602c4326, 0x630d0385, 0x0cfa82d4,
-0x5b116c5e, 0x23bf6eb9, 0x4730ac1f, 0xe8d24fab, 0xc8182b7c, 0x1b966bb4, 0x36b8c259, 0xf2bb8fae,
-0x8c4aa6d6, 0xab2898d2, 0x919b97a3, 0x54f87ad5, 0x5bfa3fc8, 0xabd178d5, 0xc18e2b15, 0x341da612,
-0xcaf65e21, 0xb7e603b3, 0x8ceaf425, 0xd78d63e1, 0x3718c1f0, 0x76ca1592, 0xac25c4d9, 0xa6222c2a,
-0x24b247d3, 0x3f58f379, 0xb837815d, 0xe745d4b2, 0x92950e80, 0x86ca4eb9, 0x3cbeed18, 0xecfe82a6,
-0xc3f83512, 0xc513b35f, 0xd0f4faef, 0x885d2853, 0x81f64a13, 0x1b5819ca, 0xf01195ef, 0x712de6de,
-0xeee45337, 0xd15f243f, 0x462d62a6, 0xbef8d660, 0xc2f5defe, 0x0d75e6b9, 0x14138636, 0x0964b4aa,
-0x5cc1168c, 0xa91e27cc, 0x4a99bff2, 0x969690fd, 0xd3fbae0a, 0x4b8b8622, 0x8e7c3f0c, 0x6a29f452,
-0x63d9af77, 0xb2a0da57, 0x17cecfe2, 0x6a23ab53, 0x1cf16062, 0xc11437cb, 0x7a90afcd, 0x2d7d6885,
-0xa342a3f9, 0xfb721c8a, 0x1cef3b85, 0x31fa22fb, 0x9ca03b8f, 0xb4cd091e, 0x41bfa6e4, 0xc50654ce,
-0xe989c72e, 0x70ed1bd5, 0x65dcf8b9, 0xf975e03b, 0x83846c7f, 0x2d64df9a, 0xe0fa64c4, 0x55a59e2e,
-0x7c1cd805, 0xe4106601, 0xe4cfe66f, 0xdb619a90, 0xe1e82c36, 0x15e3a81d, 0xaf5e65c4, 0x62478a5f,
-0x54ba0f13, 0x280bf828, 0x08146c9f, 0x9061eb0c, 0xb7d087da, 0xca8ec7f9, 0xfffbba00, 0x2c66fa2d,
-0x147091bb, 0xe5c88f41, 0x73688700, 0x563de9df, 0x060ecf84, 0xd81fb126, 0x5fcc8492, 0xeaf5bec2,
-0xe3b87141, 0x913bf72d, 0xee26dc27, 0x9892661f, 0xc692d608, 0xe568e72f, 0xa4064e6d, 0xb8fd8521,
-0xc820a681, 0xed760e59, 0x537e643c, 0x2f1e8b6e, 0xc22fb22b, 0x3ee79150, 0xe4569d0f, 0x88e0f198,
-0x536cf47a, 0xf785c490, 0x37a436d6, 0x83523a0f, 0xafee1a98, 0x0751cc3d, 0x873b17bc, 0x30d66204,
-0x52c364d1, 0x06c799a4, 0xa39faa81, 0x382372b4, 0x8f0e0840, 0xd83be9c6, 0xe22f8b3e, 0xc0bcbabd,
-0x092e749c, 0x99d5ee44, 0x1f8ff9c7, 0xa10be901, 0x996c8f44, 0x73403fee, 0x75577ddd, 0x67d738b8,
-0x4a2de995, 0x41bd8f63, 0xde90ec81, 0xda792b54, 0xde07bb2f, 0xadd68686, 0xc67e72f0, 0x90a6bb5f,
-0x256f5cf0, 0x7a4f610a, 0xc1daa775, 0xa4361d79, 0x255a0e15, 0x600b72df, 0xbdcb5dcd, 0x33268e04,
-0xe56abceb, 0x09dbd8d5, 0x203c46e5, 0xf3544ba7, 0x4c2a17d3, 0xc9d82142, 0xb487156b, 0x657849fc,
-0x4547daf3, 0x8ba9d2cb, 0x2a4da80b, 0x6092df55, 0x2c907811, 0xb42e20d1, 0x54895d7a, 0xb3969880,
-0x8deeaa17, 0x62ed8dcd, 0x55cfaf0f, 0x19a37877, 0xa3b4f04a, 0x61abccf4, 0xef57e114, 0xddf89a01,
-0x50602500, 0x5e41da45, 0xdf12dc8c, 0x2c92b674, 0x77441a7a, 0x04686a60, 0x0967ed47, 0x5eb735a8,
-0x273279ee, 0xa8e1a708, 0x33586d0f, 0x9c9d979c, 0x54ead8d8, 0x5b5fb4d0, 0x22c6d245, 0xc62cd238,
-0x25a3f73c, 0x1cfd7438, 0x5efe3268, 0xacd9b70c, 0xea5db41b, 0x1fb68916, 0x53653dfe, 0x409a5e0d,
-0x8a38bad6, 0x025432a8, 0x39bea800, 0xdf61f30c, 0xd397f214, 0xe956b4ff, 0x84684518, 0xb6f8de1f,
-0x9367ea6a, 0x4245736e, 0xc9062113, 0x18ba22aa, 0x90cc43df, 0xf625f69b, 0xe66f956d, 0x66afc7fa,
-0xad107a2b, 0x0d7d7eca, 0xa014d204, 0x3778955b, 0x6375fa1d, 0x4260030c, 0xdfb0c8c9, 0x99336916,
-0xcf4784cf, 0xaea80610, 0xdee57929, 0x85c8d1ec, 0xf6cfb398, 0xf46e825f, 0x96233ac4, 0x5a7407d3,
-0x5e904638, 0x3d0c5492, 0xc47c1195, 0x5c36c467, 0x2585f750, 0x92e6c095, 0x8595fb25, 0xfa440a87,
-0x40aca851, 0xd6682543, 0xab837530, 0x925c06fa, 0x8cc94555, 0xd6e9c8c3, 0xad34d9ad, 0x9e3307d0,
-0x9b03d8fb, 0x1623c9c7, 0x0a9869a2, 0x917950bf, 0x5acee365, 0xf931d78f, 0x2a05d5ac, 0xd7bdcdaa,
-0x02da1d57, 0xa7433e6f, 0xecb87ba4, 0xfc7e472c, 0xc9b037a7, 0x3e55a0ab, 0x63452fc6, 0x35f268e9,
-0x038fb8c6, 0xad39d13e, 0xdd86bcce, 0xa5221321, 0x6f5625c6, 0xfd8fa734, 0x607a7198, 0xb3a612bc,
-0x72d374c4, 0xeea8a6a2, 0x7182d16e, 0xd4c2f825, 0x8f464fb5, 0x3e3cfcae, 0x95fed6de, 0x54388289,
-0x311fa65e, 0xeb32e476, 0x70ba57e9, 0xa680af8d, 0x8ee3bc76, 0x63937a78, 0x44f9e702, 0x260c543e,
-0x05025436, 0x66aaa09f, 0x31a8c7a3, 0xd07221ce, 0x2fb029bf, 0x7ab1ea02, 0xa4c8f135, 0x7ec9d92b,
-0x85f0df32, 0x56a1045c, 0x4ac35e5d, 0xec65688b, 0xf77bf1eb, 0x4b7f32df, 0xa74f7e01, 0x5176b859,
-0xb5bc91f6, 0x3d855b7c, 0x9a653ee5, 0xfbaae146, 0xfcfd774b, 0x50db5778, 0xf93d2dc6, 0x4c9d9cd9,
-0xe37ea181, 0x157c3440, 0x7b7daec7, 0xc0efe691, 0xfca326e4, 0x082547b4, 0x3a15509b, 0x1fe04ce4,
-0x5a663583, 0x2bbffa0a, 0xc15a7130, 0x35d23de0, 0xd0a3a653, 0x3ca723bd, 0x65fa5082, 0xfaaa8a0c,
-0x85c46170, 0x0ead4b45, 0xcc9fabf6, 0x955d5639, 0x907a66fd, 0x64d698e8, 0x263992c4, 0x74324382,
-0xeeda21cf, 0x3c0cb894, 0xfe5b7887, 0x9e717c6a, 0x2031935f, 0x40a652cd, 0x26b98c09, 0xedeb5633,
-0xc8ce1b07, 0x4aca2062, 0x1e45534b, 0x63eea923, 0x185517a8, 0x8223098a, 0x950ff2fa, 0x2102a115,
-0x50239569, 0x1d53db9e, 0xaa503faf, 0x9e1f8df0, 0x922fec7a, 0x5ca619fe, 0x53963f96, 0x6bc46df4,
-0xfff37193, 0xd3832aaa, 0x9a61c34f, 0x26335c54, 0x7b98cd53, 0x3dfe8b1a, 0xc874776e, 0x421653b0,
-0x31c27308, 0xce7dcb31, 0x3d3014f1, 0x83ae9840, 0x0ff41a46, 0xf29857d2, 0x6ed74eea, 0xc1a37d26,
-0xc1f0b97a, 0x55fde681, 0xdcc2c6bc, 0xf4df3955, 0xe6e0b290, 0x852fe14a, 0x0d70d247, 0x64f9c7ab,
-0xc1f61a5c, 0xa78f3f8a, 0x9b932b07, 0xe09f1837, 0x35038156, 0xfcd88fe6, 0x71139afc, 0x7ecd2f6b,
-0x9842716b, 0x2383fb1f, 0x8e57ee9f, 0xcdd21c66, 0xa4bb112d, 0x181ed042, 0x229e0b36, 0xea50de6a,
-0xd1c91f2e, 0xd5aebaed, 0xeb56cdce, 0x88295aba, 0xd6284235, 0xee8b49b9, 0xf291a653, 0xeec96e52,
-0xc0640ddc, 0x344494bb, 0x27ceaf58, 0xb667c9ce, 0x52d6d025, 0x1e9af30e, 0x0baad63c, 0xe022d6d6,
-0x8d9df6ee, 0xf0f7bbc7, 0x737da614, 0x2638ebb6, 0x2e98a490, 0x395233e0, 0x9e896d00, 0xfc58e8fb,
-0xadfbc198, 0x3fd444ec, 0x488e1747, 0x7ae53a84, 0xce501a60, 0x00db331f, 0x41201501, 0xdb9036c6,
-0x14129c00, 0x33fed87a, 0xeca6c45b, 0x18e3dbc7, 0x0f5516e2, 0x613feeb8, 0x19ecd7cd, 0x7d5ce768,
-0xd957a6e0, 0xd5ca7df3, 0x29731c6e, 0xb3ca1658, 0x52a34129, 0x0010c824, 0x31e193ce, 0x51e221b9,
-0x755ad012, 0x5c19c7ba, 0xc7eff482, 0xf83e7e2f, 0x351cba69, 0x3aafdd19, 0x7fe9230c, 0xe2ef2057,
-0xb79a1b2c, 0x179b3ac3, 0xc8960260, 0x5b042d46, 0xaa7831ab, 0xff5f71b2, 0x1ccd0828, 0x016d91fa,
-0x7ca2c01e, 0x9268c541, 0x4d5a23a9, 0xc8825ced, 0xc493fb8d, 0xfd9de9ef, 0x5cd37515, 0x8ef8719a,
-0x1cfd2ce6, 0x034b4bd0, 0x7c7d6dbf, 0x4dade7cf, 0xf756d66b, 0xeb09c8f1, 0xdd3dec3b, 0xf0f77453,
-0xce2f6db8, 0x503b808b, 0x47f5d0cc, 0x9874ab25, 0x5202906b, 0x5203f404, 0xb06dc274, 0x7a86589b,
-0xe0a37226, 0x9beed89a, 0xb3e9be7e, 0xd9e99114, 0xc4493b6a, 0x91a063bd, 0x72fe0dbf, 0x2f683bc5,
-0xf2d31649, 0x77b2a0cc, 0x82bbaae8, 0x317b62d3, 0xe6550746, 0xa1eaf358, 0xf85724e1, 0x40f8e355,
-0x0fcb960f, 0x99e6dd6d, 0x1cee1cbf, 0x6a20ebdc, 0x6d3e25d4, 0xa0441c54, 0x17871f41, 0xee6d4a31,
-0x0caab3bd, 0xa3aa58ca, 0x5388acee, 0x5ff98d8a, 0x10197fbd, 0xa079d2b4, 0x6fab96f5, 0x2a898682,
-0xb52e442e, 0xebd5703b, 0x3ff76af1, 0x5f1b5fbe, 0x0ca5fe46, 0x297e6c5c, 0xadb3981f, 0x4e8d07ae,
-0x11f9de0b, 0xcfdd0afc, 0x99efd88f, 0x42040ec3, 0x0fe15653, 0x074fd3a8, 0xb9b43eed, 0x1c521e70
+PRIVATE uint32_t sha256_one_char[8 * 256] = {
+	0xA9D34CC5,0xB40EA40F,0xD7C2C05E,0xB7854398,0xBF6E6169,0x1C4E0266,0x658DC95B,0x04498F6C,
+	0x8866B527,0x3034AEAB,0xA0264B6F,0xD463D9D7,0x0526A0BB,0x51507E5B,0xB8490891,0x47409EAA,
+	0x8C73CCEA,0xECA461B2,0xD69FE65A,0xF8BFECB2,0x11F9E9F9,0x99B3C3F8,0x2BF310ED,0x0FB71FBB,
+	0x8C1F052D,0xA0915880,0x1C1CB6AA,0xE7034348,0xCDE1A0FF,0x3A937B4E,0xF23280EF,0x6B1B1964,
+	0xB90AB6F1,0x5F0D3C76,0x28D27338,0xC4BE8F59,0x41977F8C,0xC4439B7A,0x431CC2F8,0x612941FF,
+	0x2CDFB78B,0x91CBFD3A,0x348D2961,0x58169921,0x5E5BA2EE,0x9591F14F,0x6A672BF1,0xA6BFDDA1,
+	0x293C2C31,0x8FF47005,0xBBA888E4,0x13C8C997,0x06C3617B,0x7F0F71F1,0xD9196DDB,0x991C5646,
+	0xD4E0D0B8,0x6EBF8D18,0x5D7C5515,0x51A09E69,0xE8B04E62,0x33321951,0x5E43E574,0x52DD7CF7,
+	0xB7AAD1B6,0xF2828342,0x7ADED40D,0x1D4BA982,0x295CFAF2,0xC7038148,0x91A4D96D,0x14950BFF,
+	0x35ACDF65,0xAB878814,0x7A6612F6,0x311E4014,0x8E02C392,0x8DB2426C,0x6C00E11B,0xD81D2F8C,
+	0x34EB4E3F,0x0A5D4137,0x507C0AFF,0xD513B654,0xD1E9D6B2,0xC7F2F263,0xD00BBE5A,0xA9D5D0FE,
+	0x65F0F6E4,0x651828C0,0x6B5F1651,0x47C77B77,0xF9A467E9,0x763A3769,0xF529F986,0xA7D47B16,
+	0x422D4B28,0xACE71780,0x4012AF00,0x4CCED208,0x715824DA,0x2AEE7A13,0x967CF9DE,0xF2952A56,
+	0x6CA4CBA2,0x94F2D221,0x364CDEB1,0x5D97C6F7,0x6E7DDD2A,0x5FDA3D5A,0xD38AE083,0x57BD05B4,
+	0x619C5E9A,0x2EDEAA4C,0xDA3BCAC4,0x014FA1D7,0x23DB4969,0xFD00C5A8,0xEAD2630A,0x3CDCA057,
+	0xBA6FA118,0x013E1F53,0x59CA3CDF,0x8671F0A1,0x6081F185,0xA5EAB71C,0x72B70012,0x00BCCEFE,
+	0xB9BD3607,0xA2006BDC,0x94947E12,0xCB8642C2,0x8EC194DC,0xCA7102D7,0x2959588C,0x62517F08,
+	0x8EA1BE74,0xF214A648,0xB3C32420,0xFDC47A0F,0x1C048924,0x78C52D95,0xA558CF0A,0xC3A960E2,
+	0xB2B36A67,0x4A10963F,0x13C94C56,0x0DDBA4C7,0xA940B85D,0x9138A6EB,0x5737E593,0x7F62032C,
+	0xC0E4301D,0x22D5539F,0x3A1FF093,0x35C11B16,0x6C266266,0x57BF994D,0x39D4C45B,0x9E687AB3,
+	0x44A8AA20,0xE96A7544,0xDB6E561F,0xBBA9B6EE,0xFE22B009,0x04AE3979,0x8736E0FD,0x9CC85472,
+	0x661065C1,0xC2EEB008,0xF3519277,0xA77F8F15,0x421BDE16,0x1B6509F4,0x1B56FEF5,0x6C9529DA,
+	0x42513B32,0xCCFC3AF5,0xD7458F63,0x583D2E09,0x502ED7E2,0x798FCF62,0x8F2D15DD,0x265A3E98,
+	0xA261C606,0xD79D87D1,0x54A26B9B,0xD766CCC0,0x07625759,0x2F793BFA,0xDDE501BB,0x075BD65B,
+	0x56A080B3,0x9EC96F08,0xC67C44CF,0x1945FD37,0x0146925E,0x152A08EC,0xF57A3B46,0x493DECFF,
+	0x8496E58F,0xECF16176,0x271BAE39,0xD40DEA89,0x9275A7EC,0xFFB6AC6E,0x23ECC261,0x6BD52C32,
+	0x524F1EA7,0x1D32EB96,0x1E702FDD,0xE03D1C39,0x21BA8809,0x286A52CA,0x14C1D112,0x284B89FB,
+	0xC77DA159,0x50F8E913,0xD3249533,0xF1C43EC7,0x11F6729A,0xE8F96309,0xA3ED21D1,0xC7A9561D,
+	0x787B5008,0x4698B485,0xC52E0C03,0xB1226447,0xF2E704B8,0x44A3E1AF,0xE7BFA829,0xDFEACEB8,
+	0xEDA0AB9F,0x18871BA6,0x6467EA05,0xBA36A7F6,0x2D9DAC82,0x153A805D,0x98E15CA4,0x2B505EBE,
+	0xF5AFDC9F,0xEBD1EC2C,0xD8BEE125,0xF0CEBABB,0x1E3A10DB,0x1C319B84,0x6D1FBF28,0xC9D3F2A6,
+	0x317E066B,0x1B9A914E,0xDC7FDB9C,0x69ED9FD0,0xB18FBD8D,0xD90BAA2B,0xEFD57109,0x77538D35,
+	0x787FA7DA,0x59639CCB,0x168A5DB2,0x3F040D6F,0xE1BCD212,0x202464A2,0x2F6FF24F,0x1B2F75E0,
+	0x031FCFBC,0x952B074B,0xE62E1B73,0x8DD762E5,0x61B7D8F1,0x6D7B204E,0x47732F81,0x51EC0B64,
+	0x74BA4DFC,0xC5CF8C53,0x21E58D11,0x97B859E9,0xACECC695,0x184D1DD9,0xD50801AC,0xAE2D0905,
+	0xABE23D05,0xD7F6181D,0x98D6B9E9,0x946E058B,0x42D99CE0,0x1EFAFEA1,0xF00C3E7F,0x11D129E7,
+	0x6A389E61,0xA0D656DE,0xE3EABFD6,0x03AA0B46,0x1DCBE6CD,0x9FE27119,0xCD7D4650,0x37490CEC,
+	0x3BCDFF79,0x0F2BFF62,0x7863E902,0x02E6B566,0x522C00FD,0x5BE5074C,0x58F67382,0x696B366D,
+	0x23CC9C15,0x78B791DC,0x87BEFFD4,0xF44B6041,0x16EFA048,0x349A4704,0x533B86FB,0x0C6BF5DE,
+	0xC15722F6,0x0561A0E5,0x83239496,0x66A52382,0xCB95C02D,0xBBFA81B9,0x165D42E3,0xB2E2646E,
+	0x3FADD532,0xFE42858A,0xC413712A,0xAAF4F433,0x120E7379,0x7572D842,0xF34035FF,0x4BB4D07D,
+	0x6620700D,0x3859C299,0x96C9171C,0x965CAC65,0xDEAE7B6A,0xBEE66F1B,0x30D6B419,0x15878870,
+	0x7CB9723D,0xEBFC8073,0x58530E57,0x2399ECF8,0x836CC018,0x38726112,0x9C5DE75E,0xDFCE95B0,
+	0xCE7DA949,0xD4029DBF,0x28964F84,0x6D303F6A,0x1C0EDE3A,0x65657AED,0x45AEC8C1,0xDC7F60B8,
+	0x8CE57656,0x85829FE5,0x54260FC7,0xB2C6A3EF,0xF12B8C3A,0x70CA41AD,0x2D6C0DE8,0xBF63C2DF,
+	0xF9BA7BFC,0x47353E37,0x0CA9F1D4,0x47962E4E,0xC88AA0FF,0x54DF7358,0x2A7F3B33,0xF62855AB,
+	0x0A815CB0,0xE326CF40,0x95FE37C1,0x42DF36E1,0xCAF16D3B,0x4F0F288E,0x177828FD,0x8F5835AE,
+	0x8D8CBA42,0x35AD8B61,0xF0DFBAE2,0x4F62A656,0x9276AACA,0xDBC8AA00,0xF4B3AFD1,0x12BB2D82,
+	0x61A50E23,0x7B9585C6,0xE5254325,0xDE4EE123,0x3B40357C,0x6096C76C,0x47A5FD8F,0xEDCBA9AD,
+	0x00F4BADA,0x0BDB687D,0x97B11512,0x1CB1FB02,0x502DB559,0x13BF25EE,0xA09A7932,0x3EF49330,
+	0x055A4A59,0x743775C7,0x4F43768E,0x60E8468B,0x31870F5E,0xF383644F,0xBAB68CC3,0x2F4A9791,
+	0x3C82CA9C,0xFB8D5F52,0x245F6792,0xA680F1C3,0xD8281103,0xDEF98D83,0x4487A49C,0x2752E0F2,
+	0x20E94E63,0x358D5ACF,0xF2855933,0x57B49142,0xC8B04AFE,0x7D1AC0E2,0x6BD15851,0xF945612F,
+	0x36D71327,0xFA107867,0x589AC42F,0x03153A42,0x74A801E3,0x6E751EF3,0x9F43B5AA,0x05B9DC42,
+	0x77368310,0xECC26D04,0x68A8A310,0xB945F67A,0x7DA6DD93,0xAF1FC83C,0xDD77A83B,0xDB6AD2F0,
+	0xDA610ABD,0xD7AE9F26,0x0DFD49C3,0x9FC89F33,0x866EBCB1,0xE00528F1,0x0623009E,0x0C71B805,
+	0x29375795,0xFF4A9D67,0xE2E974BA,0x62761BE0,0xF86EAAF3,0xFEAB9672,0xB98B16C4,0x20A47BAA,
+	0x7072FE18,0x3DA79D4A,0xB667E350,0xB3B7A37B,0xF9B79E98,0x122E1FE5,0xCF801E18,0xF1E34523,
+	0xBF56255D,0x81FD63D6,0xC3FAED9C,0x03D39303,0x9626749E,0x0AB94C32,0xE2459C31,0xA0AADA4B,
+	0x6930C3F1,0x577CD80C,0xE888E78A,0x14FD1522,0x00FCAC74,0xED2131F4,0x0F84A6D9,0x22B6BFA9,
+	0x1DB3542A,0x8B5CB8F1,0x1CE32835,0xB13E141C,0x24178F13,0xBE806C09,0xBBD274FA,0xEBD0CD3D,
+	0x439BF08E,0xB5251554,0xF1B91FDF,0x43B8BF5F,0x1E11C46B,0xFF136358,0x344C5E19,0xA405A54B,
+	0x6AE4DE37,0xA154F23B,0xFBA97273,0x6A222D94,0xFF57D6EB,0x8ABA76F5,0x3426D68A,0x0AB3B774,
+	0x3E5E0D1D,0xB4619DA3,0x20031BF0,0x4A750A4A,0x8F1D33FB,0xDA3E8F4A,0x9CB2055A,0x3313517E,
+	0x93088D36,0x5311833E,0xDCDCF9F5,0x7648B6F5,0xCD672966,0x0354E72D,0x0A4717EC,0xFD9915A0,
+	0x9EFEA9C4,0x7B75B0D0,0x5B4EFBA4,0x793CC5C6,0x0AAE6678,0xA9750495,0xCF6F40DD,0xCB724D1E,
+	0x71225F91,0x337BB6B5,0xD0E644B1,0xDEE2EC19,0xECBFF905,0x15F4B15A,0x7D299430,0xC86E512A,
+	0x50FA7790,0xD08704F4,0x187AF7CD,0xF73F15F4,0xD26C5373,0x27B932CD,0xFDB5C2BA,0x0867B100,
+	0xCE350060,0xD04AA41B,0xB3943B47,0x1D5CBDA7,0x784D036C,0xFC94883B,0xBA962841,0x8C36D283,
+	0x241F73AB,0x5ABBB7D1,0x9646F6E6,0xF2569058,0x0E671A76,0x1F956CB7,0x0283DEED,0xC3FC8EE7,
+	0x5584581C,0x68D73BDD,0x198988A8,0xAA19796B,0x99D44BE7,0x8F644BD9,0x079FFE14,0xA6C3E225,
+	0xF595D37B,0x44EEDAB3,0x5FFB2655,0x659835F0,0x02FDB15B,0x0B5D8706,0x8F65152B,0x15888E9A,
+	0x901C8332,0xDC1F8B99,0x59E05DDB,0xCDA35C11,0x6971B221,0x07FF1417,0x5044C66F,0x3A7472F7,
+	0x8D7A80C2,0x1403D495,0x54AA091F,0x5A2D6845,0x7C8D4B46,0x4041A26C,0x001BC795,0xFA42570E,
+	0x7CB3D93F,0x7BA8F713,0x52670E61,0x245984C5,0xD7A615F7,0x6658F129,0xF4A53C5F,0xDB82C3D7,
+	0x866AA730,0x5A89C5AF,0xF353B9AB,0x23AC597D,0xC5AEDE41,0xCE53AD24,0xCF6217E0,0x68608AE1,
+	0xF2ACF883,0x390893C0,0xF62A2F43,0xF0260878,0x5FD07E4B,0xF55EB430,0x93256130,0x9E098D69,
+	0xB9D3E893,0xA2A90B12,0x3861AEC8,0xF52CC495,0xC2D5B4BD,0xDD80647F,0xA543F4B2,0x5A66E243,
+	0x429E6B8F,0xF48B2E7D,0xC8A0AA43,0x08A6BF7C,0xDE8B168C,0x7043B53A,0x58564C18,0x050097D6,
+	0x97534B9F,0xA2933018,0xC7320482,0x570D2E27,0xA40F4D10,0xA80A6D0A,0x3BEBE91A,0xB3B2AF4C,
+	0x08C7376E,0xCFD0E97B,0xFF6DF31C,0xBFA9A06B,0xC752BECC,0x174C1E4A,0xFF0700B0,0xFF02B94E,
+	0x687FD48F,0xE07564BB,0xAF35B6AD,0x3A18B954,0x7ABC6A11,0xB4706BAD,0xFF65E660,0xF6C9ABF3,
+	0xEDDB4F99,0x479FA542,0xA7A5FF90,0xA0EE739A,0x7AE58CBE,0x46FFD2EF,0xB99A5855,0x900000F9,
+	0x1BB9B73A,0xD29A76F8,0x02474C06,0x7B9D3BF6,0x1A3E58ED,0x1F403403,0xC2B3D878,0xD7CCCD34,
+	0xCDA35B5F,0x3597B8E6,0xE67B3748,0x734CB7B3,0x36468F79,0xC7046A7C,0xD2C933C4,0xC2A2E507,
+	0x5E5CA563,0xCF44D58B,0xAC27007E,0xB46CCACF,0x96F73013,0xFD22289B,0xD8374B97,0x65F28FFF,
+	0xAD020E0B,0x71E852D2,0xE193BC88,0x11D938D7,0x246F4A91,0x1F8D50B5,0xAFB31F7A,0x3386CADC,
+	0x04E88A1C,0x6520E269,0xEFA8DA6D,0xE6F60BB8,0x9314FBD5,0xA4A3743C,0x132C4026,0x30BC1E23,
+	0xCD2EDCD5,0xE3AFE0D6,0x68205816,0xDA969F35,0xE3E289AE,0xEE85A80A,0xBE2A10B2,0xBFD413C7,
+	0x20555DDF,0x94D8034F,0xB16CADF7,0x85153D6F,0x9B378AD5,0x385DB55C,0x8BE8DDE8,0x3A7C0ACA,
+	0xA12C720D,0x660F4F24,0x43217CE0,0xA04ACE80,0x26691A51,0xD5233A2B,0x775F915A,0x529A13EA,
+	0xF31ACA5B,0x280D79D1,0xC203F9B9,0x8F22EABB,0x99B4141F,0x7529BEF1,0x1DBF0EB8,0xE75FD03D,
+	0xFD738A15,0x25E408F7,0x2439ADF5,0x0E59E24B,0xCCFEF2BE,0xC67F0105,0x6C951FD4,0x6D68D807,
+	0xFB0FB0F9,0xCF4CB388,0xD2B170F4,0x66236143,0x8807EC4E,0x138055EA,0x63894A31,0x315611A3,
+	0xD711FDE3,0xC2762C39,0x1808A921,0xCA0083B7,0x9A77BEF6,0x3205639D,0x416DDA9B,0x2B18CCFB,
+	0x368A216B,0x7744E490,0x50733D71,0x3E55FA09,0x2FBAD000,0xA0CCEA2D,0xE7863C95,0x757FC8BC,
+	0xBBAD3A78,0x87C6D7EB,0xB7525D7F,0x0C0F67A6,0x9075446F,0x3AD20758,0xEB4FACB7,0x0E4EDF14,
+	0xB634ACF4,0x908C5863,0x35A56967,0x174515C6,0x7F863D00,0xD417A6B0,0x99FC9DDA,0x3CC865DC,
+	0xADEB0BB7,0x2438A967,0x005FA86A,0x82FD5AFA,0x0179D942,0x643115D2,0xABF01503,0xF6BDD88A,
+	0x627C8CBD,0x3DF35194,0x9456476A,0xC0F47CD8,0xA49C4A9F,0x38B12A44,0x79EE8BF6,0x8585A5D5,
+	0x2A5CA6C6,0x33641A41,0xB7BA5007,0xDB4683A8,0x40D763DD,0x39DAEAD1,0x638BD55E,0xFDCDA823,
+	0x3638A1DE,0xDDBA18BC,0x775497C0,0xE9EDE9A0,0x46E17D71,0x02000D36,0x18AFA1DD,0x8435B731,
+	0xDEFB309D,0x390E6DE1,0x4667C167,0x17EC888C,0x2CDEC071,0x41CABC12,0x6A534ADF,0x0F0C9B6C,
+	0xE68BBA11,0x141B5B4D,0x38B624AF,0xC6A40E89,0x33DF0097,0x124EFA19,0x45291378,0x1A162287,
+	0x28F44E66,0xC01FCF9A,0x65BCBAE0,0xD4E138C1,0x10C0706C,0x5718375D,0x8AA461C6,0xB58BAB49,
+	0x22AD4846,0xA5D72622,0xC6170AD5,0x6547BCAD,0x4E5CB097,0x15BBA0D5,0x99A317FA,0xE6BEDC11,
+	0x8CEE8B39,0xE7F3028D,0x1796CF4E,0x05FE33B9,0xD0F1A5F6,0x4CDC944C,0xEFD59500,0xCC3956E5,
+	0x42C21C4C,0x938466AF,0xBF93EFC4,0xD8E03F96,0xCA516688,0xDB0A6A55,0xF52B6986,0x2F8700CB,
+	0x98B7A1D4,0xC40784DB,0x9F16CACB,0xC314DA32,0x200F3BB6,0x55565817,0xCD5DCAD8,0x3C9E4FA5,
+	0x267DB957,0x220B229A,0x7E9F5927,0x7E84F39D,0xCDBA1F91,0x07D81EDA,0x1D658908,0xD1707BA4,
+	0x97F2B729,0xB9C87530,0x50DA78CF,0xEDFDDDC4,0x9DADD894,0xA53312C3,0xCC2435D7,0xECE992DC,
+	0x51A06107,0xF07208DB,0x836080C7,0xC62D02AC,0xEBAD869F,0xE9C6BA8C,0xB4C5B805,0x6A4B230D,
+	0x6DF62278,0x58623C82,0x03C0833B,0xA591A31A,0xD2BCF861,0xB31BBEDD,0xDAA5D2D2,0xDE58290D,
+	0x912F7C25,0x2B4D3286,0xCB196BEC,0x2D6CD753,0x29EEC655,0x95E9255D,0x7C66A8FB,0x310A5363,
+	0x3C4DE6E5,0x3F660623,0xE61785E7,0x373932C8,0x753EA99C,0x8B4389A1,0x45345607,0x80DB93C0,
+	0x9927FA71,0xE9990BD6,0xC32FC44F,0xEB1903C9,0x88A249AD,0x0E28E4B3,0x200E8363,0x0BC4DEA7,
+	0xB2C59DB1,0x54F83FFF,0x8B44DAD9,0x2EA2F91A,0x9413776E,0x0C10F976,0xCCBD6680,0x6BA377A5,
+	0x04BD6988,0xE1B98EDF,0x19A721AB,0x377BF209,0x0C0BFB3F,0xC2B37928,0xA08893D4,0x8BBF4BB4,
+	0x297D7057,0x4A464F31,0xC448AE1B,0xA92D11A9,0x02059ADD,0xD672662D,0x309CB4A7,0x6A4281BE,
+	0x4BE0EA24,0xB479B520,0x65AEB867,0xFEA3D064,0x999AC287,0xC9956C3A,0x3DAD2B70,0xB55925A9,
+	0x3DE47646,0xA26BA456,0x26E6FAC6,0xD4C25295,0xC94DC89F,0x73FFC37F,0xE2A1AD6C,0x617728D3,
+	0xD03A6F20,0xB741AEA2,0xDBED7BA7,0x3A3F0ED5,0x095AB976,0xEA2F7898,0x7BB3F706,0x7B28D50C,
+	0x5660643C,0x87D682CC,0x0229ACB8,0x22A05582,0xD819B664,0x8D49AABF,0xB08AAB1A,0xA655586B,
+	0xF167600C,0x023551EE,0x7B0080EF,0x60251DB0,0xFB59E2FF,0xDA209242,0x4C391940,0xF80392CD,
+	0xD0C024C2,0x3064F276,0xA80E89AC,0x9561DC29,0xC42CD07F,0x66A801C7,0x80E68B66,0xDEACCB65,
+	0x854F7723,0xFBB353DB,0x62DDA745,0x5DCD69DA,0xB0E6B221,0xDD8B9625,0x730934E8,0x7C3B0EDF,
+	0xE6A46C2A,0x09392564,0x656F8E64,0xC4ABA2A4,0xF6D40C8D,0xC3AA5925,0x2A776965,0x6AC7BFE7,
+	0x9EDC2D84,0x42DAEA29,0x3C38F1ED,0x75D7537C,0x718B5996,0xB382E614,0x341293F6,0x30D4969C,
+	0x1C8D37B1,0x4C5507EA,0x34655A40,0x53DF034E,0xD5D279A6,0xB7D5200C,0xB82CD5EB,0xD9D5DC0A,
+	0xD79106EE,0x01968417,0x22DDAF3D,0xB807952A,0x2BF3C5AD,0x163698B5,0x707FF7D4,0x00DBDE63,
+	0x1BAEB275,0x813C48B5,0xEE8DDCA5,0x571C35BD,0x023B050B,0x5CC0D792,0x9748F20B,0x99942EF8,
+	0x980A6F08,0x7F889654,0x9468531F,0x0A2A92A7,0xEFDE53A4,0xC75784A8,0xAD11046E,0x838349EB,
+	0x30852C2D,0x9CC94F74,0x418CC095,0xF48DC2EE,0xD134F3D2,0xFEA624A6,0x5A2B8F09,0xEEE757BE,
+	0xBC20DA6A,0x33A5CE00,0x7607D1E2,0x576BE69F,0xAADB07A5,0x2BF7F96C,0x49C3B304,0x747CBEC4,
+	0xE6EED45A,0xAD73664B,0x98B7A678,0x3F4E41E6,0x193D394F,0x207F26D4,0xB20F5920,0x5F9C98C9,
+	0x3AD3F8C5,0x01A13B8B,0x4481F4C2,0x415497BA,0xEA96C286,0xB63BC6EB,0x8032AE08,0xC7E999CA,
+	0x5DC66779,0x6B992FD6,0xCE9E5037,0xBDB78F58,0x41E92A8F,0xFDAE4873,0x7A7129C1,0xB21169D9,
+	0x7CE27673,0x484AE2DC,0xDE0B9A7C,0x645B1DB2,0xEF195A94,0x9B6895B8,0x7DFEE290,0x25CDD7C9,
+	0xFC9C5412,0x6D036B75,0xDE9DE836,0xFA492EAA,0x9CDE6306,0x03BB0532,0x12106395,0x7E4DCCCD,
+	0x25537502,0xA2C9D478,0x762108AA,0xA6782A21,0x7397D8A6,0x2A6BD4FA,0x3C6A3D0B,0xE7E92696,
+	0xDE5EF639,0x79D1A7D9,0x3D9819F0,0x0619C03B,0x5FC6B565,0x648CCD33,0x3EF309F9,0x559A78F4,
+	0x3D1DFBA7,0x71162E9A,0xD53E8781,0xC50044FB,0xE873A1F4,0xB0858C4B,0xEEF9DB9A,0x3C637E72,
+	0x6F250DAF,0xC1CB4111,0x7738A7DB,0xD9D20F06,0x757ACB65,0x8C9F109E,0x8DE4E70E,0x5D3E0B90,
+	0x59FCAD8B,0x9FB163F1,0xF2223F1A,0x48213643,0x7BC8FB93,0xEBDA1191,0x49285414,0x1E005108,
+	0x95A3028A,0x94360053,0x61569C95,0xAB489C89,0x2C39A5CC,0x2B109ADE,0xCE6AE59E,0xFC767B1B,
+	0xFE2735E3,0x0160C575,0x8C4717D1,0xF4E8C9A2,0x05B3017A,0x023851B4,0x65434362,0x933005E1,
+	0x3983869D,0xC67EF8E4,0xE7BC2C4A,0x76B74CE6,0x23517D64,0xEA2FBB96,0x3B4B094F,0xD4C545DE,
+	0x5EFB151C,0x0EAAD0BE,0x82D2E54B,0xF7F3175E,0x7FB23E6A,0xA2131C0B,0xA8C0A612,0xA0EF9D24,
+	0x5F60CE35,0x90DBFD93,0x428DD144,0x8C42B364,0x2CB80A7C,0xEF306A21,0x32AAA4A1,0xB334E500,
+	0x818FAACE,0xAA4C64DC,0x73FAA6DA,0x70E4AA2A,0x60597B4C,0xDCA739BE,0x398C0A31,0xDE46BC58,
+	0x4BA590D1,0xEC4EE9B6,0xB6C395C4,0xA78B2892,0x3467907E,0x1F7F05E7,0x7063B941,0xEC249D38,
+	0x0B53A797,0x69DF0F8A,0xD5C03B8B,0xBF80071B,0x5854EAA4,0x07025CF6,0x5A6FBD41,0x514BF69F,
+	0xF451D0AC,0x4B15D5A0,0xED6C9FE3,0x2B814C0C,0x660DBB4D,0xD34B4B7E,0x904E90EF,0xC7BE5425,
+	0xEDD50356,0xC3251157,0xCA65E921,0xABD3DDA5,0xD107EE66,0x77382A98,0xF1E972E5,0x638F4A9A,
+	0xEF65C20F,0xA22C4C5C,0x2A44BAF7,0x8A3DC37A,0xC5B79304,0xC692775E,0xA816C745,0x5B3B5EAE,
+	0x454CDCF4,0x55489A7A,0xCEA78207,0x1AC739DF,0x140B1D90,0xEAFC331E,0xE7EC19EA,0x4D906266,
+	0x01F892CB,0xA1BCF7C1,0xD9B61DDA,0xFFAFD217,0x8BFD6096,0x4F1D69A1,0xD689664F,0x9E99A724,
+	0x2CB44AB6,0x7BC6443D,0xA860BA8F,0x927BC6AF,0x98A1AAF2,0x8204401A,0x67C6DBD4,0xA19E7266,
+	0x95AFDE1A,0xF23C45E9,0xFC29FDCF,0x32DA17D0,0x8F346B20,0xC2F36C3E,0x8A034280,0x6D1FC649,
+	0xBB7C5B99,0x4282619D,0xF05BEE16,0x5A4CD051,0x8C7877EC,0x0ECB339B,0x41689D73,0xE5092CE7,
+	0x4454B7C0,0x29E57FB2,0xF44FD75D,0x89D9929C,0xA5D31D5E,0x5398B048,0x2BFE0289,0x76BFF6EB,
+	0xD46D144C,0xB917A6D7,0xB895D528,0xED988A4E,0xB7AFEFDD,0x4DEE4C69,0x560CCC74,0xE37049F0,
+	0xAE0E6FB9,0x6A4A9061,0x9890C060,0x0EF51D7F,0x260E48EA,0x6C9A289D,0x7849A74E,0x5E96EEE2,
+	0xB52FC228,0x7B4C9DB5,0xBC925ED5,0x3C15B90E,0xDEC489DD,0x63E60772,0x8DDD1AC6,0x5AD1AD24,
+	0x38E65D44,0x08996B89,0x1B450DAE,0x216F2DF8,0x31AA10A2,0x4CBB4124,0x27FB8AB5,0x8D0AD30E,
+	0xCA925EDE,0x9017819F,0xAA030A09,0x13580386,0x65233376,0xCD137D6C,0xDD2FD42F,0xD4801993,
+	0xE9747BCD,0x1D7829A1,0xB1F9F4EC,0xB0A44CBC,0x4A86A9AC,0x2FB9B0FC,0xA865EB0B,0xE74EA546,
+	0x510457DC,0x9C04CF59,0x3C8F43B5,0xBC5978C2,0x9243853A,0x16A79F01,0x1C42B7BA,0xCF10DD12,
+	0xFAC9D6E5,0x230714F8,0x68E7E4F0,0x87B35E29,0x51899C06,0xF5297317,0x9102EAEF,0x51F8FF27,
+	0x5D5F45E4,0xDBD8E13F,0xBA167F6F,0x4269E679,0x1C0D86AE,0xA7F88AD4,0x9FCB6D58,0x1D8B249B,
+	0x6F9D6F4A,0x393C4E1E,0xD9E4258B,0xE7196B8E,0xEEED71C4,0xB6DB404E,0x431AACC7,0x5106E1D6,
+	0x7FB6C142,0x964580C8,0x06AC166B,0x11525D6C,0x8E7AFC49,0x3B72CCCF,0x750DC09B,0xFE130DAC,
+	0x1A6CA55D,0xC59BEA8B,0x6E1B34DF,0xCEB07A52,0x7AE492FB,0x56432898,0xEB9CB88F,0xFD0377B7,
+	0x0E8C5721,0xAE24861A,0xD225B885,0xFAEE35EA,0x48908007,0xE7441205,0x7E2F8614,0x0C3486C1,
+	0xD380C315,0x9A2E3A8E,0x15E2D981,0x7DF6A77E,0xB87D864C,0x2F0F24EC,0x24E9A7BE,0x73583F12,
+	0x731655AA,0x90B79802,0x0B827087,0x3A05EFB6,0xAAA9C34B,0xE3B8E168,0x15B8BA0C,0x18722E6E,
+	0x49C69CDE,0xC159A8EF,0x90880B6C,0xD3C5E9C3,0x7F801F94,0xABC7E98C,0xC4063B5C,0x49E15059,
+	0xAA1AA595,0x50777770,0xB3536D3F,0x853C25D2,0x4314A071,0x364936A7,0x0D495D15,0x8E2C5B72,
+	0x35BFB42D,0x8AD30FA6,0x0A7DC879,0xBE956435,0x7499CAEC,0xEDCC27D9,0x312291BA,0xAEA0224C,
+	0xF7BD09C7,0x52C5CC59,0xF0C2B520,0xCA9136CC,0xFF0504DE,0x0E0E5969,0x9D84491E,0xB5432B37,
+	0x7E50F755,0x29FD1C8E,0xA80C9EF6,0xAFC8A98F,0xC76C02C6,0xE2C25665,0x36A1A53C,0x7A1EA069,
+	0xF1297E2A,0x4469ABAC,0x3D9A4FE5,0x19A431C8,0xDBD4B37C,0x092FEA0A,0xB06F9333,0xDA0C4D31,
+	0x4638F5FC,0x61FE4C3C,0xC1F6F1DD,0x37254B73,0xF9953E18,0x47DF1505,0x532C74F8,0x8FEC7624,
+	0x96488578,0xA46AABD1,0x0D797F38,0x9FE94AC1,0x8FA81F8C,0x47DD5B29,0xC812103F,0x18256573,
+	0x469A9151,0xF3E9EB69,0x311863A1,0xC4A2DEFC,0xB7F16FCA,0x0D9ED944,0x2D01CE93,0xE840717D,
+	0x99D68545,0xBD569429,0xDD7B1489,0x36C7EABE,0xA30EA606,0x4DFC7E3D,0xF683EE84,0x73878E7A,
+	0x08A1BF82,0x5A749C6F,0xD3D92AFF,0xE50AAEA7,0xCD5A128A,0x6959CFE6,0x6EE073F7,0xEE0405C6,
+	0x33E89D4B,0x5FAE4E6E,0x1A92475E,0x639F1EC2,0x92AF5DC5,0x602C4326,0x630D0385,0xA95B6412,
+	0x5B116C5E,0x23BF6EB9,0x4730AC1F,0xE8D24FAB,0xC8182B7C,0x1B966BB4,0x36B8C259,0x09E94003,
+	0x8C4AA6D6,0xAB2898D2,0x919B97A3,0x54F87AD5,0x5BFA3FC8,0xABD178D5,0xC18E2B15,0xDF252B3D,
+	0xCAF65E21,0xB7E603B3,0x8CEAF425,0xD78D63E1,0x3718C1F0,0x76CA1592,0xAC25C4D9,0xCE94C849,
+	0x24B247D3,0x3F58F379,0xB837815D,0xE745D4B2,0x92950E80,0x86CA4EB9,0x3CBEED18,0x05B8ADF4,
+	0xC3F83512,0xC513B35F,0xD0F4FAEF,0x885D2853,0x81F64A13,0x1B5819CA,0xF01195EF,0xE8D0BE8B,
+	0xEEE45337,0xD15F243F,0x462D62A6,0xBEF8D660,0xC2F5DEFE,0x0D75E6B9,0x14138636,0x4A6BDE4A,
+	0x5CC1168C,0xA91E27CC,0x4A99BFF2,0x969690FD,0xD3FBAE0A,0x4B8B8622,0x8E7C3F0C,0xD3936355,
+	0x63D9AF77,0xB2A0DA57,0x17CECFE2,0x6A23AB53,0x1CF16062,0xC11437CB,0x7A90AFCD,0xC359BD32,
+	0xA342A3F9,0xFB721C8A,0x1CEF3B85,0x31FA22FB,0x9CA03B8F,0xB4CD091E,0x41BFA6E4,0x930C31D3,
+	0xE989C72E,0x70ED1BD5,0x65DCF8B9,0xF975E03B,0x83846C7F,0x2D64DF9A,0xE0FA64C4,0x5C2FBDF3,
+	0x7C1CD805,0xE4106601,0xE4CFE66F,0xDB619A90,0xE1E82C36,0x15E3A81D,0xAF5E65C4,0x86E5EFCF,
+	0x54BA0F13,0x280BF828,0x08146C9F,0x9061EB0C,0xB7D087DA,0xCA8EC7F9,0xFFFBBA00,0x9C050F21,
+	0x147091BB,0xE5C88F41,0x73688700,0x563DE9DF,0x060ECF84,0xD81FB126,0x5FCC8492,0x94B7D4E3,
+	0xE3B87141,0x913BF72D,0xEE26DC27,0x9892661F,0xC692D608,0xE568E72F,0xA4064E6D,0x206B1F02,
+	0xC820A681,0xED760E59,0x537E643C,0x2F1E8B6E,0xC22FB22B,0x3EE79150,0xE4569D0F,0x59C2662A,
+	0x536CF47A,0xF785C490,0x37A436D6,0x83523A0F,0xAFEE1A98,0x0751CC3D,0x873B17BC,0xAD8427F5,
+	0x52C364D1,0x06C799A4,0xA39FAA81,0x382372B4,0x8F0E0840,0xD83BE9C6,0xE22F8B3E,0x88994809,
+	0x092E749C,0x99D5EE44,0x1F8FF9C7,0xA10BE901,0x996C8F44,0x73403FEE,0x75577DDD,0xC6CB4FB7,
+	0x4A2DE995,0x41BD8F63,0xDE90EC81,0xDA792B54,0xDE07BB2F,0xADD68686,0xC67E72F0,0xB62D900B,
+	0x256F5CF0,0x7A4F610A,0xC1DAA775,0xA4361D79,0x255A0E15,0x600B72DF,0xBDCB5DCD,0x8EF0708B,
+	0xE56ABCEB,0x09DBD8D5,0x203C46E5,0xF3544BA7,0x4C2A17D3,0xC9D82142,0xB487156B,0x7223FE55,
+	0x4547DAF3,0x8BA9D2CB,0x2A4DA80B,0x6092DF55,0x2C907811,0xB42E20D1,0x54895D7A,0x5303B92B,
+	0x8DEEAA17,0x62ED8DCD,0x55CFAF0F,0x19A37877,0xA3B4F04A,0x61ABCCF4,0xEF57E114,0xC455218A,
+	0x50602500,0x5E41DA45,0xDF12DC8C,0x2C92B674,0x77441A7A,0x04686A60,0x0967ED47,0x32247F34,
+	0x273279EE,0xA8E1A708,0x33586D0F,0x9C9D979C,0x54EAD8D8,0x5B5FB4D0,0x22C6D245,0x298F3A9C,
+	0x25A3F73C,0x1CFD7438,0x5EFE3268,0xACD9B70C,0xEA5DB41B,0x1FB68916,0x53653DFE,0x93C0A701,
+	0x8A38BAD6,0x025432A8,0x39BEA800,0xDF61F30C,0xD397F214,0xE956B4FF,0x84684518,0xD796EB13,
+	0x9367EA6A,0x4245736E,0xC9062113,0x18BA22AA,0x90CC43DF,0xF625F69B,0xE66F956D,0x4DF5A550,
+	0xAD107A2B,0x0D7D7ECA,0xA014D204,0x3778955B,0x6375FA1D,0x4260030C,0xDFB0C8C9,0x61BAD3BB,
+	0xCF4784CF,0xAEA80610,0xDEE57929,0x85C8D1EC,0xF6CFB398,0xF46E825F,0x96233AC4,0xD4AB35E7,
+	0x5E904638,0x3D0C5492,0xC47C1195,0x5C36C467,0x2585F750,0x92E6C095,0x8595FB25,0x9E0D4620,
+	0x40ACA851,0xD6682543,0xAB837530,0x925C06FA,0x8CC94555,0xD6E9C8C3,0xAD34D9AD,0x0BD700D6,
+	0x9B03D8FB,0x1623C9C7,0x0A9869A2,0x917950BF,0x5ACEE365,0xF931D78F,0x2A05D5AC,0x46447CEB,
+	0x02DA1D57,0xA7433E6F,0xECB87BA4,0xFC7E472C,0xC9B037A7,0x3E55A0AB,0x63452FC6,0x397421BD,
+	0x038FB8C6,0xAD39D13E,0xDD86BCCE,0xA5221321,0x6F5625C6,0xFD8FA734,0x607A7198,0x0E83FF9B,
+	0x72D374C4,0xEEA8A6A2,0x7182D16E,0xD4C2F825,0x8F464FB5,0x3E3CFCAE,0x95FED6DE,0x7F758A64,
+	0x311FA65E,0xEB32E476,0x70BA57E9,0xA680AF8D,0x8EE3BC76,0x63937A78,0x44F9E702,0x7F8BA4B1,
+	0x05025436,0x66AAA09F,0x31A8C7A3,0xD07221CE,0x2FB029BF,0x7AB1EA02,0xA4C8F135,0xAE57B75D,
+	0x85F0DF32,0x56A1045C,0x4AC35E5D,0xEC65688B,0xF77BF1EB,0x4B7F32DF,0xA74F7E01,0x65114FCE,
+	0xB5BC91F6,0x3D855B7C,0x9A653EE5,0xFBAAE146,0xFCFD774B,0x50DB5778,0xF93D2DC6,0x50F2BB93,
+	0xE37EA181,0x157C3440,0x7B7DAEC7,0xC0EFE691,0xFCA326E4,0x082547B4,0x3A15509B,0x5EF06653,
+	0x5A663583,0x2BBFFA0A,0xC15A7130,0x35D23DE0,0xD0A3A653,0x3CA723BD,0x65FA5082,0xC4D84C2C,
+	0x85C46170,0x0EAD4B45,0xCC9FABF6,0x955D5639,0x907A66FD,0x64D698E8,0x263992C4,0xDED4ED49,
+	0xEEDA21CF,0x3C0CB894,0xFE5B7887,0x9E717C6A,0x2031935F,0x40A652CD,0x26B98C09,0x4F79D9C9,
+	0xC8CE1B07,0x4ACA2062,0x1E45534B,0x63EEA923,0x185517A8,0x8223098A,0x950FF2FA,0xBD13F7F2,
+	0x50239569,0x1D53DB9E,0xAA503FAF,0x9E1F8DF0,0x922FEC7A,0x5CA619FE,0x53963F96,0xCDA4E004,
+	0xFFF37193,0xD3832AAA,0x9A61C34F,0x26335C54,0x7B98CD53,0x3DFE8B1A,0xC874776E,0x1BE2F75C,
+	0x31C27308,0xCE7DCB31,0x3D3014F1,0x83AE9840,0x0FF41A46,0xF29857D2,0x6ED74EEA,0x3DF4E4E6,
+	0xC1F0B97A,0x55FDE681,0xDCC2C6BC,0xF4DF3955,0xE6E0B290,0x852FE14A,0x0D70D247,0x701A8E56,
+	0xC1F61A5C,0xA78F3F8A,0x9B932B07,0xE09F1837,0x35038156,0xFCD88FE6,0x71139AFC,0x9E2E1734,
+	0x9842716B,0x2383FB1F,0x8E57EE9F,0xCDD21C66,0xA4BB112D,0x181ED042,0x229E0B36,0x1C7EC204,
+	0xD1C91F2E,0xD5AEBAED,0xEB56CDCE,0x88295ABA,0xD6284235,0xEE8B49B9,0xF291A653,0x66A01398,
+	0xC0640DDC,0x344494BB,0x27CEAF58,0xB667C9CE,0x52D6D025,0x1E9AF30E,0x0BAAD63C,0x29BB0D08,
+	0x8D9DF6EE,0xF0F7BBC7,0x737DA614,0x2638EBB6,0x2E98A490,0x395233E0,0x9E896D00,0xD61FFD45,
+	0xADFBC198,0x3FD444EC,0x488E1747,0x7AE53A84,0xCE501A60,0x00DB331F,0x41201501,0x60AAFC42,
+	0x14129C00,0x33FED87A,0xECA6C45B,0x18E3DBC7,0x0F5516E2,0x613FEEB8,0x19ECD7CD,0x64790BA1,
+	0xD957A6E0,0xD5CA7DF3,0x29731C6E,0xB3CA1658,0x52A34129,0x0010C824,0x31E193CE,0x9E180B61,
+	0x755AD012,0x5C19C7BA,0xC7EFF482,0xF83E7E2F,0x351CBA69,0x3AAFDD19,0x7FE9230C,0xEAB0A228,
+	0xB79A1B2C,0x179B3AC3,0xC8960260,0x5B042D46,0xAA7831AB,0xFF5F71B2,0x1CCD0828,0xA66964B4,
+	0x7CA2C01E,0x9268C541,0x4D5A23A9,0xC8825CED,0xC493FB8D,0xFD9DE9EF,0x5CD37515,0xC67614AD,
+	0x1CFD2CE6,0x034B4BD0,0x7C7D6DBF,0x4DADE7CF,0xF756D66B,0xEB09C8F1,0xDD3DEC3B,0xA3498C84,
+	0xCE2F6DB8,0x503B808B,0x47F5D0CC,0x9874AB25,0x5202906B,0x5203F404,0xB06DC274,0xE211AD76,
+	0xE0A37226,0x9BEED89A,0xB3E9BE7E,0xD9E99114,0xC4493B6A,0x91A063BD,0x72FE0DBF,0x557EAAB1,
+	0xF2D31649,0x77B2A0CC,0x82BBAAE8,0x317B62D3,0xE6550746,0xA1EAF358,0xF85724E1,0x0F7D8082,
+	0x0FCB960F,0x99E6DD6D,0x1CEE1CBF,0x6A20EBDC,0x6D3E25D4,0xA0441C54,0x17871F41,0x844C5E55,
+	0x0CAAB3BD,0xA3AA58CA,0x5388ACEE,0x5FF98D8A,0x10197FBD,0xA079D2B4,0x6FAB96F5,0xCA8FF8F8,
+	0xB52E442E,0xEBD5703B,0x3FF76AF1,0x5F1B5FBE,0x0CA5FE46,0x297E6C5C,0xADB3981F,0xEF71A7F0,
+	0x11F9DE0B,0xCFDD0AFC,0x99EFD88F,0x42040EC3,0x0FE15653,0x074FD3A8,0xB9B43EED,0xDA4E0FAD
 };
-PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
 	cl_uint keys_opencl_divider = 8 * (num_passwords_loaded == 1 ? 2 : 1);
-	cl_uint sha256_empy_hash[] = {0x3cc244af, 0x7c9d7e7b, 0x9d2579b4, 0x9daa992a, 0xa98c2030, 0x4418ce34, 0x8511bf70, 0x1c71eb3c};
+	cl_uint sha256_empy_hash[] = {0x3cc244af, 0x7c9d7e7b, 0x9d2579b4, 0x9daa992a, 0xa98c2030, 0x4418ce34, 0x8511bf70, 0x7ec75212};
 
 	// Do not allow blank in GPU
 	if (current_key_lenght == 0)
@@ -1047,21 +1201,35 @@ PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, g
 		{
 			key[0] = charset[i];
 			// Search for a match
-			unsigned int A = sha256_one_char[8 * charset[i] + 0];
-			unsigned int val = A & size_bit_table;
-			if ((bit_table[val >> 5] >> (val & 31)) & 1)
+			uint32_t up0 = sha256_one_char[8*charset[i] + 0];
+			uint32_t up1 = sha256_one_char[8*charset[i] + 7];
+
+			uint32_t pos = up0 & cbg_mask;
+			uint_fast16_t data = cbg_filter[pos];
+			if (((data ^ up1) & 0xFFF8) == 0 && cbg_table[pos] != NO_ELEM && !memcmp(((uint32_t*)binary_values) + cbg_table[pos]*8, sha256_one_char + 8*charset[i], BINARY_SIZE))
+				password_was_found(cbg_table[pos], key);// Total match
+
+			// 2nd pos
+			if (data & 0b110)
 			{
-				unsigned int indx = table[A & size_table];
-				// Partial match
-				while (indx != NO_ELEM)
+				pos += data & 0b1 ? -1 : 1;
+				uint_fast16_t hash = cbg_filter[pos];
+				if (((hash ^ up1) & 0xFFF8) == 0 && cbg_table[pos] != NO_ELEM && !memcmp(((uint32_t*)binary_values) + cbg_table[pos]*8, sha256_one_char + 8*charset[i], BINARY_SIZE))
+					password_was_found(cbg_table[pos], key);// Total match
+
+				// Unluky bucket
+				if (data & 0b10)
 				{
-					unsigned int* bin = ((unsigned int*)binary_values) + indx * 8;
+					pos = up1 & cbg_mask;
+					data = cbg_filter[pos];
+					if (((data ^ up0) & 0xFFF8) == 0 && cbg_table[pos] != NO_ELEM && !memcmp(((uint32_t*)binary_values) + cbg_table[pos]*8, sha256_one_char + 8*charset[i], BINARY_SIZE))
+						password_was_found(cbg_table[pos], key);// Total match
 
-					if (!memcmp(bin,  sha256_one_char + 8 * charset[i], BINARY_SIZE))
-						// Total match
-						password_was_found(indx, key);
-
-					indx = same_hash_next[indx];
+					// 2nd pos
+					pos += data & 0b1 ? -1 : 1;
+					hash = cbg_filter[pos];
+					if (((hash ^ up0) & 0xFFF8) == 0 && cbg_table[pos] != NO_ELEM && !memcmp(((uint32_t*)binary_values) + cbg_table[pos]*8, sha256_one_char + 8*charset[i], BINARY_SIZE))
+						password_was_found(cbg_table[pos], key);// Total match
 				}
 			}
 		}
@@ -1070,7 +1238,7 @@ PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, g
 		report_keys_processed(num_char_in_charset);
 	}
 
-	ocl_charset_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_sha256_header, ocl_gen_kernel_with_lenght, sha256_empy_hash, CL_FALSE, keys_opencl_divider);
+	return ocl_charset_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha256_header, ocl_gen_kernel_with_lenght, sha256_empy_hash, CL_FALSE, keys_opencl_divider);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Common
@@ -1088,16 +1256,16 @@ PRIVATE void ocl_gen_kernel_sha256(char* source, char* kernel_name, ocl_begin_ru
 	sprintf(source + strlen(source), "\n__kernel void %s(const __global uint* keys,__global uint* restrict output", kernel_name);
 
 	if (num_passwords_loaded > 1)
-		strcat(source, ",const __global uint* restrict table,const __global uint* restrict binary_values,const __global uint* restrict same_hash_next,const __global uint* restrict bit_table");
+		strcat(source, ",const __global uint* restrict cbg_table,const __global uint* restrict binary_values,const __global ushort* restrict cbg_filter");
 
 	if (aditional_param)
 	{
 		sprintf(source + strlen(source), ",uint param");
-		*aditional_param = num_passwords_loaded > 1 ? 6 : 2;
+		*aditional_param = num_passwords_loaded > 1 ? 5 : 2;
 	}
 
 	// Begin function code
-	sprintf(source + strlen(source), "){uint indx;");
+	sprintf(source + strlen(source), "){uint indx=get_global_id(0);");
 
 	// Convert the key into a nt_buffer
 	memset(buffer_vector_size, 1, sizeof(buffer_vector_size));
@@ -1200,46 +1368,48 @@ PRIVATE void ocl_gen_kernel_sha256(char* source, char* kernel_name, ocl_begin_ru
 		"W4+=R1(W2)+W13+R0(W5);D+=R_E(A)+bs(C,B,A)+0x391C0CB3U+W4;H+=D;D+=R_A(E)+MAJ(E,F,G);"
 		"W5+=R1(W3)+W14+R0(W6);C+=R_E(H)+bs(B,A,H)+0x4ED8AA4AU+W5;G+=C;C+=R_A(D)+MAJ(D,E,F);"
 		"W6+=R1(W4)+W15+R0(W7);B+=R_E(G)+bs(A,H,G)+0x5B9CCA4FU+W6;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-		"W7+=R1(W5)+W0+R0(W8);A+=R_E(F)+bs(H,G,F)+0x682E6FF3U+W7;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-		"W8+=R1(W6)+W1+R0(W9);"
-		"W9+=R1(W7)+W2+R0(W10);"
-		"W2=W11+R1(W9)+W4+R0(W12);"
-		"W1=W13+R1(W2)+W6+R0(W14);"
-		"W0=W15+R1(W1)+W8+R0(W0);A+=W0;");
+		"W7+=R1(W5)+W0+R0(W8);A+=R_E(F)+bs(H,G,F)+0x682E6FF3U+W7;E+=A;A+=R_A(B)+MAJ(B,C,D);");
 
 	// Match
 	if (num_passwords_loaded == 1)
 	{
-		unsigned int* bin = (unsigned int*)binary_values;
+		uint32_t* bin = (uint32_t*)binary_values;
 
 			if (found_param_3)
 				sprintf(output_3, "output[3u]=%s;", found_param_3);
 
 			sprintf(source + strlen(source),
-			"if(A==%uu)"
-			"{"
-				"A-=W0;"
-				"W10+=R1(W8)+W3+R0(W11);"
-				"W12+=R1(W10)+W5+R0(W13);"
-				"W14+=R1(W12)+W7+R0(W15);"
+				"W8+=R1(W6)+W1+R0(W9);"
+				"W9+=R1(W7)+W2+R0(W10);"
+				"W2=W11+R1(W9)+W4+R0(W12);"
+				"W1=W13+R1(W2)+W6+R0(W14);"
+				"W0=W15+R1(W1)+W8+R0(W0);A+=W0;"
 
-				"H+=R_E(E)+bs(G,F,E)+0x748F82EEU+W8;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-				"G+=R_E(D)+bs(F,E,D)+0x78A5636FU+W9;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-				"F+=R_E(C)+bs(E,D,C)+0x84C87814U+W10;B+=F;F+=MAJ(G,H,A);"
-				"E+=R_E(B)+bs(D,C,B)+0x8CC70208U+W2;A+=E;"
-				"D+=R_E(A)+bs(C,B,A)+0x90BEFFFAU+W12;H+=D;"
-				"C+=R_E(H)+bs(B,A,H)+0xA4506CEBU+W1;G+=C;"
-				"B+=bs(A,H,G)+W14;"
-
-				"if(B==%uu&&C==%uu&&D==%uu&&E==%uu&&F==%uu&&G==%uu&&H==%uu)"
+				"if(A==%uu)"
 				"{"
-					"output[0]=1u;"
-					"output[1]=get_global_id(0);"
-					"output[2]=0;"
-					"%s"
+					"A-=W0;"
+					"W10+=R1(W8)+W3+R0(W11);"
+					"W12+=R1(W10)+W5+R0(W13);"
+					"W14+=R1(W12)+W7+R0(W15);"
+
+					"H+=R_E(E)+bs(G,F,E)+0x748F82EEU+W8;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+					"G+=R_E(D)+bs(F,E,D)+0x78A5636FU+W9;C+=G;G+=R_A(H)+MAJ(H,A,B);"
+					"F+=R_E(C)+bs(E,D,C)+0x84C87814U+W10;B+=F;F+=MAJ(G,H,A);"
+					"E+=R_E(B)+bs(D,C,B)+0x8CC70208U+W2;A+=E;"
+					"D+=R_E(A)+bs(C,B,A)+0x90BEFFFAU+W12;H+=D;"
+					"C+=R_E(H)+bs(B,A,H)+0xA4506CEBU+W1;G+=C;"
+					"B+=bs(A,H,G)+W14;"
+					"H-=D;"
+
+					"if(B==%uu&&C==%uu&&D==%uu&&E==%uu&&F==%uu&&G==%uu&&H==%uu)"
+					"{"
+						"output[0]=1u;"
+						"output[1]=get_global_id(0);"
+						"output[2]=0;"
+						"%s"
+					"}"
 				"}"
-			"}"
-			, bin[0], bin[1], bin[2], bin[3], bin[4], bin[5], bin[6], bin[7], output_3);
+				, bin[0], bin[1], bin[2], bin[3], bin[4], bin[5], bin[6], bin[7], output_3);
 	}
 	else
 	{
@@ -1247,24 +1417,60 @@ PRIVATE void ocl_gen_kernel_sha256(char* source, char* kernel_name, ocl_begin_ru
 			sprintf(output_3, "output[3u*found+3u]=%s;", found_param_3);
 
 		sprintf(source + strlen(source),
-			"indx=A&SIZE_BIT_TABLE;"
-			"if((bit_table[indx>>5u]>>(indx&31u))&1u)"
-			"{"
-				"indx=table[A & SIZE_TABLE];"
+			"W8+=R1(W6)+W1+R0(W9);H+=R_E(E)+bs(G,F,E)+0x748F82EEU+W8;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+			"W9+=R1(W7)+W2+R0(W10);"
+			"W2=W11+R1(W9)+W4+R0(W12);"
+			"W1=W13+R1(W2)+W6+R0(W14);"
+			"W0=W15+R1(W1)+W8+R0(W0);A+=W0;");
 
-				"while(indx!=0xffffffff)"
-				//"if(indx!=0xffffffff)"
-				"{"
-					"if(A==binary_values[indx*8u])"
-					"{"
+		// Find match
+		sprintf(source + strlen(source), "uint xx=A&%uu;uint fdata;", cbg_mask);
+		
+		sprintf(source + strlen(source),
+			"fdata=(uint)(cbg_filter[xx]);"
+
+			"if(((fdata^H)&0xFFF8)==0){"
+				"indx=cbg_table[xx];"
+				"if(indx!=0xffffffff&&A==binary_values[indx*8u]&&H==binary_values[indx*8u+7u]){"
+
+					"uint aa=A-W0;"
+					"W4=W10+R1(W8)+W3+R0(W11);"
+					"W6=W12+R1(W4)+W5+R0(W13);"
+					"uint ww14=W14+R1(W6)+W7+R0(W15);"
+
+					"uint bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+					"gg+=R_E(dd)+bs(ff,ee,dd)+0x78A5636FU+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+					"ff+=R_E(cc)+bs(ee,dd,cc)+0x84C87814U+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+					"ee+=R_E(bb)+bs(dd,cc,bb)+0x8CC70208U+W2;aa+=ee;"
+					"dd+=R_E(aa)+bs(cc,bb,aa)+0x90BEFFFAU+W6;hh+=dd;"
+					"cc+=R_E(hh)+bs(bb,aa,hh)+0xA4506CEBU+W1;gg+=cc;"
+					"bb+=bs(aa,hh,gg)+ww14;"
+
+					"if(bb==binary_values[indx*8u+1u]&&cc==binary_values[indx*8u+2u]&&dd==binary_values[indx*8u+3u]"
+					 "&&ee==binary_values[indx*8u+4u]&&ff==binary_values[indx*8u+5u]&&gg==binary_values[indx*8u+6u]){"
+						"uint found=atomic_inc(output);"
+						"output[%iu*found+1]=get_global_id(0);"
+						"output[%iu*found+2]=indx;"
+						"%s"
+					"}"
+				"}"
+			"}", found_multiplier, found_multiplier, output_3);
+				
+		sprintf(source + strlen(source),
+			"if(fdata&4){"// Is second
+				"xx+=fdata&1?-1:1;"
+				"if(((((uint)cbg_filter[xx])^H)&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"if(indx!=0xffffffff&&A==binary_values[indx*8u]&&H==binary_values[indx*8u+7u]){"
+
 						"uint aa=A-W0;"
 						"W4=W10+R1(W8)+W3+R0(W11);"
 						"W6=W12+R1(W4)+W5+R0(W13);"
 						"uint ww14=W14+R1(W6)+W7+R0(W15);"
-						
+
 						"uint bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
-						
-						"hh+=R_E(ee)+bs(gg,ff,ee)+0x748F82EEU+W8;dd+=hh;hh+=R_A(aa)+MAJ(aa,bb,cc);"
+
 						"gg+=R_E(dd)+bs(ff,ee,dd)+0x78A5636FU+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
 						"ff+=R_E(cc)+bs(ee,dd,cc)+0x84C87814U+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
 						"ee+=R_E(bb)+bs(dd,cc,bb)+0x8CC70208U+W2;aa+=ee;"
@@ -1272,20 +1478,83 @@ PRIVATE void ocl_gen_kernel_sha256(char* source, char* kernel_name, ocl_begin_ru
 						"cc+=R_E(hh)+bs(bb,aa,hh)+0xA4506CEBU+W1;gg+=cc;"
 						"bb+=bs(aa,hh,gg)+ww14;"
 
-						"if(bb==binary_values[indx*8u+1u]&&cc==binary_values[indx*8u+2u]&&dd==binary_values[indx*8u+3u]&&"
-						   "ee==binary_values[indx*8u+4u]&&ff==binary_values[indx*8u+5u]&&gg==binary_values[indx*8u+6u]&&"
-						   "hh==binary_values[indx*8u+7u])"
-					    "{"
+						"if(bb==binary_values[indx*8u+1u]&&cc==binary_values[indx*8u+2u]&&dd==binary_values[indx*8u+3u]"
+						"&&ee==binary_values[indx*8u+4u]&&ff==binary_values[indx*8u+5u]&&gg==binary_values[indx*8u+6u]){"
 							"uint found=atomic_inc(output);"
 							"output[%iu*found+1]=get_global_id(0);"
 							"output[%iu*found+2]=indx;"
 							"%s"
-						"}", found_multiplier, found_multiplier, output_3);
-
-	strcat(source, "}"
-					"indx=same_hash_next[indx];"
+						"}"
+					"}"
 				"}"
-			"}");
+			"}", found_multiplier, found_multiplier, output_3);
+
+		sprintf(source + strlen(source),
+			"if(fdata&2){"// Is unlucky
+				"xx=H&%uu;"
+				"fdata=(uint)(cbg_filter[xx]);"
+				"if(((fdata^A)&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"if(indx!=0xffffffff&&A==binary_values[indx*8u]&&H==binary_values[indx*8u+7u]){"
+
+						"uint aa=A-W0;"
+						"W4=W10+R1(W8)+W3+R0(W11);"
+						"W6=W12+R1(W4)+W5+R0(W13);"
+						"uint ww14=W14+R1(W6)+W7+R0(W15);"
+
+						"uint bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+						"gg+=R_E(dd)+bs(ff,ee,dd)+0x78A5636FU+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+						"ff+=R_E(cc)+bs(ee,dd,cc)+0x84C87814U+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+						"ee+=R_E(bb)+bs(dd,cc,bb)+0x8CC70208U+W2;aa+=ee;"
+						"dd+=R_E(aa)+bs(cc,bb,aa)+0x90BEFFFAU+W6;hh+=dd;"
+						"cc+=R_E(hh)+bs(bb,aa,hh)+0xA4506CEBU+W1;gg+=cc;"
+						"bb+=bs(aa,hh,gg)+ww14;"
+
+						"if(bb==binary_values[indx*8u+1u]&&cc==binary_values[indx*8u+2u]&&dd==binary_values[indx*8u+3u]"
+						"&&ee==binary_values[indx*8u+4u]&&ff==binary_values[indx*8u+5u]&&gg==binary_values[indx*8u+6u]){"
+							"uint found=atomic_inc(output);"
+							"output[%iu*found+1]=get_global_id(0);"
+							"output[%iu*found+2]=indx;"
+							"%s"
+						"}"
+					"}"
+				"}"
+			, cbg_mask
+			, found_multiplier, found_multiplier, output_3);
+
+		sprintf(source + strlen(source),
+				"if(fdata&4){"// Is second
+					"xx+=fdata&1?-1:1;"
+					"if(((((uint)cbg_filter[xx])^A)&0xFFF8)==0){"
+						"indx=cbg_table[xx];"
+						"if(indx!=0xffffffff&&A==binary_values[indx*8u]&&H==binary_values[indx*8u+7u]){"
+
+							"uint aa=A-W0;"
+							"W4=W10+R1(W8)+W3+R0(W11);"
+							"W6=W12+R1(W4)+W5+R0(W13);"
+							"uint ww14=W14+R1(W6)+W7+R0(W15);"
+
+							"uint bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+							"gg+=R_E(dd)+bs(ff,ee,dd)+0x78A5636FU+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+							"ff+=R_E(cc)+bs(ee,dd,cc)+0x84C87814U+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+							"ee+=R_E(bb)+bs(dd,cc,bb)+0x8CC70208U+W2;aa+=ee;"
+							"dd+=R_E(aa)+bs(cc,bb,aa)+0x90BEFFFAU+W6;hh+=dd;"
+							"cc+=R_E(hh)+bs(bb,aa,hh)+0xA4506CEBU+W1;gg+=cc;"
+							"bb+=bs(aa,hh,gg)+ww14;"
+
+							"if(bb==binary_values[indx*8u+1u]&&cc==binary_values[indx*8u+2u]&&dd==binary_values[indx*8u+3u]"
+							"&&ee==binary_values[indx*8u+4u]&&ff==binary_values[indx*8u+5u]&&gg==binary_values[indx*8u+6u]){"
+								"uint found=atomic_inc(output);"
+								"output[%iu*found+1]=get_global_id(0);"
+								"output[%iu*found+2]=indx;"
+								"%s"
+							"}"
+						"}"
+					"}"
+				"}"
+			"}", found_multiplier, found_multiplier, output_3);
 	}
 
 	if (ocl_end)	ocl_end(source);
@@ -1296,43 +1565,47 @@ PRIVATE void ocl_gen_kernel_sha256(char* source, char* kernel_name, ocl_begin_ru
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UTF8
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
-#ifdef ANDROID
-	ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_sha256_header, ocl_gen_kernel_sha256, kernels2common + UTF8_INDEX_IN_KERNELS, 32, ocl_rule_simple_copy_utf8_le);
+#ifdef __ANDROID__
+	return ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha256_header, ocl_gen_kernel_sha256, kernels2common + UTF8_INDEX_IN_KERNELS, 32, ocl_rule_simple_copy_utf8_le);
 #else
-	ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_sha256_header, ocl_gen_kernel_sha256, kernels2common + UTF8_INDEX_IN_KERNELS, 4/*consider 2 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
+	return ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha256_header, ocl_gen_kernel_sha256, kernels2common + UTF8_INDEX_IN_KERNELS, 4/*consider 2 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
 #endif
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Phrases
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
-	ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_sha256_header, ocl_gen_kernel_sha256, kernels2common + PHRASES_INDEX_IN_KERNELS, 64/*consider 32 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
+	return ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha256_header, ocl_gen_kernel_sha256, kernels2common + PHRASES_INDEX_IN_KERNELS, 64/*consider 32 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Rules
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
-	ocl_rules_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_sha256_header, ocl_gen_kernel_sha256, RULE_UTF8_LE_INDEX, 2);
+	return ocl_rules_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha256_header, ocl_gen_kernel_sha256, RULE_UTF8_LE_INDEX, 2);
 }
 #endif
 
-PRIVATE int bench_values[] = { 1, 10, 100, 1000, 10000, 65536, 100000, 1000000 };
 Format raw_sha256_format = {
 	"Raw-SHA256",
 	"Raw SHA-256 format.",
+	"$SHA256$",
 	NTLM_MAX_KEY_LENGHT,
 	BINARY_SIZE,
 	0,
 	7,
-	bench_values,
-	LENGHT(bench_values),
+	NULL,
+	0,
 	get_binary,
+	binary2hex,
+	VALUE_MAP_INDEX0,
+	VALUE_MAP_INDEX1,
 	is_valid,
 	add_hash_from_line,
+	NULL,
 #ifdef _M_X64
 	{{CPU_CAP_AVX2, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_avx2}, {CPU_CAP_AVX, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_avx}, {CPU_CAP_SSE2, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_sse2}},
 #else

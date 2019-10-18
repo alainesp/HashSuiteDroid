@@ -35,7 +35,7 @@ PUBLIC OtherSystemInfo current_system_info;
 #define PROC_CENTAUR            "Centaur CPU"
 #define PROC_UNKNOWN            "Unknown CPU"
 
-PRIVATE void cpuID(unsigned int i, unsigned int regs[4])
+PRIVATE void cpuID(uint32_t i, uint32_t regs[4])
 {
 	#ifdef _WIN32
 	  __cpuid((int*)regs, (int)i);
@@ -122,6 +122,7 @@ PRIVATE void get_os_display_string()
 
 	GetNativeSystemInfo(&si);// Need XP
 	strcpy(current_system_info.os, "");
+	current_system_info.granularity = si.dwAllocationGranularity;
 
 	current_system_info.major_version = osvi.dwMajorVersion;
 	current_system_info.minor_version = osvi.dwMinorVersion;
@@ -386,7 +387,7 @@ PRIVATE void detect_logical_processor_info()
 }
 #endif
 
-#ifdef ANDROID
+#ifdef __ANDROID__
 #include <cpu-features.h>
 PUBLIC void detect_hardware()
 {
@@ -397,6 +398,10 @@ PUBLIC void detect_hardware()
 	uint64_t features = android_getCpuFeatures();
 	if (android_getCpuFamily() == ANDROID_CPU_FAMILY_ARM && (features & ANDROID_CPU_ARM_FEATURE_ARMv7) && (features & ANDROID_CPU_ARM_FEATURE_NEON))
 		current_cpu.capabilites[CPU_CAP_NEON] = TRUE;
+
+#ifdef ANDROID_NO_NEON
+	current_cpu.capabilites[CPU_CAP_NEON] = FALSE;
+#endif
 
 	current_cpu.cores = current_cpu.logical_processors = android_getCpuCount();
 }
@@ -419,6 +424,27 @@ PUBLIC void detect_hardware()
 	current_cpu.cores = current_cpu.logical_processors = si.dwNumberOfProcessors;
 }
 #else
+typedef int(*GETLARGEPAGEMINIMUM)(void);
+int enable_large_page_support()
+{
+	// Enable the lock memory privilege
+	HANDLE hToken = 0;
+	TOKEN_PRIVILEGES privileges;
+
+	if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &hToken) &&
+		LookupPrivilegeValue(NULL, SE_LOCK_MEMORY_NAME, &privileges.Privileges[0].Luid))
+	{
+		privileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+		privileges.PrivilegeCount = 1;
+
+		if (AdjustTokenPrivileges(hToken, FALSE, &privileges, 0, NULL, NULL) && GetLastError() == ERROR_SUCCESS)
+			return TRUE;
+	}
+
+	if (hToken) CloseHandle(hToken);
+
+	return FALSE;
+}
 PUBLIC void detect_hardware()
 {
 	int CPUInfo[4] = {-1};
@@ -431,6 +457,19 @@ PUBLIC void detect_hardware()
 	// OS string
 	get_os_display_string();
 	GetComputerName(current_system_info.machine_name, &nIds);
+
+	// Large page support
+	current_system_info.large_page_size = 0;
+	HINSTANCE hDll = LoadLibrary(TEXT("kernel32.dll"));
+	if (hDll)
+	{
+		GETLARGEPAGEMINIMUM pGetLargePageMinimum = (GETLARGEPAGEMINIMUM)GetProcAddress(hDll, "GetLargePageMinimum");
+		if (pGetLargePageMinimum)
+			current_system_info.large_page_size = (*pGetLargePageMinimum)();
+
+		FreeLibrary(hDll);
+	}
+	current_system_info.is_large_page_enable = current_system_info.large_page_size && enable_large_page_support();
 	
 	detect_logical_processor_info();
 

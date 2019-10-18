@@ -14,100 +14,100 @@
 #define SQRT_3 0x6ed9eba1
 
 // SHA1
-#define SHA1_RW(w0, w1, w2, w3)	(W[w0*simd_with+i] = rotate((W[w0*simd_with+i] ^ W[w1*simd_with+i] ^ W[w2*simd_with+i] ^ W[w3*simd_with+i]), 1))
-PUBLIC void sha1_process_block_simd(unsigned int* state, unsigned int* W, unsigned int simd_with)
+#define SHA1_RW(w0, w1, w2, w3)	(W[w0*simd_with+i] = ROTATE((W[w0*simd_with+i] ^ W[w1*simd_with+i] ^ W[w2*simd_with+i] ^ W[w3*simd_with+i]), 1))
+PUBLIC void sha1_process_block_simd(uint32_t* state, uint32_t* W, uint32_t simd_with)
 {
-	for (unsigned int i = 0; i < simd_with; i++)
+	for (uint32_t i = 0; i < simd_with; i++)
 	{
-		unsigned int A = state[i+0*simd_with];
-		unsigned int B = state[i+1*simd_with];
-		unsigned int C = state[i+2*simd_with];
-		unsigned int D = state[i+3*simd_with];
-		unsigned int E = state[i+4*simd_with];
+		uint32_t A = state[i+0*simd_with];
+		uint32_t B = state[i+1*simd_with];
+		uint32_t C = state[i+2*simd_with];
+		uint32_t D = state[i+3*simd_with];
+		uint32_t E = state[i+4*simd_with];
 
-		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[0 *simd_with+i]; B = rotate(B, 30);
-		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[1 *simd_with+i]; A = rotate(A, 30);
-		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[2 *simd_with+i]; E = rotate(E, 30);
-		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[3 *simd_with+i]; D = rotate(D, 30);
-		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[4 *simd_with+i]; C = rotate(C, 30);
-		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[5 *simd_with+i]; B = rotate(B, 30);
-		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[6 *simd_with+i]; A = rotate(A, 30);
-		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[7 *simd_with+i]; E = rotate(E, 30);
-		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[8 *simd_with+i]; D = rotate(D, 30);
-		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[9 *simd_with+i]; C = rotate(C, 30);
-		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[10*simd_with+i]; B = rotate(B, 30);
-		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[11*simd_with+i]; A = rotate(A, 30);
-		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[12*simd_with+i]; E = rotate(E, 30);
-		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[13*simd_with+i]; D = rotate(D, 30);
-		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[14*simd_with+i]; C = rotate(C, 30);
-		E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[15*simd_with+i]; B = rotate(B, 30);
-		D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + SHA1_RW(0, 13,  8, 2); A = rotate(A, 30);
-		C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + SHA1_RW(1, 14,  9, 3); E = rotate(E, 30);
-		B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + SHA1_RW(2, 15, 10, 4); D = rotate(D, 30);
-		A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + SHA1_RW(3,  0, 11, 5); C = rotate(C, 30);
+		E += ROTATE(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[0 *simd_with+i]; B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[1 *simd_with+i]; A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[2 *simd_with+i]; E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[3 *simd_with+i]; D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[4 *simd_with+i]; C = ROTATE(C, 30);
+		E += ROTATE(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[5 *simd_with+i]; B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[6 *simd_with+i]; A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[7 *simd_with+i]; E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[8 *simd_with+i]; D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[9 *simd_with+i]; C = ROTATE(C, 30);
+		E += ROTATE(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[10*simd_with+i]; B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + W[11*simd_with+i]; A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + W[12*simd_with+i]; E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + W[13*simd_with+i]; D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + W[14*simd_with+i]; C = ROTATE(C, 30);
+		E += ROTATE(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + W[15*simd_with+i]; B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + SHA1_RW(0, 13,  8, 2); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + SHA1_RW(1, 14,  9, 3); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + SHA1_RW(2, 15, 10, 4); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + SHA1_RW(3,  0, 11, 5); C = ROTATE(C, 30);
 
-		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + SHA1_RW(4 , 1 , 12, 6); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + SHA1_RW(5 , 2 , 13, 7); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(6 , 3 , 14, 8); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(7 , 4 , 15, 9); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(8 , 5 , 0, 10); C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + SHA1_RW(9 , 6 , 1, 11); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + SHA1_RW(10, 7 , 2, 12); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(11, 8 , 3, 13); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(12, 9 , 4, 14); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(13, 10, 5, 15); C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + SHA1_RW(14, 11, 6,  0); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + SHA1_RW(15, 12, 7,  1); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(0 , 13, 8,  2) ; E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(1 , 14, 9,  3); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(2 , 15, 10, 4); C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + SHA1_RW(3 ,  0, 11, 5); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + SHA1_RW(4 ,  1, 12, 6); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(5 ,  2, 13, 7); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(6 ,  3, 14, 8); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(7 ,  4, 15, 9); C = rotate(C, 30);
+		E += ROTATE(A, 5) + (B ^ C ^ D) + SQRT_3 + SHA1_RW(4 , 1 , 12, 6); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (A ^ B ^ C) + SQRT_3 + SHA1_RW(5 , 2 , 13, 7); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(6 , 3 , 14, 8); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(7 , 4 , 15, 9); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(8 , 5 , 0, 10); C = ROTATE(C, 30);
+		E += ROTATE(A, 5) + (B ^ C ^ D) + SQRT_3 + SHA1_RW(9 , 6 , 1, 11); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (A ^ B ^ C) + SQRT_3 + SHA1_RW(10, 7 , 2, 12); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(11, 8 , 3, 13); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(12, 9 , 4, 14); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(13, 10, 5, 15); C = ROTATE(C, 30);
+		E += ROTATE(A, 5) + (B ^ C ^ D) + SQRT_3 + SHA1_RW(14, 11, 6,  0); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (A ^ B ^ C) + SQRT_3 + SHA1_RW(15, 12, 7,  1); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(0 , 13, 8,  2); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(1 , 14, 9,  3); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(2 , 15, 10, 4); C = ROTATE(C, 30);
+		E += ROTATE(A, 5) + (B ^ C ^ D) + SQRT_3 + SHA1_RW(3 ,  0, 11, 5); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (A ^ B ^ C) + SQRT_3 + SHA1_RW(4 ,  1, 12, 6); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(5 ,  2, 13, 7); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(6 ,  3, 14, 8); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(7 ,  4, 15, 9); C = ROTATE(C, 30);
 
-		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(8, 5, 0, 10); B = rotate(B, 30);
-		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(9, 6, 1, 11); A = rotate(A, 30);
-		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(10, 7, 2, 12); E = rotate(E, 30);
-		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(11, 8, 3, 13); D = rotate(D, 30);
-		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(12, 9, 4, 14); C = rotate(C, 30);
-		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(13, 10, 5, 15); B = rotate(B, 30);
-		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(14, 11, 6, 0); A = rotate(A, 30);
-		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(15, 12, 7, 1); E = rotate(E, 30);
-		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(0, 13, 8, 2) ; D = rotate(D, 30);
-		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(1, 14, 9, 3); C = rotate(C, 30);
-		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(2, 15, 10, 4); B = rotate(B, 30);
-		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(3, 0, 11, 5); A = rotate(A, 30);
-		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(4, 1, 12, 6); E = rotate(E, 30);
-		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(5, 2, 13, 7); D = rotate(D, 30);
-		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(6, 3, 14, 8); C = rotate(C, 30);
-		E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(7, 4, 15, 9); B = rotate(B, 30);
-		D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(8, 5, 0, 10); A = rotate(A, 30);
-		C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(9, 6, 1, 11); E = rotate(E, 30);
-		B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(10, 7, 2, 12); D = rotate(D, 30);
-		A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(11, 8, 3, 13); C = rotate(C, 30);
+		E += ROTATE(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW( 8,  5,  0, 10); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW( 9,  6,  1, 11); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(10,  7,  2, 12); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(11,  8,  3, 13); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(12,  9,  4, 14); C = ROTATE(C, 30);
+		E += ROTATE(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(13, 10,  5, 15); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(14, 11,  6,  0); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(15, 12,  7,  1); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW( 0, 13,  8,  2); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW( 1, 14,  9,  3); C = ROTATE(C, 30);
+		E += ROTATE(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW( 2, 15, 10,  4); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW( 3,  0, 11,  5); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW( 4,  1, 12,  6); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW( 5,  2, 13,  7); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW( 6,  3, 14,  8); C = ROTATE(C, 30);
+		E += ROTATE(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW( 7,  4, 15,  9); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW( 8,  5,  0, 10); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW( 9,  6,  1, 11); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(10,  7,  2, 12); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(11,  8,  3, 13); C = ROTATE(C, 30);
 																   
-		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(12, 9, 4, 14); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(13, 10, 5, 15); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(14, 11, 6, 0); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(15, 12, 7, 1); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(0, 13, 8, 2) ; C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(1, 14, 9, 3); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(2, 15, 10, 4); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(3, 0, 11, 5); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(4, 1, 12, 6); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(5, 2, 13, 7); C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(6, 3, 14, 8); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(7, 4, 15, 9); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(8, 5, 0, 10); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(9, 6, 1, 11); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(10, 7, 2, 12); C = rotate(C, 30);
-		E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(11, 8, 3, 13); B = rotate(B, 30);
-		D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(12, 9, 4, 14); A = rotate(A, 30);
-		C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(13, 10, 5, 15); E = rotate(E, 30);
-		B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(14, 11, 6, 0); D = rotate(D, 30);
-		A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(15, 12, 7, 1); C = rotate(C, 30);
+		E += ROTATE(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(12,  9,  4, 14); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(13, 10,  5, 15); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(14, 11,  6,  0); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(15, 12,  7,  1); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW( 0, 13,  8,  2); C = ROTATE(C, 30);
+		E += ROTATE(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW( 1, 14,  9,  3); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW( 2, 15, 10,  4); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW( 3,  0, 11,  5); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW( 4,  1, 12,  6); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW( 5,  2, 13,  7); C = ROTATE(C, 30);
+		E += ROTATE(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW( 6,  3, 14,  8); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW( 7,  4, 15,  9); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW( 8,  5,  0, 10); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW( 9,  6,  1, 11); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(10,  7,  2, 12); C = ROTATE(C, 30);//
+		E += ROTATE(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(11,  8,  3, 13); B = ROTATE(B, 30);
+		D += ROTATE(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(12,  9,  4, 14); A = ROTATE(A, 30);
+		C += ROTATE(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(13, 10,  5, 15); E = ROTATE(E, 30);
+		B += ROTATE(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(14, 11,  6,  0); D = ROTATE(D, 30);
+		A += ROTATE(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(15, 12,  7,  1); C = ROTATE(C, 30);
 
 		state[i+0*simd_with] += A;
 		state[i+1*simd_with] += B;
@@ -119,9 +119,9 @@ PUBLIC void sha1_process_block_simd(unsigned int* state, unsigned int* W, unsign
 
 PUBLIC void hmac_sha1_init_simd(uint32_t* key, uint32_t* key_lenghts, uint32_t simd_with, uint32_t multiplier, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
 {
-	unsigned int i;
+	uint32_t i;
 	// ipad_state
-	for (unsigned int simd_index = 0; simd_index < simd_with; simd_index++)
+	for (uint32_t simd_index = 0; simd_index < simd_with; simd_index++)
 	{
 		for (i = 0; i < key_lenghts[simd_index]; i++)
 			W[i*simd_with+simd_index] = key[i*multiplier*simd_with+simd_index] ^ 0x36363636;
@@ -137,7 +137,7 @@ PUBLIC void hmac_sha1_init_simd(uint32_t* key, uint32_t* key_lenghts, uint32_t s
 	sha1_process_block_simd(ipad_state, W, simd_with);
 
 	// opad_state
-	for (unsigned int simd_index = 0; simd_index < simd_with; simd_index++)
+	for (uint32_t simd_index = 0; simd_index < simd_with; simd_index++)
 	{
 		for (i = 0; i < key_lenghts[simd_index]; i++)
 			W[i*simd_with+simd_index] = key[i*multiplier*simd_with+simd_index] ^ 0x5C5C5C5C;
@@ -153,116 +153,116 @@ PUBLIC void hmac_sha1_init_simd(uint32_t* key, uint32_t* key_lenghts, uint32_t s
 	sha1_process_block_simd(opad_state, W, simd_with);
 }
 // Calculate W in each iteration
-#define Q0  ( W[0 ] = rotate((sha1_hash[2 ] ^ sha1_hash[0 ]), 1) )
-#define Q1  ( W[1 ] = rotate((sha1_hash[3 ] ^ sha1_hash[1 ]), 1) )
-#define Q2  ( W[2 ] = rotate((0x2A0 ^ sha1_hash[4 ] ^ sha1_hash[2 ]), 1) )
-#define Q3  ( W[3 ] = rotate((W[0 ] ^ 0x80000000 ^ sha1_hash[3 ]), 1) )
-#define Q4  ( W[4 ] = rotate((W[1 ] ^ sha1_hash[4 ]), 1) )
-#define Q5  ( W[5 ] = rotate((W[2 ] ^ 0x80000000), 1) )
-#define Q6  ( W[6 ] = rotate((W[3 ] ), 1) )
-#define Q7  ( W[7 ] = rotate((W[4 ] ^ 0x2A0), 1) )
-#define Q8  ( W[8 ] = rotate((W[5 ] ^ W[0 ]), 1) )
-#define Q9  ( W[9 ] = rotate((W[6 ] ^ W[1 ]), 1) )
-#define Q10 ( W[10] = rotate((W[7 ] ^ W[2 ]), 1) )
-#define Q11 ( W[11] = rotate((W[8 ] ^ W[3 ]), 1) )
-#define Q12 ( W[12] = rotate((W[9 ] ^ W[4 ]), 1) )
-#define Q13 ( W[13] = rotate((W[10] ^ W[5 ] ^ 0x2A0), 1) )
-#define Q14 ( W[14] = rotate((W[11] ^ W[6 ] ^ W[0 ]), 1) )
-#define Q15 ( W[15] = rotate((W[12] ^ W[7 ] ^ W[1 ] ^ 0x2A0), 1) )
+#define Q0  ( W[0 ] = ROTATE((sha1_hash[2 ] ^ sha1_hash[0 ]), 1) )
+#define Q1  ( W[1 ] = ROTATE((sha1_hash[3 ] ^ sha1_hash[1 ]), 1) )
+#define Q2  ( W[2 ] = ROTATE((0x2A0 ^ sha1_hash[4 ] ^ sha1_hash[2 ]), 1) )
+#define Q3  ( W[3 ] = ROTATE((W[0 ] ^ 0x80000000 ^ sha1_hash[3 ]), 1) )
+#define Q4  ( W[4 ] = ROTATE((W[1 ] ^ sha1_hash[4 ]), 1) )
+#define Q5  ( W[5 ] = ROTATE((W[2 ] ^ 0x80000000), 1) )
+#define Q6  ( W[6 ] = ROTATE((W[3 ] ), 1) )
+#define Q7  ( W[7 ] = ROTATE((W[4 ] ^ 0x2A0), 1) )
+#define Q8  ( W[8 ] = ROTATE((W[5 ] ^ W[0 ]), 1) )
+#define Q9  ( W[9 ] = ROTATE((W[6 ] ^ W[1 ]), 1) )
+#define Q10 ( W[10] = ROTATE((W[7 ] ^ W[2 ]), 1) )
+#define Q11 ( W[11] = ROTATE((W[8 ] ^ W[3 ]), 1) )
+#define Q12 ( W[12] = ROTATE((W[9 ] ^ W[4 ]), 1) )
+#define Q13 ( W[13] = ROTATE((W[10] ^ W[5 ] ^ 0x2A0), 1) )
+#define Q14 ( W[14] = ROTATE((W[11] ^ W[6 ] ^ W[0 ]), 1) )
+#define Q15 ( W[15] = ROTATE((W[12] ^ W[7 ] ^ W[1 ] ^ 0x2A0), 1) )
 
 #undef SHA1_RW
-#define SHA1_RW(w0, w1, w2, w3)	(W[w0] = rotate((W[w0] ^ W[w1] ^ W[w2] ^ W[w3]), 1))
-PUBLIC void sha1_process_block_hmac_sha1(const unsigned int state[5], unsigned int sha1_hash[5], unsigned int W[16])
+#define SHA1_RW(w0, w1, w2, w3)	(W[w0] = ROTATE((W[w0] ^ W[w1] ^ W[w2] ^ W[w3]), 1))
+PUBLIC void sha1_process_block_hmac_sha1(const uint32_t state[5], uint32_t sha1_hash[5], uint32_t W[16])
 {
-	unsigned int A = state[0];
-	unsigned int B = state[1];
-	unsigned int C = state[2];
-	unsigned int D = state[3];
-	unsigned int E = state[4];
+	uint32_t A = state[0];
+	uint32_t B = state[1];
+	uint32_t C = state[2];
+	uint32_t D = state[3];
+	uint32_t E = state[4];
 
-	E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + sha1_hash[0]; B = rotate(B, 30);
-	D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + sha1_hash[1]; A = rotate(A, 30);
-	C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + sha1_hash[2]; E = rotate(E, 30);
-	B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + sha1_hash[3]; D = rotate(D, 30);
-	A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + sha1_hash[4]; C = rotate(C, 30);
-	E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + 0x80000000; B = rotate(B, 30);
-	D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2; A = rotate(A, 30);
-	C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2; E = rotate(E, 30);
-	B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2; D = rotate(D, 30);
-	A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2; C = rotate(C, 30);
-	E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2; B = rotate(B, 30);
-	D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2; A = rotate(A, 30);
-	C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2; E = rotate(E, 30);
-	B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2; D = rotate(D, 30);
-	A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2; C = rotate(C, 30);
-	E += rotate(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + 0x2A0; B = rotate(B, 30);
-	D += rotate(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + Q0; A = rotate(A, 30);
-	C += rotate(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + Q1; E = rotate(E, 30);
-	B += rotate(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + Q2; D = rotate(D, 30);
-	A += rotate(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + Q3; C = rotate(C, 30);
+	E += ROTATE(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + sha1_hash[0]; B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + sha1_hash[1]; A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + sha1_hash[2]; E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + sha1_hash[3]; D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + sha1_hash[4]; C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + 0x80000000; B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2; A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2; E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2; D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2; C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2; B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2; A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2; E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2; D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2; C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + (D ^ (B & (C ^ D))) + SQRT_2 + 0x2A0; B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (C ^ (A & (B ^ C))) + SQRT_2 + Q0; A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (B ^ (E & (A ^ B))) + SQRT_2 + Q1; E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (A ^ (D & (E ^ A))) + SQRT_2 + Q2; D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (E ^ (C & (D ^ E))) + SQRT_2 + Q3; C = ROTATE(C, 30);
 
-	E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + Q4; B = rotate(B, 30);
-	D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + Q5; A = rotate(A, 30);
-	C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + Q6; E = rotate(E, 30);
-	B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + Q7; D = rotate(D, 30);
-	A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + Q8; C = rotate(C, 30);
-	E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + Q9; B = rotate(B, 30);
-	D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + Q10; A = rotate(A, 30);
-	C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + Q11; E = rotate(E, 30);
-	B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + Q12; D = rotate(D, 30);
-	A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + Q13; C = rotate(C, 30);
-	E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + Q14; B = rotate(B, 30);
-	D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + Q15; A = rotate(A, 30);
-	C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(0, 13, 8, 2); E = rotate(E, 30);
-	B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(1, 14, 9, 3); D = rotate(D, 30);
-	A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(2, 15, 10, 4); C = rotate(C, 30);
-	E += rotate(A, 5) + (B ^ C ^ D) + SQRT_3 + SHA1_RW(3, 0, 11, 5); B = rotate(B, 30);
-	D += rotate(E, 5) + (A ^ B ^ C) + SQRT_3 + SHA1_RW(4, 1, 12, 6); A = rotate(A, 30);
-	C += rotate(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(5, 2, 13, 7); E = rotate(E, 30);
-	B += rotate(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(6, 3, 14, 8); D = rotate(D, 30);
-	A += rotate(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(7, 4, 15, 9); C = rotate(C, 30);
+	E += ROTATE(A, 5) + (B ^ C ^ D) + SQRT_3 + Q4; B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (A ^ B ^ C) + SQRT_3 + Q5; A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (E ^ A ^ B) + SQRT_3 + Q6; E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (D ^ E ^ A) + SQRT_3 + Q7; D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (C ^ D ^ E) + SQRT_3 + Q8; C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + (B ^ C ^ D) + SQRT_3 + Q9; B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (A ^ B ^ C) + SQRT_3 + Q10; A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (E ^ A ^ B) + SQRT_3 + Q11; E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (D ^ E ^ A) + SQRT_3 + Q12; D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (C ^ D ^ E) + SQRT_3 + Q13; C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + (B ^ C ^ D) + SQRT_3 + Q14; B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (A ^ B ^ C) + SQRT_3 + Q15; A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(0, 13, 8, 2); E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(1, 14, 9, 3); D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(2, 15, 10, 4); C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + (B ^ C ^ D) + SQRT_3 + SHA1_RW(3, 0, 11, 5); B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (A ^ B ^ C) + SQRT_3 + SHA1_RW(4, 1, 12, 6); A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (E ^ A ^ B) + SQRT_3 + SHA1_RW(5, 2, 13, 7); E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (D ^ E ^ A) + SQRT_3 + SHA1_RW(6, 3, 14, 8); D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (C ^ D ^ E) + SQRT_3 + SHA1_RW(7, 4, 15, 9); C = ROTATE(C, 30);
 
-	E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(8, 5, 0, 10); B = rotate(B, 30);
-	D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(9, 6, 1, 11); A = rotate(A, 30);
-	C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(10, 7, 2, 12); E = rotate(E, 30);
-	B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(11, 8, 3, 13); D = rotate(D, 30);
-	A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(12, 9, 4, 14); C = rotate(C, 30);
-	E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(13, 10, 5, 15); B = rotate(B, 30);
-	D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(14, 11, 6, 0); A = rotate(A, 30);
-	C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(15, 12, 7, 1); E = rotate(E, 30);
-	B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(0, 13, 8, 2); D = rotate(D, 30);
-	A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(1, 14, 9, 3); C = rotate(C, 30);
-	E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(2, 15, 10, 4); B = rotate(B, 30);
-	D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(3, 0, 11, 5); A = rotate(A, 30);
-	C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(4, 1, 12, 6); E = rotate(E, 30);
-	B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(5, 2, 13, 7); D = rotate(D, 30);
-	A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(6, 3, 14, 8); C = rotate(C, 30);
-	E += rotate(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(7, 4, 15, 9); B = rotate(B, 30);
-	D += rotate(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(8, 5, 0, 10); A = rotate(A, 30);
-	C += rotate(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(9, 6, 1, 11); E = rotate(E, 30);
-	B += rotate(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(10, 7, 2, 12); D = rotate(D, 30);
-	A += rotate(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(11, 8, 3, 13); C = rotate(C, 30);
+	E += ROTATE(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(8, 5, 0, 10); B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(9, 6, 1, 11); A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(10, 7, 2, 12); E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(11, 8, 3, 13); D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(12, 9, 4, 14); C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(13, 10, 5, 15); B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(14, 11, 6, 0); A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(15, 12, 7, 1); E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(0, 13, 8, 2); D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(1, 14, 9, 3); C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(2, 15, 10, 4); B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(3, 0, 11, 5); A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(4, 1, 12, 6); E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(5, 2, 13, 7); D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(6, 3, 14, 8); C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + ((B & C) | (D & (B | C))) + 0x8F1BBCDC + SHA1_RW(7, 4, 15, 9); B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + ((A & B) | (C & (A | B))) + 0x8F1BBCDC + SHA1_RW(8, 5, 0, 10); A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + ((E & A) | (B & (E | A))) + 0x8F1BBCDC + SHA1_RW(9, 6, 1, 11); E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + ((D & E) | (A & (D | E))) + 0x8F1BBCDC + SHA1_RW(10, 7, 2, 12); D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + ((C & D) | (E & (C | D))) + 0x8F1BBCDC + SHA1_RW(11, 8, 3, 13); C = ROTATE(C, 30);
 
-	E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(12, 9, 4, 14); B = rotate(B, 30);
-	D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(13, 10, 5, 15); A = rotate(A, 30);
-	C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(14, 11, 6, 0); E = rotate(E, 30);
-	B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(15, 12, 7, 1); D = rotate(D, 30);
-	A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(0, 13, 8, 2); C = rotate(C, 30);
-	E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(1, 14, 9, 3); B = rotate(B, 30);
-	D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(2, 15, 10, 4); A = rotate(A, 30);
-	C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(3, 0, 11, 5); E = rotate(E, 30);
-	B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(4, 1, 12, 6); D = rotate(D, 30);
-	A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(5, 2, 13, 7); C = rotate(C, 30);
-	E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(6, 3, 14, 8); B = rotate(B, 30);
-	D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(7, 4, 15, 9); A = rotate(A, 30);
-	C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(8, 5, 0, 10); E = rotate(E, 30);
-	B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(9, 6, 1, 11); D = rotate(D, 30);
-	A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(10, 7, 2, 12); C = rotate(C, 30);
-	E += rotate(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(11, 8, 3, 13); B = rotate(B, 30);
-	D += rotate(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(12, 9, 4, 14); A = rotate(A, 30);
-	C += rotate(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(13, 10, 5, 15); E = rotate(E, 30);
-	B += rotate(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(14, 11, 6, 0); D = rotate(D, 30);
-	A += rotate(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(15, 12, 7, 1); C = rotate(C, 30);
+	E += ROTATE(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(12, 9, 4, 14); B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(13, 10, 5, 15); A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(14, 11, 6, 0); E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(15, 12, 7, 1); D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(0, 13, 8, 2); C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(1, 14, 9, 3); B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(2, 15, 10, 4); A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(3, 0, 11, 5); E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(4, 1, 12, 6); D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(5, 2, 13, 7); C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(6, 3, 14, 8); B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(7, 4, 15, 9); A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(8, 5, 0, 10); E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(9, 6, 1, 11); D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(10, 7, 2, 12); C = ROTATE(C, 30);
+	E += ROTATE(A, 5) + (B ^ C ^ D) + 0xCA62C1D6 + SHA1_RW(11, 8, 3, 13); B = ROTATE(B, 30);
+	D += ROTATE(E, 5) + (A ^ B ^ C) + 0xCA62C1D6 + SHA1_RW(12, 9, 4, 14); A = ROTATE(A, 30);
+	C += ROTATE(D, 5) + (E ^ A ^ B) + 0xCA62C1D6 + SHA1_RW(13, 10, 5, 15); E = ROTATE(E, 30);
+	B += ROTATE(C, 5) + (D ^ E ^ A) + 0xCA62C1D6 + SHA1_RW(14, 11, 6, 0); D = ROTATE(D, 30);
+	A += ROTATE(B, 5) + (C ^ D ^ E) + 0xCA62C1D6 + SHA1_RW(15, 12, 7, 1); C = ROTATE(C, 30);
 
 	sha1_hash[0] = state[0] + A;
 	sha1_hash[1] = state[1] + B;
@@ -272,75 +272,75 @@ PUBLIC void sha1_process_block_hmac_sha1(const unsigned int state[5], unsigned i
 }
 
 // MD4
-PRIVATE void md4_process_block(unsigned int* state, const unsigned int* block)
+PRIVATE void md4_process_block(uint32_t* state, const uint32_t* block)
 {
-	unsigned int a = state[0];
-	unsigned int b = state[1];
-	unsigned int c = state[2];
-	unsigned int d = state[3];
+	uint32_t a = state[0];
+	uint32_t b = state[1];
+	uint32_t c = state[2];
+	uint32_t d = state[3];
 
 	/* Round 1 */
-	a += (d ^ (b & (c ^ d))) + block[0] ; a = rotate(a, 3);
-	d += (c ^ (a & (b ^ c))) + block[1] ; d = rotate(d, 7);
-	c += (b ^ (d & (a ^ b))) + block[2] ; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + block[3] ; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + block[0] ; a = ROTATE(a, 3);
+	d += (c ^ (a & (b ^ c))) + block[1] ; d = ROTATE(d, 7);
+	c += (b ^ (d & (a ^ b))) + block[2] ; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + block[3] ; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + block[4] ; a = rotate(a, 3 );
-	d += (c ^ (a & (b ^ c))) + block[5] ; d = rotate(d, 7 );
-	c += (b ^ (d & (a ^ b))) + block[6] ; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + block[7] ; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + block[4] ; a = ROTATE(a, 3 );
+	d += (c ^ (a & (b ^ c))) + block[5] ; d = ROTATE(d, 7 );
+	c += (b ^ (d & (a ^ b))) + block[6] ; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + block[7] ; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + block[8] ; a = rotate(a, 3 );
-	d += (c ^ (a & (b ^ c))) + block[9] ; d = rotate(d, 7 );
-	c += (b ^ (d & (a ^ b))) + block[10]; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + block[11]; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + block[8] ; a = ROTATE(a, 3 );
+	d += (c ^ (a & (b ^ c))) + block[9] ; d = ROTATE(d, 7 );
+	c += (b ^ (d & (a ^ b))) + block[10]; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + block[11]; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + block[12]; a = rotate(a, 3 );
-	d += (c ^ (a & (b ^ c))) + block[13]; d = rotate(d, 7 );
-	c += (b ^ (d & (a ^ b))) + block[14]; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + block[15]; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + block[12]; a = ROTATE(a, 3 );
+	d += (c ^ (a & (b ^ c))) + block[13]; d = ROTATE(d, 7 );
+	c += (b ^ (d & (a ^ b))) + block[14]; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + block[15]; b = ROTATE(b, 19);
 
 	/* Round 2 */
-	a += ((b & (c | d)) | (c & d)) + block[0] + SQRT_2; a = rotate(a, 3 );
-	d += ((a & (b | c)) | (b & c)) + block[4] + SQRT_2; d = rotate(d, 5 );
-	c += ((d & (a | b)) | (a & b)) + block[8] + SQRT_2; c = rotate(c, 9 );
-	b += ((c & (d | a)) | (d & a)) + block[12]+ SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + block[0] + SQRT_2; a = ROTATE(a, 3 );
+	d += ((a & (b | c)) | (b & c)) + block[4] + SQRT_2; d = ROTATE(d, 5 );
+	c += ((d & (a | b)) | (a & b)) + block[8] + SQRT_2; c = ROTATE(c, 9 );
+	b += ((c & (d | a)) | (d & a)) + block[12]+ SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + block[1] + SQRT_2; a = rotate(a, 3 );
-	d += ((a & (b | c)) | (b & c)) + block[5] + SQRT_2; d = rotate(d, 5 );
-	c += ((d & (a | b)) | (a & b)) + block[9] + SQRT_2; c = rotate(c, 9 );
-	b += ((c & (d | a)) | (d & a)) + block[13]+ SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + block[1] + SQRT_2; a = ROTATE(a, 3 );
+	d += ((a & (b | c)) | (b & c)) + block[5] + SQRT_2; d = ROTATE(d, 5 );
+	c += ((d & (a | b)) | (a & b)) + block[9] + SQRT_2; c = ROTATE(c, 9 );
+	b += ((c & (d | a)) | (d & a)) + block[13]+ SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + block[2] + SQRT_2; a = rotate(a, 3 );
-	d += ((a & (b | c)) | (b & c)) + block[6] + SQRT_2; d = rotate(d, 5 );
-	c += ((d & (a | b)) | (a & b)) + block[10]+ SQRT_2; c = rotate(c, 9 );
-	b += ((c & (d | a)) | (d & a)) + block[14]+ SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + block[2] + SQRT_2; a = ROTATE(a, 3 );
+	d += ((a & (b | c)) | (b & c)) + block[6] + SQRT_2; d = ROTATE(d, 5 );
+	c += ((d & (a | b)) | (a & b)) + block[10]+ SQRT_2; c = ROTATE(c, 9 );
+	b += ((c & (d | a)) | (d & a)) + block[14]+ SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + block[3] + SQRT_2; a = rotate(a, 3 );
-	d += ((a & (b | c)) | (b & c)) + block[7] + SQRT_2; d = rotate(d, 5 );
-	c += ((d & (a | b)) | (a & b)) + block[11]+ SQRT_2; c = rotate(c, 9 );
-	b += ((c & (d | a)) | (d & a)) + block[15]+ SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + block[3] + SQRT_2; a = ROTATE(a, 3 );
+	d += ((a & (b | c)) | (b & c)) + block[7] + SQRT_2; d = ROTATE(d, 5 );
+	c += ((d & (a | b)) | (a & b)) + block[11]+ SQRT_2; c = ROTATE(c, 9 );
+	b += ((c & (d | a)) | (d & a)) + block[15]+ SQRT_2; b = ROTATE(b, 13);
 
 	/* Round 3 */
-	a += (d ^ c ^ b) + block[0]  + SQRT_3; a = rotate(a, 3 );
-	d += (c ^ b ^ a) + block[8]  + SQRT_3; d = rotate(d, 9 );
-	c += (b ^ a ^ d) + block[4]  + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c) + block[12] + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + block[0]  + SQRT_3; a = ROTATE(a, 3 );
+	d += (c ^ b ^ a) + block[8]  + SQRT_3; d = ROTATE(d, 9 );
+	c += (b ^ a ^ d) + block[4]  + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c) + block[12] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (d ^ c ^ b) + block[2]  + SQRT_3; a = rotate(a, 3 );
-	d += (c ^ b ^ a) + block[10] + SQRT_3; d = rotate(d, 9 );
-	c += (b ^ a ^ d) + block[6]  + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c) + block[14] + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + block[2]  + SQRT_3; a = ROTATE(a, 3 );
+	d += (c ^ b ^ a) + block[10] + SQRT_3; d = ROTATE(d, 9 );
+	c += (b ^ a ^ d) + block[6]  + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c) + block[14] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (d ^ c ^ b) + block[1]  + SQRT_3; a = rotate(a, 3 );
-	d += (c ^ b ^ a) + block[9]  + SQRT_3; d = rotate(d, 9 );
-	c += (b ^ a ^ d) + block[5]  + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c) + block[13] + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + block[1]  + SQRT_3; a = ROTATE(a, 3 );
+	d += (c ^ b ^ a) + block[9]  + SQRT_3; d = ROTATE(d, 9 );
+	c += (b ^ a ^ d) + block[5]  + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c) + block[13] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (d ^ c ^ b) + block[3]  + SQRT_3; a = rotate(a, 3 );
-	d += (c ^ b ^ a) + block[11] + SQRT_3; d = rotate(d, 9 );
-	c += (b ^ a ^ d) + block[7]  + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c) + block[15] + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + block[3]  + SQRT_3; a = ROTATE(a, 3 );
+	d += (c ^ b ^ a) + block[11] + SQRT_3; d = ROTATE(d, 9 );
+	c += (b ^ a ^ d) + block[7]  + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c) + block[15] + SQRT_3; b = ROTATE(b, 15);
 
 	state[0] += a;
 	state[1] += b;
@@ -349,96 +349,96 @@ PRIVATE void md4_process_block(unsigned int* state, const unsigned int* block)
 }
 
 // MD5
-PUBLIC void md5_process_block(unsigned int* state, const unsigned int* block)
+PUBLIC void md5_process_block(uint32_t* state, const uint32_t* block)
 {
-	unsigned int a = state[0];
-	unsigned int b = state[1];
-	unsigned int c = state[2];
-	unsigned int d = state[3];
+	uint32_t a = state[0];
+	uint32_t b = state[1];
+	uint32_t c = state[2];
+	uint32_t d = state[3];
 
 	/* Round 1 */
-	a += (d ^ (b & (c ^ d))) + block[0 ] + 0xd76aa478; a = rotate(a, 7) + b;
-	d += (c ^ (a & (b ^ c))) + block[1 ] + 0xe8c7b756; d = rotate(d, 12) + a;
-	c += (b ^ (d & (a ^ b))) + block[2 ] + 0x242070db; c = rotate(c, 17) + d;
-	b += (a ^ (c & (d ^ a))) + block[3 ] + 0xc1bdceee; b = rotate(b, 22) + c;
+	a += (d ^ (b & (c ^ d))) + block[0 ] + 0xd76aa478; a = ROTATE(a, 7) + b;
+	d += (c ^ (a & (b ^ c))) + block[1 ] + 0xe8c7b756; d = ROTATE(d, 12) + a;
+	c += (b ^ (d & (a ^ b))) + block[2 ] + 0x242070db; c = ROTATE(c, 17) + d;
+	b += (a ^ (c & (d ^ a))) + block[3 ] + 0xc1bdceee; b = ROTATE(b, 22) + c;
 									   
-	a += (d ^ (b & (c ^ d))) + block[4 ] + 0xf57c0faf; a = rotate(a, 7) + b;
-	d += (c ^ (a & (b ^ c))) + block[5 ] + 0x4787c62a; d = rotate(d, 12) + a;
-	c += (b ^ (d & (a ^ b))) + block[6 ] + 0xa8304613; c = rotate(c, 17) + d;
-	b += (a ^ (c & (d ^ a))) + block[7 ] + 0xfd469501; b = rotate(b, 22) + c;
+	a += (d ^ (b & (c ^ d))) + block[4 ] + 0xf57c0faf; a = ROTATE(a, 7) + b;
+	d += (c ^ (a & (b ^ c))) + block[5 ] + 0x4787c62a; d = ROTATE(d, 12) + a;
+	c += (b ^ (d & (a ^ b))) + block[6 ] + 0xa8304613; c = ROTATE(c, 17) + d;
+	b += (a ^ (c & (d ^ a))) + block[7 ] + 0xfd469501; b = ROTATE(b, 22) + c;
 									   
-	a += (d ^ (b & (c ^ d))) + block[8 ] + 0x698098d8; a = rotate(a, 7) + b;
-	d += (c ^ (a & (b ^ c))) + block[9 ] + 0x8b44f7af; d = rotate(d, 12) + a;
-	c += (b ^ (d & (a ^ b))) + block[10] + 0xffff5bb1; c = rotate(c, 17) + d;
-	b += (a ^ (c & (d ^ a))) + block[11] + 0x895cd7be; b = rotate(b, 22) + c;
+	a += (d ^ (b & (c ^ d))) + block[8 ] + 0x698098d8; a = ROTATE(a, 7) + b;
+	d += (c ^ (a & (b ^ c))) + block[9 ] + 0x8b44f7af; d = ROTATE(d, 12) + a;
+	c += (b ^ (d & (a ^ b))) + block[10] + 0xffff5bb1; c = ROTATE(c, 17) + d;
+	b += (a ^ (c & (d ^ a))) + block[11] + 0x895cd7be; b = ROTATE(b, 22) + c;
 
-	a += (d ^ (b & (c ^ d))) + block[12] + 0x6b901122; a = rotate(a, 7) + b;
-	d += (c ^ (a & (b ^ c))) + block[13] + 0xfd987193; d = rotate(d, 12) + a;
-	c += (b ^ (d & (a ^ b))) + block[14] + 0xa679438e; c = rotate(c, 17) + d;
-	b += (a ^ (c & (d ^ a))) + block[15] + 0x49b40821; b = rotate(b, 22) + c;
+	a += (d ^ (b & (c ^ d))) + block[12] + 0x6b901122; a = ROTATE(a, 7) + b;
+	d += (c ^ (a & (b ^ c))) + block[13] + 0xfd987193; d = ROTATE(d, 12) + a;
+	c += (b ^ (d & (a ^ b))) + block[14] + 0xa679438e; c = ROTATE(c, 17) + d;
+	b += (a ^ (c & (d ^ a))) + block[15] + 0x49b40821; b = ROTATE(b, 22) + c;
 
 	/* Round 2 */
-	a += (c ^ (d & (b ^ c))) + block[1 ] + 0xf61e2562; a = rotate(a, 5) + b;
-	d += (b ^ (c & (a ^ b))) + block[6 ] + 0xc040b340; d = rotate(d, 9) + a;
-	c += (a ^ (b & (d ^ a))) + block[11] + 0x265e5a51; c = rotate(c, 14) + d;
-	b += (d ^ (a & (c ^ d))) + block[0 ] + 0xe9b6c7aa; b = rotate(b, 20) + c;
+	a += (c ^ (d & (b ^ c))) + block[1 ] + 0xf61e2562; a = ROTATE(a, 5) + b;
+	d += (b ^ (c & (a ^ b))) + block[6 ] + 0xc040b340; d = ROTATE(d, 9) + a;
+	c += (a ^ (b & (d ^ a))) + block[11] + 0x265e5a51; c = ROTATE(c, 14) + d;
+	b += (d ^ (a & (c ^ d))) + block[0 ] + 0xe9b6c7aa; b = ROTATE(b, 20) + c;
 
-	a += (c ^ (d & (b ^ c))) + block[5 ] + 0xd62f105d; a = rotate(a, 5) + b;
-	d += (b ^ (c & (a ^ b))) + block[10] + 0x02441453; d = rotate(d, 9) + a;
-	c += (a ^ (b & (d ^ a))) + block[15] + 0xd8a1e681; c = rotate(c, 14) + d;
-	b += (d ^ (a & (c ^ d))) + block[4 ] + 0xe7d3fbc8; b = rotate(b, 20) + c;
+	a += (c ^ (d & (b ^ c))) + block[5 ] + 0xd62f105d; a = ROTATE(a, 5) + b;
+	d += (b ^ (c & (a ^ b))) + block[10] + 0x02441453; d = ROTATE(d, 9) + a;
+	c += (a ^ (b & (d ^ a))) + block[15] + 0xd8a1e681; c = ROTATE(c, 14) + d;
+	b += (d ^ (a & (c ^ d))) + block[4 ] + 0xe7d3fbc8; b = ROTATE(b, 20) + c;
 
-	a += (c ^ (d & (b ^ c))) + block[9 ] + 0x21e1cde6; a = rotate(a, 5) + b;
-	d += (b ^ (c & (a ^ b))) + block[14] + 0xc33707d6; d = rotate(d, 9) + a;
-	c += (a ^ (b & (d ^ a))) + block[3 ] + 0xf4d50d87; c = rotate(c, 14) + d;
-	b += (d ^ (a & (c ^ d))) + block[8 ] + 0x455a14ed; b = rotate(b, 20) + c;
+	a += (c ^ (d & (b ^ c))) + block[9 ] + 0x21e1cde6; a = ROTATE(a, 5) + b;
+	d += (b ^ (c & (a ^ b))) + block[14] + 0xc33707d6; d = ROTATE(d, 9) + a;
+	c += (a ^ (b & (d ^ a))) + block[3 ] + 0xf4d50d87; c = ROTATE(c, 14) + d;
+	b += (d ^ (a & (c ^ d))) + block[8 ] + 0x455a14ed; b = ROTATE(b, 20) + c;
 
-	a += (c ^ (d & (b ^ c))) + block[13] + 0xa9e3e905; a = rotate(a, 5) + b;
-	d += (b ^ (c & (a ^ b))) + block[2 ] + 0xfcefa3f8; d = rotate(d, 9) + a;
-	c += (a ^ (b & (d ^ a))) + block[7 ] + 0x676f02d9; c = rotate(c, 14) + d;
-	b += (d ^ (a & (c ^ d))) + block[12] + 0x8d2a4c8a; b = rotate(b, 20) + c;
+	a += (c ^ (d & (b ^ c))) + block[13] + 0xa9e3e905; a = ROTATE(a, 5) + b;
+	d += (b ^ (c & (a ^ b))) + block[2 ] + 0xfcefa3f8; d = ROTATE(d, 9) + a;
+	c += (a ^ (b & (d ^ a))) + block[7 ] + 0x676f02d9; c = ROTATE(c, 14) + d;
+	b += (d ^ (a & (c ^ d))) + block[12] + 0x8d2a4c8a; b = ROTATE(b, 20) + c;
 
 	/* Round 3 */
-	a += (b ^ c ^ d) + block[5 ] + 0xfffa3942; a = rotate(a, 4) + b;
-	d += (a ^ b ^ c) + block[8 ] + 0x8771f681; d = rotate(d, 11) + a;
-	c += (d ^ a ^ b) + block[11] + 0x6d9d6122; c = rotate(c, 16) + d;
-	b += (c ^ d ^ a) + block[14] + 0xfde5380c; b = rotate(b, 23) + c;
+	a += (b ^ c ^ d) + block[5 ] + 0xfffa3942; a = ROTATE(a, 4) + b;
+	d += (a ^ b ^ c) + block[8 ] + 0x8771f681; d = ROTATE(d, 11) + a;
+	c += (d ^ a ^ b) + block[11] + 0x6d9d6122; c = ROTATE(c, 16) + d;
+	b += (c ^ d ^ a) + block[14] + 0xfde5380c; b = ROTATE(b, 23) + c;
 
-	a += (b ^ c ^ d) + block[1 ] + 0xa4beea44; a = rotate(a, 4) + b;
-	d += (a ^ b ^ c) + block[4 ] + 0x4bdecfa9; d = rotate(d, 11) + a;
-	c += (d ^ a ^ b) + block[7 ] + 0xf6bb4b60; c = rotate(c, 16) + d;
-	b += (c ^ d ^ a) + block[10] + 0xbebfbc70; b = rotate(b, 23) + c;
+	a += (b ^ c ^ d) + block[1 ] + 0xa4beea44; a = ROTATE(a, 4) + b;
+	d += (a ^ b ^ c) + block[4 ] + 0x4bdecfa9; d = ROTATE(d, 11) + a;
+	c += (d ^ a ^ b) + block[7 ] + 0xf6bb4b60; c = ROTATE(c, 16) + d;
+	b += (c ^ d ^ a) + block[10] + 0xbebfbc70; b = ROTATE(b, 23) + c;
 
-	a += (b ^ c ^ d) + block[13] + 0x289b7ec6; a = rotate(a, 4) + b;
-	d += (a ^ b ^ c) + block[0 ] + 0xeaa127fa; d = rotate(d, 11) + a;
-	c += (d ^ a ^ b) + block[3 ] + 0xd4ef3085; c = rotate(c, 16) + d;
-	b += (c ^ d ^ a) + block[6 ] + 0x04881d05; b = rotate(b, 23) + c;
+	a += (b ^ c ^ d) + block[13] + 0x289b7ec6; a = ROTATE(a, 4) + b;
+	d += (a ^ b ^ c) + block[0 ] + 0xeaa127fa; d = ROTATE(d, 11) + a;
+	c += (d ^ a ^ b) + block[3 ] + 0xd4ef3085; c = ROTATE(c, 16) + d;
+	b += (c ^ d ^ a) + block[6 ] + 0x04881d05; b = ROTATE(b, 23) + c;
 
-	a += (b ^ c ^ d) + block[9 ] + 0xd9d4d039; a = rotate(a, 4) + b;
-	d += (a ^ b ^ c) + block[12] + 0xe6db99e5; d = rotate(d, 11) + a;
-	c += (d ^ a ^ b) + block[15] + 0x1fa27cf8; c = rotate(c, 16) + d;
-	b += (c ^ d ^ a) + block[2 ] + 0xc4ac5665; b = rotate(b, 23) + c;
+	a += (b ^ c ^ d) + block[9 ] + 0xd9d4d039; a = ROTATE(a, 4) + b;
+	d += (a ^ b ^ c) + block[12] + 0xe6db99e5; d = ROTATE(d, 11) + a;
+	c += (d ^ a ^ b) + block[15] + 0x1fa27cf8; c = ROTATE(c, 16) + d;
+	b += (c ^ d ^ a) + block[2 ] + 0xc4ac5665; b = ROTATE(b, 23) + c;
 
 	/* Round 4 */
-	a += (c ^ (b | ~d)) + block[0 ] + 0xf4292244; a = rotate(a, 6) + b;
-	d += (b ^ (a | ~c)) + block[7 ] + 0x432aff97; d = rotate(d, 10) + a;
-	c += (a ^ (d | ~b)) + block[14] + 0xab9423a7; c = rotate(c, 15) + d;
-	b += (d ^ (c | ~a)) + block[5 ] + 0xfc93a039; b = rotate(b, 21) + c;
+	a += (c ^ (b | ~d)) + block[0 ] + 0xf4292244; a = ROTATE(a, 6) + b;
+	d += (b ^ (a | ~c)) + block[7 ] + 0x432aff97; d = ROTATE(d, 10) + a;
+	c += (a ^ (d | ~b)) + block[14] + 0xab9423a7; c = ROTATE(c, 15) + d;
+	b += (d ^ (c | ~a)) + block[5 ] + 0xfc93a039; b = ROTATE(b, 21) + c;
 
-	a += (c ^ (b | ~d)) + block[12] + 0x655b59c3; a = rotate(a, 6) + b;
-	d += (b ^ (a | ~c)) + block[3 ] + 0x8f0ccc92; d = rotate(d, 10) + a;
-	c += (a ^ (d | ~b)) + block[10] + 0xffeff47d; c = rotate(c, 15) + d;
-	b += (d ^ (c | ~a)) + block[1 ] + 0x85845dd1; b = rotate(b, 21) + c;
+	a += (c ^ (b | ~d)) + block[12] + 0x655b59c3; a = ROTATE(a, 6) + b;
+	d += (b ^ (a | ~c)) + block[3 ] + 0x8f0ccc92; d = ROTATE(d, 10) + a;
+	c += (a ^ (d | ~b)) + block[10] + 0xffeff47d; c = ROTATE(c, 15) + d;
+	b += (d ^ (c | ~a)) + block[1 ] + 0x85845dd1; b = ROTATE(b, 21) + c;
 
-	a += (c ^ (b | ~d)) + block[8 ] + 0x6fa87e4f; a = rotate(a, 6) + b;
-	d += (b ^ (a | ~c)) + block[15] + 0xfe2ce6e0; d = rotate(d, 10) + a;
-	c += (a ^ (d | ~b)) + block[6 ] + 0xa3014314; c = rotate(c, 15) + d;
-	b += (d ^ (c | ~a)) + block[13] + 0x4e0811a1; b = rotate(b, 21) + c;
+	a += (c ^ (b | ~d)) + block[8 ] + 0x6fa87e4f; a = ROTATE(a, 6) + b;
+	d += (b ^ (a | ~c)) + block[15] + 0xfe2ce6e0; d = ROTATE(d, 10) + a;
+	c += (a ^ (d | ~b)) + block[6 ] + 0xa3014314; c = ROTATE(c, 15) + d;
+	b += (d ^ (c | ~a)) + block[13] + 0x4e0811a1; b = ROTATE(b, 21) + c;
 
-	a += (c ^ (b | ~d)) + block[4 ] + 0xf7537e82; a = rotate(a, 6) + b;
-	d += (b ^ (a | ~c)) + block[11] + 0xbd3af235; d = rotate(d, 10) + a;
-	c += (a ^ (d | ~b)) + block[2 ] + 0x2ad7d2bb; c = rotate(c, 15) + d;
-	b += (d ^ (c | ~a)) + block[9 ] + 0xeb86d391; b = rotate(b, 21) + c;
+	a += (c ^ (b | ~d)) + block[4 ] + 0xf7537e82; a = ROTATE(a, 6) + b;
+	d += (b ^ (a | ~c)) + block[11] + 0xbd3af235; d = ROTATE(d, 10) + a;
+	c += (a ^ (d | ~b)) + block[2 ] + 0x2ad7d2bb; c = ROTATE(c, 15) + d;
+	b += (d ^ (c | ~a)) + block[9 ] + 0xeb86d391; b = ROTATE(b, 21) + c;
 
 	state[0] += a;
 	state[1] += b;
@@ -449,11 +449,11 @@ PUBLIC void md5_process_block(unsigned int* state, const unsigned int* block)
 // NTLM
 PUBLIC void hash_ntlm(const unsigned char* message, char* hash)
 {
-	unsigned int nt_buffer[16];
-	unsigned int md4_state[4];
+	uint32_t nt_buffer[16];
+	uint32_t md4_state[4];
 
-	unsigned int i;
-	unsigned int message_lenght = (unsigned int)strlen((char*)message);
+	uint32_t i;
+	uint32_t message_lenght = (uint32_t)strlen((char*)message);
 	if(message_lenght > 27)
 	{
 		strcpy(hash, "-- Unsupported: More than 27 chars --");
@@ -475,7 +475,7 @@ PUBLIC void hash_ntlm(const unsigned char* message, char* hash)
 	md4_process_block(md4_state, nt_buffer);
 
 	hash[0] = 0;
-	for (unsigned int i = 0; i < 4; i++)
+	for (uint32_t i = 0; i < 4; i++)
 	{
 		SWAP_ENDIANNESS(md4_state[i], md4_state[i]);
 		sprintf((char*)hash + strlen((char*)hash), "%08X", md4_state[i]);
@@ -483,20 +483,20 @@ PUBLIC void hash_ntlm(const unsigned char* message, char* hash)
 }
 
 // SHA256
-#define R_E(x) (rotate(x,26) ^ rotate(x,21) ^ rotate(x,7 ))
-#define R_A(x) (rotate(x,30) ^ rotate(x,19) ^ rotate(x,10))
-#define R0(x)  (rotate(x,25) ^ rotate(x,14) ^ (x>>3))
-#define R1(x)  (rotate(x,15) ^ rotate(x,13) ^ (x>>10))
-PUBLIC void sha256_process_block(unsigned int* state, unsigned int* W)
+#define R_E(x) (ROTATE(x,26) ^ ROTATE(x,21) ^ ROTATE(x,7 ))
+#define R_A(x) (ROTATE(x,30) ^ ROTATE(x,19) ^ ROTATE(x,10))
+#define R0(x)  (ROTATE(x,25) ^ ROTATE(x,14) ^ (x>>3))
+#define R1(x)  (ROTATE(x,15) ^ ROTATE(x,13) ^ (x>>10))
+PUBLIC void sha256_process_block(uint32_t* state, uint32_t* W)
 {
-	unsigned int A = state[0];
-	unsigned int B = state[1];
-	unsigned int C = state[2];
-	unsigned int D = state[3];
-	unsigned int E = state[4];
-	unsigned int F = state[5];
-	unsigned int G = state[6];
-	unsigned int H = state[7];
+	uint32_t A = state[0];
+	uint32_t B = state[1];
+	uint32_t C = state[2];
+	uint32_t D = state[3];
+	uint32_t E = state[4];
+	uint32_t F = state[5];
+	uint32_t G = state[6];
+	uint32_t H = state[7];
 
 	/* Rounds */
 	H += R_E(E) + (G ^ (E & (F ^ G))) + 0x428A2F98 + W[ 0]; D += H; H += R_A(A) + ((A & B) | (C & (A | B)));
@@ -582,10 +582,10 @@ PUBLIC void sha256_process_block(unsigned int* state, unsigned int* W)
 #undef R_A
 #undef R0
 #undef R1
-#define R_E(x) (rotate64(x,50) ^ rotate64(x,46) ^ rotate64(x,23))
-#define R_A(x) (rotate64(x,36) ^ rotate64(x,30) ^ rotate64(x,25))
-#define R0(x)  (rotate64(x,63) ^ rotate64(x,56) ^ (x>>7))
-#define R1(x)  (rotate64(x,45) ^ rotate64(x,3 ) ^ (x>>6))
+#define R_E(x) (ROTATE64(x,50) ^ ROTATE64(x,46) ^ ROTATE64(x,23))
+#define R_A(x) (ROTATE64(x,36) ^ ROTATE64(x,30) ^ ROTATE64(x,25))
+#define R0(x)  (ROTATE64(x,63) ^ ROTATE64(x,56) ^ (x>>7))
+#define R1(x)  (ROTATE64(x,45) ^ ROTATE64(x,3 ) ^ (x>>6))
 PUBLIC void sha512_process_block(uint64_t* state, uint64_t* W)
 {
 	uint64_t A = state[0];
@@ -709,9 +709,9 @@ PUBLIC void hash_file(void* void_data)
 	uint64_t sha512_state[8];
 
 	unsigned char buffer[128+128+16];
-	unsigned int W[16];
-	unsigned int* buffer_uint = (unsigned int*)buffer;
-	unsigned int bytes_read;
+	uint32_t W[16];
+	uint32_t* buffer_uint = (uint32_t*)buffer;
+	uint32_t bytes_read;
 
 	FILE* file = fopen(data->filename, "rb");
 	if (file)
@@ -732,7 +732,7 @@ PUBLIC void hash_file(void* void_data)
 
 		do
 		{
-			bytes_read = (unsigned int)fread(buffer, 1, 128, file);
+			bytes_read = (uint32_t)fread(buffer, 1, 128, file);
 			file_size += bytes_read;
 
 			if (file_size & 0x00800000)
@@ -763,9 +763,9 @@ PUBLIC void hash_file(void* void_data)
 				memcpy(W, buffer + 64, 64);
 				sha256_process_block(sha256_state, W);
 				// SHA512
-				for (unsigned int i = 0; i < 16; i++)
+				for (uint32_t i = 0; i < 16; i++)
 				{
-					unsigned int tmp = buffer_uint[2 * i];
+					uint32_t tmp = buffer_uint[2 * i];
 					buffer_uint[2 * i] = buffer_uint[2 * i + 1];
 					buffer_uint[2 * i + 1] = tmp;
 				}
@@ -777,12 +777,12 @@ PUBLIC void hash_file(void* void_data)
 				buffer[bytes_read] = 0x80;
 				memset(buffer + bytes_read + 1, 0, 128+16);
 
-				unsigned int num_blocks = 1 + (bytes_read + 8) / 64;
+				uint32_t num_blocks = 1 + (bytes_read + 8) / 64;
 				// Put lenght
 				file_size <<= 3;
 				((uint64_t*)buffer)[(num_blocks - 1) * 8 + 7] = file_size;
 
-				for (unsigned int i = 0; i < num_blocks; i++)
+				for (uint32_t i = 0; i < num_blocks; i++)
 				{
 					md4_process_block(md4_state, buffer_uint + i * 16);
 					md5_process_block(md5_state, buffer_uint + i * 16);
@@ -794,7 +794,7 @@ PUBLIC void hash_file(void* void_data)
 				uint32_t t = buffer_uint[(num_blocks - 1) * 16 + 14];
 				buffer_uint[(num_blocks - 1) * 16 + 14] = buffer_uint[(num_blocks - 1) * 16 + 15];
 				buffer_uint[(num_blocks - 1) * 16 + 15] = t;
-				for (unsigned int i = 0; i < num_blocks; i++)
+				for (uint32_t i = 0; i < num_blocks; i++)
 				{
 					// SHA1
 					memcpy(W, buffer + i * 64, 64);
@@ -809,13 +809,13 @@ PUBLIC void hash_file(void* void_data)
 				buffer_uint[(num_blocks - 1) * 16 + 15] = 0;
 				num_blocks = 1 + (bytes_read + 16) / 128;
 				((uint64_t*)buffer_uint)[(num_blocks - 1) * 16 + 15] = file_size;
-				for (unsigned int i = 0; i < (bytes_read / 8 + 1); i++)
+				for (uint32_t i = 0; i < (bytes_read / 8 + 1); i++)
 				{
-					unsigned int tmp = buffer_uint[2 * i];
+					uint32_t tmp = buffer_uint[2 * i];
 					buffer_uint[2 * i] = buffer_uint[2 * i + 1];
 					buffer_uint[2 * i + 1] = tmp;
 				}
-				for (unsigned int i = 0; i < num_blocks; i++)
+				for (uint32_t i = 0; i < num_blocks; i++)
 					sha512_process_block(sha512_state, ((uint64_t*)buffer_uint) + 16 * i);
 
 				bytes_read = 0;
@@ -826,25 +826,25 @@ PUBLIC void hash_file(void* void_data)
 		fclose(file);
 		// Convert to hex
 		data->md4_hash[0] = 0;
-		for (unsigned int i = 0; i < 4; i++)
+		for (uint32_t i = 0; i < 4; i++)
 		{
 			SWAP_ENDIANNESS(md4_state[i], md4_state[i]);
 			sprintf(data->md4_hash + strlen(data->md4_hash), "%08X", md4_state[i]);
 		}
 		data->md5_hash[0] = 0;
-		for (unsigned int i = 0; i < 4; i++)
+		for (uint32_t i = 0; i < 4; i++)
 		{
 			SWAP_ENDIANNESS(md5_state[i], md5_state[i]);
 			sprintf(data->md5_hash + strlen(data->md5_hash), "%08X", md5_state[i]);
 		}
 		data->sha1_hash[0] = 0;
-		for (unsigned int i = 0; i < 5; i++)
+		for (uint32_t i = 0; i < 5; i++)
 			sprintf(data->sha1_hash+strlen(data->sha1_hash), "%08X", sha1_state[i]);
 		data->sha256_hash[0] = 0;
-		for (unsigned int i = 0; i < 8; i++)
+		for (uint32_t i = 0; i < 8; i++)
 			sprintf(data->sha256_hash+strlen(data->sha256_hash), "%08X", sha256_state[i]);
 		data->sha512_hash[0] = 0;
-		for (unsigned int i = 0; i < 8; i++)
+		for (uint32_t i = 0; i < 8; i++)
 			sprintf(data->sha512_hash+strlen(data->sha512_hash), "%016llX", sha512_state[i]);
 	}
 

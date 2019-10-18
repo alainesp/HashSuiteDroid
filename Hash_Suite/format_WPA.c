@@ -29,15 +29,15 @@ typedef struct
 
 typedef struct
 {
-	unsigned int keymic[4];
+	uint32_t keymic[4];
 	unsigned char prf_buffer[128];
 	unsigned char eapol[256+64];
-	unsigned int  eapol_blocks;
+	uint32_t  eapol_blocks;
 	int           keyver;
 } hccap_bin;
 
 #define PLAINTEXT_LENGTH	27//63
-#define BINARY_SIZE			(sizeof(hccap_bin))
+#define BINARY_SIZE			((uint32_t)(sizeof(hccap_bin)))
 #define SALT_SIZE			64
 #define NT_NUM_KEYS		    64
 
@@ -50,7 +50,7 @@ PRIVATE int wpa_line_is_valid(char* hccap, char* unused0, char* unused, char* un
 	{
 		hccap += WPA_PREFIX_LEN;
 		char* base64 = strchr(hccap, '#');
-		unsigned int essid_len = (unsigned int)(base64 - hccap);
+		uint32_t essid_len = (uint32_t)(base64 - hccap);
 		if (base64 && essid_len <= 51 && valid_base64_string(base64 + 1, 475))
 		{
 			// Check eapol size
@@ -72,7 +72,7 @@ PRIVATE int wpa_line_is_valid(char* hccap, char* unused0, char* unused, char* un
 	}
 	return FALSE;
 }
-PRIVATE void add_hash_from_line(ImportParam* param, char* hccap, char* unused0, char* unused, char* unused1, sqlite3_int64 tag_id)
+PRIVATE sqlite3_int64 add_hash_from_line(ImportParam* param, char* hccap, char* unused0, char* unused, char* unused1)
 {
 	char essid[64];
 
@@ -80,18 +80,20 @@ PRIVATE void add_hash_from_line(ImportParam* param, char* hccap, char* unused0, 
 	{
 		hccap += WPA_PREFIX_LEN;
 		char* base64 = strchr(hccap, '#');
-		unsigned int essid_len = (unsigned int)(base64 - hccap);
+		uint32_t essid_len = (uint32_t)(base64 - hccap);
 		if (base64 && essid_len <= 51 && valid_base64_string(base64 + 1, 475))
 		{
 			strncpy(essid, hccap, essid_len);
 			essid[essid_len] = 0;
 			// Insert hash and account
-			insert_hash_account(param, essid, hccap, WPA_INDEX, tag_id);
+			return insert_hash_account1(param, essid, hccap, WPA_INDEX);
 		}
 	}
+
+	return -1;
 }
 
-PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, void* salt_void)
+PRIVATE uint32_t get_binary(const unsigned char* ciphertext, void* binary, void* salt_void)
 {
 	hccap_bin* out_bin = (hccap_bin*)binary;
 	unsigned char* salt_essid = (unsigned char*)salt_void;
@@ -102,11 +104,11 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	unsigned char *dst = ((unsigned char*)(&hccap)) + 36;
 
 	// Copy essid and preprocess
-	unsigned int essid_len = (unsigned int)(base64 - ciphertext);
+	uint32_t essid_len = (uint32_t)(base64 - ciphertext);
 	strncpy(salt_essid, essid, base64 - essid);
 	memcpy(salt_essid + essid_len, "\x0\x0\x0\x1\x80", 5);
 	memset(salt_essid + essid_len + 5, 0, 60 - (essid_len + 5));
-	unsigned int* salt_essid_ptr = (unsigned int*)salt_essid;
+	uint32_t* salt_essid_ptr = (uint32_t*)salt_essid;
 	salt_essid_ptr[15] = (64 + essid_len + 4) << 3;
 	swap_endianness_array(salt_essid_ptr, 14);
 	base64++;
@@ -124,7 +126,7 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	dst[1] = (base64_to_num[base64[1]] << 4) | (base64_to_num[base64[2]] >> 2);
 
 	// Manage binary
-	memcpy(out_bin->keymic, hccap.keymic, BINARY_SIZE);
+	memcpy(out_bin->keymic, hccap.keymic, 16);
 	if (hccap.keyver != 1)
 		swap_endianness_array(out_bin->keymic, 4);
 
@@ -135,7 +137,7 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	memcpy(out_bin->eapol, hccap.eapol, hccap.eapol_size);
 	out_bin->eapol[hccap.eapol_size] = 0x80;
 	memset(out_bin->eapol + hccap.eapol_size + 1, 0, sizeof(out_bin->eapol) - hccap.eapol_size - 1);
-	unsigned int* eapol_ptr = ((unsigned int*)out_bin->eapol);
+	uint32_t* eapol_ptr = ((uint32_t*)out_bin->eapol);
 	if (hccap.keyver != 1)
 		swap_endianness_array(eapol_ptr, sizeof(out_bin->eapol) / 4 - 2);
 
@@ -166,7 +168,7 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	out_bin->prf_buffer[100] = 0x80;
 	memset(out_bin->prf_buffer + 101, 0, sizeof(out_bin->prf_buffer) - 4 - 101);
 
-	unsigned int* prf_buffer_ptr = ((unsigned int*)out_bin->prf_buffer);
+	uint32_t* prf_buffer_ptr = ((uint32_t*)out_bin->prf_buffer);
 	prf_buffer_ptr[16+15] = (64 + 100) << 3;
 
 	swap_endianness_array(prf_buffer_ptr, 104/4);
@@ -174,26 +176,77 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	
 	return out_bin->keymic[0];
 }
+PRIVATE void binary2hex(const unsigned char* binary, const void* salt, unsigned char* ciphertext)
+{
+	uint32_t salt_essid[SALT_SIZE/sizeof(uint32_t)];
+	memcpy(salt_essid, salt, SALT_SIZE);
 
-void sha1_process_block_simd(unsigned int* state, unsigned int* W, unsigned int simd_with);
-void sha1_process_block_hmac_sha1(const unsigned int state[5], unsigned int sha1_hash[5], unsigned int W[16]);
-void md5_process_block(unsigned int* state, const unsigned int* block);
+	swap_endianness_array(salt_essid, 14);
+	strcpy(ciphertext, (char*)salt_essid);
+	strcat(ciphertext, "#");
+
+	hccap_bin out_bin = ((hccap_bin*)binary)[0];
+	hccap_t hccap;
+	memset(&hccap, 0, sizeof(hccap));
+
+	// Manage binary
+	hccap.keyver = out_bin.keyver;
+	memcpy(hccap.keymic, out_bin.keymic, 16);
+
+	// eapol
+	hccap.eapol_size = (((uint32_t*)out_bin.eapol)[16 * (out_bin.eapol_blocks - 1) + ((hccap.keyver == 1) ? 14 : 15)] >> 3) - 64;
+	if (hccap.keyver != 1)
+	{
+		swap_endianness_array((uint32_t*)hccap.keymic, 4);
+		swap_endianness_array((uint32_t*)out_bin.eapol, sizeof(out_bin.eapol) / 4 - 2);
+	}
+	memcpy(hccap.eapol, out_bin.eapol, hccap.eapol_size);
+
+	swap_endianness_array((uint32_t*)out_bin.prf_buffer, 104 / 4);
+	//insert_mac
+	memcpy(hccap.mac1, out_bin.prf_buffer + 23, 6);
+	memcpy(hccap.mac2, out_bin.prf_buffer + 6 + 23, 6);
+	//insert_nonce
+	memcpy(hccap.nonce1, out_bin.prf_buffer + 12 + 23, 32);
+	memcpy(hccap.nonce2, out_bin.prf_buffer + 32 + 12 + 23, 32);
+
+	// Write hash
+	unsigned char* base64 = ciphertext + strlen((char*)ciphertext);
+	unsigned char* r_data = ((unsigned char*)&hccap) + 36;
+	for (int i = 0; i < 118; i++)
+	{
+		base64[0] = itoa64[(r_data[0] >> 2)];
+		base64[1] = itoa64[((r_data[0] & 0x3) << 4) | (r_data[1] >> 4)];
+		base64[2] = itoa64[((r_data[1] & 0xf) << 2) | (r_data[2] >> 6)];
+		base64[3] = itoa64[r_data[2] & 0x3f];
+
+		r_data += 3;
+		base64 += 4;
+	}
+	base64[0] = itoa64[(r_data[0] >> 2)];
+	base64[1] = itoa64[((r_data[0] & 0x3) << 4) | (r_data[1] >> 4)];
+	base64[2] = itoa64[((r_data[1] & 0xf) << 2)];
+	base64[3] = 0;
+}
+
+void sha1_process_block_simd(uint32_t* state, uint32_t* W, uint32_t simd_with);
+void sha1_process_block_hmac_sha1(const uint32_t state[5], uint32_t sha1_hash[5], uint32_t W[16]);
+void md5_process_block(uint32_t* state, const uint32_t* block);
 void hmac_sha1_init_simd(uint32_t* key, uint32_t* key_lenghts, uint32_t simd_with, uint32_t multiplier, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W);
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // C Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void convert2be(unsigned int* nt_buffer, unsigned int NUM_KEYS)
+PRIVATE void convert2be(uint32_t* nt_buffer, uint32_t NUM_KEYS)
 {
-	unsigned int len_index = (max_lenght > 27) ? 16 : 7;
-	for (unsigned int i = 0; i < NUM_KEYS; i++, nt_buffer++)
+	for (uint32_t i = 0; i < NUM_KEYS; i++, nt_buffer++)
 	{
 		// Remove 0x80
-		unsigned int len = nt_buffer[len_index * NUM_KEYS] >> 3;
-		unsigned int _0x80_index = len / 4 * NUM_KEYS;
+		uint32_t len = nt_buffer[7 * NUM_KEYS] >> 3;
+		uint32_t _0x80_index = len / 4 * NUM_KEYS;
 		((unsigned char*)nt_buffer)[_0x80_index * 4 + (len & 3)] = 0;
 		len = (len + 3) / 4;
 
-		for (unsigned int j = 0; j < len; j++)
+		for (uint32_t j = 0; j < len; j++)
 		{
 			SWAP_ENDIANNESS(nt_buffer[j * NUM_KEYS], nt_buffer[j * NUM_KEYS]);
 		}
@@ -202,23 +255,22 @@ PRIVATE void convert2be(unsigned int* nt_buffer, unsigned int NUM_KEYS)
 #ifndef HS_TESTING
 PRIVATE
 #endif
-void wpa_body_c_code(unsigned int* nt_buffer, unsigned int* essid_block, unsigned int* crypt_result, unsigned int* sha1_hash, unsigned int* opad_state, unsigned int* ipad_state, unsigned int* W)
+void wpa_body_c_code(uint32_t* nt_buffer, uint32_t* essid_block, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
 {
-	unsigned int len_index = (max_lenght > 27) ? 16 : 7;
-	unsigned int len = nt_buffer[len_index * NT_NUM_KEYS] >> 3;
+	uint32_t len = nt_buffer[7 * NT_NUM_KEYS] >> 3;
 	len = (len + 3) / 4;
 
 	hmac_sha1_init_simd(nt_buffer, &len, 1, NT_NUM_KEYS, opad_state, ipad_state, W);
 
 	// Begin PBKDF2
-	for (unsigned int i = 0; i < 2; i++)
+	for (uint32_t i = 0; i < 2; i++)
 	{
-		memcpy(sha1_hash, ipad_state, 5 * sizeof(unsigned int));
+		memcpy(sha1_hash, ipad_state, 5 * sizeof(uint32_t));
 		// Process the salt
 		memcpy(W, essid_block, 64);
 		if (i)
 		{
-			unsigned int salt_len = (essid_block[15] >> 3) - 64 - 1;
+			uint32_t salt_len = (essid_block[15] >> 3) - 64 - 1;
 			// Change byte with 1 to 2
 			((unsigned char*)W)[(salt_len&(~3u))+3-(salt_len&3u)] = 2;
 		}
@@ -226,9 +278,9 @@ void wpa_body_c_code(unsigned int* nt_buffer, unsigned int* essid_block, unsigne
 
 		sha1_process_block_hmac_sha1(opad_state, sha1_hash, W);
 		// Only copy first 16 bytes, since that is ALL this format uses
-		memcpy(crypt_result + i * 5, sha1_hash, 5 * sizeof(unsigned int));
+		memcpy(crypt_result + i * 5, sha1_hash, 5 * sizeof(uint32_t));
 
-		for (unsigned int k = 1; k < 4096; k++)
+		for (uint32_t k = 1; k < 4096; k++)
 		{
 			sha1_process_block_hmac_sha1(ipad_state, sha1_hash, W);
 			sha1_process_block_hmac_sha1(opad_state, sha1_hash, W);
@@ -245,14 +297,14 @@ void wpa_body_c_code(unsigned int* nt_buffer, unsigned int* essid_block, unsigne
 #ifndef HS_TESTING
 PRIVATE
 #endif
-void wpa_postprocess_c_code(hccap_bin* salt, unsigned int* crypt_result, unsigned int* sha1_hash, unsigned int* opad_state, unsigned int* ipad_state, unsigned int* W)
+void wpa_postprocess_c_code(hccap_bin* salt, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
 {
-	unsigned int len = 8;
+	uint32_t len = 8;
 	// prf_512------------------------------------------------------------------
 	hmac_sha1_init_simd(crypt_result, &len, 1, 1, opad_state, ipad_state, W);
 
 	// HMAC_Update
-	memcpy(crypt_result, ipad_state, 5 * sizeof(unsigned int));
+	memcpy(crypt_result, ipad_state, 5 * sizeof(uint32_t));
 	memcpy(W, salt->prf_buffer, 64);
 	sha1_process_block_simd(crypt_result, W, 1);
 	memcpy(W, salt->prf_buffer + 64, 64);
@@ -267,9 +319,9 @@ void wpa_postprocess_c_code(hccap_bin* salt, unsigned int* crypt_result, unsigne
 
 		// hmac_md5_init 
 		// ipad_state
-		for (unsigned int i = 0; i < 4; i++)
+		for (uint32_t i = 0; i < 4; i++)
 			W[i] = crypt_result[i] ^ 0x36363636;
-		memset(W + 4, 0x36, (16 - 4)*sizeof(unsigned int));
+		memset(W + 4, 0x36, (16 - 4)*sizeof(uint32_t));
 
 		ipad_state[0] = INIT_A;
 		ipad_state[1] = INIT_B;
@@ -278,9 +330,9 @@ void wpa_postprocess_c_code(hccap_bin* salt, unsigned int* crypt_result, unsigne
 		md5_process_block(ipad_state, W);
 
 		// opad_state
-		for (unsigned int i = 0; i < 4; i++)
+		for (uint32_t i = 0; i < 4; i++)
 			W[i] = crypt_result[i] ^ 0x5C5C5C5C;
-		memset(W + 4, 0x5C, (16 - 4)*sizeof(unsigned int));
+		memset(W + 4, 0x5C, (16 - 4)*sizeof(uint32_t));
 
 		opad_state[0] = INIT_A;
 		opad_state[1] = INIT_B;
@@ -289,18 +341,18 @@ void wpa_postprocess_c_code(hccap_bin* salt, unsigned int* crypt_result, unsigne
 		md5_process_block(opad_state, W);
 	
 		// HMAC_Update
-		memcpy(crypt_result, ipad_state, 4 * sizeof(unsigned int));
-		for (unsigned int i = 0; i < salt->eapol_blocks; i++)
+		memcpy(crypt_result, ipad_state, 4 * sizeof(uint32_t));
+		for (uint32_t i = 0; i < salt->eapol_blocks; i++)
 		{
 			memcpy(W, salt->eapol+i*64, 64);
 			md5_process_block(crypt_result, W);
 		}
-		memcpy(W, crypt_result, 4 * sizeof(unsigned int));
+		memcpy(W, crypt_result, 4 * sizeof(uint32_t));
 		W[4] = 0x80;
-		memset(W + 5, 0, (14 - 5) * sizeof(unsigned int));
+		memset(W + 5, 0, (14 - 5) * sizeof(uint32_t));
 		W[14] = (64 + 16) << 3;
 		W[15] = 0;
-		memcpy(crypt_result, opad_state, 4 * sizeof(unsigned int));
+		memcpy(crypt_result, opad_state, 4 * sizeof(uint32_t));
 		md5_process_block(crypt_result, W);
 	}
 	else// HMAC_SHA1
@@ -309,8 +361,8 @@ void wpa_postprocess_c_code(hccap_bin* salt, unsigned int* crypt_result, unsigne
 		hmac_sha1_init_simd(crypt_result, &len, 1, 1, opad_state, ipad_state, W);
 	
 		// HMAC_Update
-		memcpy(crypt_result, ipad_state, 5 * sizeof(unsigned int));
-		for (unsigned int i = 0; i < salt->eapol_blocks; i++)
+		memcpy(crypt_result, ipad_state, 5 * sizeof(uint32_t));
+		for (uint32_t i = 0; i < salt->eapol_blocks; i++)
 		{
 			memcpy(W, salt->eapol+i*64, 64);
 			sha1_process_block_simd(crypt_result, W, 1);
@@ -323,26 +375,26 @@ void wpa_postprocess_c_code(hccap_bin* salt, unsigned int* crypt_result, unsigne
 #ifndef _M_X64
 PRIVATE void crypt_utf8_coalesc_protocol_c_code(CryptParam* param)
 {
-	unsigned int* nt_buffer = (unsigned int*)calloc(17 * NT_NUM_KEYS, sizeof(unsigned int));
+	uint32_t* nt_buffer = (uint32_t*)calloc(17 * NT_NUM_KEYS, sizeof(uint32_t));
 	unsigned char* key = (unsigned char*)calloc(PLAINTEXT_LENGTH + 1, sizeof(unsigned char));
 
-	unsigned int crypt_result[10], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
+	uint32_t crypt_result[10], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
 	{
 		convert2be(nt_buffer, NT_NUM_KEYS);
 
-		for(unsigned int i = 0; i < NT_NUM_KEYS; i++)
+		for(uint32_t i = 0; i < NT_NUM_KEYS; i++)
 		{
-			unsigned int* essid_block = (unsigned int*)salts_values;
+			uint32_t* essid_block = (uint32_t*)salts_values;
 
 			// For all salts
-			for(unsigned int j = 0; continue_attack && j < num_diff_salts; j++, essid_block+=SALT_SIZE/4)
+			for(uint32_t j = 0; continue_attack && j < num_diff_salts; j++, essid_block+=SALT_SIZE/4)
 			{
 				wpa_body_c_code(nt_buffer+i, essid_block, crypt_result, sha1_hash, opad_state, ipad_state, W);
 
 				// Search for a match
-				unsigned int index = salt_index[j];
+				uint32_t index = salt_index[j];
 
 				// Partial match
 				while(index != NO_ELEM)
@@ -388,46 +440,45 @@ PRIVATE void crypt_utf8_coalesc_protocol_sse2(CryptParam* param)
 	__m128i* ipad_state = opad_state + 5;
 	__m128i* W = ipad_state + 5;
 	__m128i len;
-	unsigned int len_index = (max_lenght > 27) ? 16 : 7;
 
 	memset(nt_buffer, 0, 17 * 4 * NT_NUM_KEYS);
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
 	{
-		convert2be((unsigned int*)nt_buffer, NT_NUM_KEYS);
+		convert2be((uint32_t*)nt_buffer, NT_NUM_KEYS);
 
-		for(unsigned int i = 0; i < NT_NUM_KEYS/4; i++)
+		for(uint32_t i = 0; i < NT_NUM_KEYS/4; i++)
 		{
-			unsigned int* essid_block = (unsigned int*)salts_values;
-			len = SSE2_SR(nt_buffer[len_index * NT_NUM_KEYS / 4 + i], 3);
+			uint32_t* essid_block = (uint32_t*)salts_values;
+			len = SSE2_SR(nt_buffer[7 * NT_NUM_KEYS / 4 + i], 3);
 			len = SSE2_SR(SSE2_ADD(len, SSE2_CONST(3)), 2);
 
 			// For all salts
-			for(unsigned int j = 0; continue_attack && j < num_diff_salts; j++, essid_block += SALT_SIZE/4)
+			for(uint32_t j = 0; continue_attack && j < num_diff_salts; j++, essid_block += SALT_SIZE/4)
 			{
 				hmac_sha1_init_simd((uint32_t*)(nt_buffer+i), (uint32_t*)(&len), 4, NT_NUM_KEYS/4, (uint32_t*)opad_state, (uint32_t*)ipad_state, (uint32_t*)W);
 
 				// Begin PBKDF2
-				for (unsigned int di = 0; di < 2; di++)
+				for (uint32_t di = 0; di < 2; di++)
 				{
 					memcpy(sha1_hash, ipad_state, 5 * sizeof(__m128i));
 					// Process the salt
 					memcpy(W, essid_block, 64);
 					if (di)
 					{
-						unsigned int salt_len = (essid_block[15] >> 3) - 64 - 1;
+						uint32_t salt_len = (essid_block[15] >> 3) - 64 - 1;
 						// Change byte with 1 to 2
 						((unsigned char*)W)[(salt_len&(~3u))+3-(salt_len&3u)] = 2;
 					}
-					for (unsigned int w_index = 15; w_index < 16; w_index--)
-						W[w_index] = SSE2_CONST(((unsigned int*)W)[w_index]);
+					for (uint32_t w_index = 15; w_index < 16; w_index--)
+						W[w_index] = SSE2_CONST(((uint32_t*)W)[w_index]);
 					sha1_process_block_simd((uint32_t*)sha1_hash, (uint32_t*)W, 4);
 
 					sha1_process_sha1_sse2(opad_state, sha1_hash, W);
 					// Copy
 					memcpy(crypt_result + di * 5, sha1_hash, 5 * sizeof(__m128i));
 
-					for (unsigned int k = 1; k < 4096; k++)
+					for (uint32_t k = 1; k < 4096; k++)
 					{
 						sha1_process_sha1_sse2(ipad_state, sha1_hash, W);
 						sha1_process_sha1_sse2(opad_state, sha1_hash, W);
@@ -442,21 +493,21 @@ PRIVATE void crypt_utf8_coalesc_protocol_sse2(CryptParam* param)
 				}
 
 				// Search for a match
-				for (unsigned int k = 0; k < 4; k++)
+				for (uint32_t k = 0; k < 4; k++)
 				{
-					unsigned int index = salt_index[j];
+					uint32_t index = salt_index[j];
 					// Partial match
 					while(index != NO_ELEM)
 					{
 						hccap_bin* bin = ((hccap_bin*)binary_values) + index;
-						unsigned int result[8];
-						for (unsigned int r_index = 0; r_index < 8; r_index++)
+						uint32_t result[8];
+						for (uint32_t r_index = 0; r_index < 8; r_index++)
 							result[r_index] = crypt_result[r_index].m128i_u32[k];
 						wpa_postprocess_c_code(bin, result, (uint32_t*)sha1_hash, (uint32_t*)opad_state, (uint32_t*)ipad_state, (uint32_t*)W);
 
 						// Total match
 						if(!memcmp(result, bin->keymic, 16))
-							password_was_found(index, utf8_be_coalesc2utf8_key((unsigned int*)nt_buffer, key, NT_NUM_KEYS, i*4+k));
+							password_was_found(index, utf8_be_coalesc2utf8_key((uint32_t*)nt_buffer, key, NT_NUM_KEYS, i*4+k));
 					
 						index = same_salt_next[index];
 					}
@@ -492,7 +543,7 @@ void sha1_process_sha1_neon(const void* state, void* sha1_hash, void* W);
 
 PRIVATE void crypt_utf8_coalesc_protocol_v128(CryptParam* param)
 {
-	unsigned int* nt_buffer = (unsigned int*)_aligned_malloc(8 * 4 * NT_NUM_KEYS_AVX, 32);
+	uint32_t* nt_buffer = (uint32_t*)_aligned_malloc(8 * 4 * NT_NUM_KEYS_AVX, 32);
 	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT_BIG, sizeof(unsigned char));
 	uint32_t* crypt_result = (uint32_t*)_aligned_malloc(sizeof(V128_WORD)* 2 * (10 + 5 + 5 + 5 + 16 + 1), 32);
 
@@ -506,33 +557,33 @@ PRIVATE void crypt_utf8_coalesc_protocol_v128(CryptParam* param)
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS_AVX, param->thread_id))
 	{
-		convert2be((unsigned int*)nt_buffer, NT_NUM_KEYS_AVX);
+		convert2be((uint32_t*)nt_buffer, NT_NUM_KEYS_AVX);
 
-		for(unsigned int i = 0; i < NT_NUM_KEYS_AVX/8; i++)
+		for(uint32_t i = 0; i < NT_NUM_KEYS_AVX/8; i++)
 		{
-			unsigned int* essid_block = (unsigned int*)salts_values;
+			uint32_t* essid_block = (uint32_t*)salts_values;
 			for (uint32_t j = 0; j < 8; j++)
 				len[j] = ((nt_buffer[7 * NT_NUM_KEYS_AVX + 8 * i + j] >> 3) + 3) >> 2;
 
 			// For all salts
-			for(unsigned int j = 0; continue_attack && j < num_diff_salts; j++, essid_block += SALT_SIZE/4)
+			for(uint32_t j = 0; continue_attack && j < num_diff_salts; j++, essid_block += SALT_SIZE/4)
 			{
 				hmac_sha1_init_simd(nt_buffer+i*8  , len  , 4, NT_NUM_KEYS_AVX/4, opad_state    , ipad_state    , W);
 				hmac_sha1_init_simd(nt_buffer+i*8+4, len+4, 4, NT_NUM_KEYS_AVX/4, opad_state+5*4, ipad_state+5*4, W);
 
 				// Begin PBKDF2
-				for (unsigned int di = 0; di < 2; di++)
+				for (uint32_t di = 0; di < 2; di++)
 				{
 					memcpy(sha1_hash, ipad_state, 10 * sizeof(V128_WORD));
 					// Process the salt
 					memcpy(W, essid_block, 64);
 					if (di)
 					{
-						unsigned int salt_len = (essid_block[15] >> 3) - 64 - 1;
+						uint32_t salt_len = (essid_block[15] >> 3) - 64 - 1;
 						// Change byte with 1 to 2
 						((unsigned char*)W)[(salt_len&(~3u))+3-(salt_len&3u)] = 2;
 					}
-					for (unsigned int w_index = 15; w_index < 16; w_index--)
+					for (uint32_t w_index = 15; w_index < 16; w_index--)
 					{
 						V128_WORD w_value = V128_CONST(W[w_index]);
 						((V128_WORD*)W)[w_index+0 ] = w_value;
@@ -546,28 +597,28 @@ PRIVATE void crypt_utf8_coalesc_protocol_v128(CryptParam* param)
 					memcpy(crypt_result + di * 10*4, sha1_hash, 10 * sizeof(V128_WORD));
 
 					V128_WORD* crypt_result_ptr = (V128_WORD*)(crypt_result + di * 10*4);
-					for (unsigned int k = 1; k < 4096; k++)
+					for (uint32_t k = 1; k < 4096; k++)
 					{
 						sha1_process_sha1_v128(ipad_state, sha1_hash, W);
 						sha1_process_sha1_v128(opad_state, sha1_hash, W);
 
 						// XOR
-						for (unsigned int xor_count = 0; xor_count < 10; xor_count++)
+						for (uint32_t xor_count = 0; xor_count < 10; xor_count++)
 							crypt_result_ptr[xor_count] = V128_XOR(crypt_result_ptr[xor_count], ((V128_WORD*)sha1_hash)[xor_count]);
 					}
 				}
 
-				for(unsigned int k = 0; k < 8; k++)
+				for(uint32_t k = 0; k < 8; k++)
 				{
 					// Search for a match
-					unsigned int index = salt_index[j];
+					uint32_t index = salt_index[j];
 
 					// Partial match
 					while(index != NO_ELEM)
 					{
 						hccap_bin* bin = ((hccap_bin*)binary_values) + index;
-						unsigned int result[8];
-						for (unsigned int r_index = 0; r_index < 8; r_index++)
+						uint32_t result[8];
+						for (uint32_t r_index = 0; r_index < 8; r_index++)
 							result[r_index] = crypt_result[(r_index%5 + 10*(r_index/5) + 5*(k/4)) * 4 + (k & 3)];
 						wpa_postprocess_c_code(bin, result, sha1_hash, opad_state, ipad_state, W);
 
@@ -609,7 +660,7 @@ void sha1_process_sha1_avx2(const void* state, void* sha1_hash, void* W);
 
 PRIVATE void crypt_utf8_coalesc_protocol_avx2(CryptParam* param)
 {
-	unsigned int* nt_buffer = (unsigned int*)_aligned_malloc(8 * 4 * NT_NUM_KEYS_AVX, 32);
+	uint32_t* nt_buffer = (uint32_t*)_aligned_malloc(8 * 4 * NT_NUM_KEYS_AVX, 32);
 	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT_BIG, sizeof(unsigned char));
 	AVX2_WORD* crypt_result = (AVX2_WORD*)_aligned_malloc(sizeof(AVX2_WORD)* 2 * (10 + 5 + 5 + 5 + 16), 32);
 
@@ -623,37 +674,37 @@ PRIVATE void crypt_utf8_coalesc_protocol_avx2(CryptParam* param)
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS_AVX, param->thread_id))
 	{
-		convert2be((unsigned int*)nt_buffer, NT_NUM_KEYS_AVX);
+		convert2be((uint32_t*)nt_buffer, NT_NUM_KEYS_AVX);
 
-		for(unsigned int i = 0; i < NT_NUM_KEYS_AVX/16; i++)
+		for(uint32_t i = 0; i < NT_NUM_KEYS_AVX/16; i++)
 		{
-			unsigned int* essid_block = (unsigned int*)salts_values;
+			uint32_t* essid_block = (uint32_t*)salts_values;
 			len[0] = AVX2_SR(((AVX2_WORD*)nt_buffer)[7 * NT_NUM_KEYS_AVX / 8 + 2 * i + 0], 3);
 			len[1] = AVX2_SR(((AVX2_WORD*)nt_buffer)[7 * NT_NUM_KEYS_AVX / 8 + 2 * i + 1], 3);
 			len[0] = AVX2_SR(AVX2_ADD(len[0], AVX2_CONST(3)), 2);
 			len[1] = AVX2_SR(AVX2_ADD(len[1], AVX2_CONST(3)), 2);
 
 			// For all salts
-			for(unsigned int j = 0; continue_attack && j < num_diff_salts; j++, essid_block += SALT_SIZE/4)
+			for(uint32_t j = 0; continue_attack && j < num_diff_salts; j++, essid_block += SALT_SIZE/4)
 			{
 				hmac_sha1_init_simd(nt_buffer+i*16  , (uint32_t*)(len  ), 8, NT_NUM_KEYS_AVX/8, (uint32_t*)(opad_state  ), (uint32_t*)(ipad_state  ), (uint32_t*)W);
 				hmac_sha1_init_simd(nt_buffer+i*16+8, (uint32_t*)(len+1), 8, NT_NUM_KEYS_AVX/8, (uint32_t*)(opad_state+5), (uint32_t*)(ipad_state+5), (uint32_t*)W);
 
 				// Begin PBKDF2
-				for (unsigned int di = 0; di < 2; di++)
+				for (uint32_t di = 0; di < 2; di++)
 				{
 					memcpy(sha1_hash, ipad_state, 10 * sizeof(AVX2_WORD));
 					// Process the salt
 					memcpy(W, essid_block, 64);
 					if (di)
 					{
-						unsigned int salt_len = (essid_block[15] >> 3) - 64 - 1;
+						uint32_t salt_len = (essid_block[15] >> 3) - 64 - 1;
 						// Change byte with 1 to 2
 						((unsigned char*)W)[(salt_len&(~3u))+3-(salt_len&3u)] = 2;
 					}
-					for (unsigned int w_index = 15; w_index < 16; w_index--)
+					for (uint32_t w_index = 15; w_index < 16; w_index--)
 					{
-						AVX2_WORD w_value = AVX2_CONST(((unsigned int*)W)[w_index]);
+						AVX2_WORD w_value = AVX2_CONST(((uint32_t*)W)[w_index]);
 						W[w_index+0 ] = w_value;
 						W[w_index+16] = w_value;
 					}
@@ -665,13 +716,13 @@ PRIVATE void crypt_utf8_coalesc_protocol_avx2(CryptParam* param)
 					memcpy(crypt_result + di * 10, sha1_hash, 10 * sizeof(AVX2_WORD));
 
 					AVX2_WORD* crypt_result_ptr = crypt_result + di * 10;
-					for (unsigned int k = 1; k < 4096; k++)
+					for (uint32_t k = 1; k < 4096; k++)
 					{
 						sha1_process_sha1_avx2(ipad_state, sha1_hash, W);
 						sha1_process_sha1_avx2(opad_state, sha1_hash, W);
 
 						// XOR
-						for (unsigned int xor_count = 0; xor_count < 10; xor_count++)
+						for (uint32_t xor_count = 0; xor_count < 10; xor_count++)
 							crypt_result_ptr[xor_count] = AVX2_XOR(crypt_result_ptr[xor_count], sha1_hash[xor_count]);
 					}
 				}
@@ -1191,7 +1242,7 @@ sprintf(source+strlen(source),
 			"uint idx=get_global_id(0);"
 			"uint W[16];"
 
-			//memcpy(&sha1_hash, &ipad_state, 5*sizeof(unsigned int));
+			//memcpy(&sha1_hash, &ipad_state, 5*sizeof(uint32_t));
 			"uint A=GET_DATA(IPAD_STATE,0);"
 			"uint B=GET_DATA(IPAD_STATE,1);"
 			"uint C=GET_DATA(IPAD_STATE,2);"
@@ -1445,7 +1496,7 @@ sprintf(source + strlen(source),
 	return source;
 }
 
-PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules)
+PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules)
 {
 	// Only one hash
 	// For Intel HD 4600 best DIVIDER=1-2
@@ -1471,7 +1522,8 @@ PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, ge
 	//	32	32.8K
 	//	64	31.2K
 	//	128	17.7K
-	ocl_init_slow_hashes(param, gpu_index, gen, gpu_crypt, ocl_kernel_provider, use_rules, 5 + 5 + 5 + 10 + 5, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 2);
+	if (!ocl_init_slow_hashes(param, gpu_index, gen, gpu_crypt, ocl_kernel_provider, use_rules, 5 + 5 + 5 + 10 + 5, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 2))
+		return FALSE;
 
 	// Crypt Kernels
 	create_kernel(param, KERNEL_INDEX_DCC2_SHA1_PAD_MASK		, "dcc2_sha1_pad_mask");
@@ -1525,11 +1577,13 @@ PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, ge
 
 	// Select best params
 	ocl_best_workgroup_pbkdf2(param, KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE, KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE_VEC);
+
+	return TRUE;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Charset
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+PRIVATE int ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
 {
 	// Do not allow blank in GPU
 	if (current_key_lenght == 0)
@@ -1538,16 +1592,16 @@ PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, g
 		report_keys_processed(1);
 
 		cl_uint nt_buffer[8*NT_NUM_KEYS], crypt_result[12], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
-		unsigned int* essid_block = (unsigned int*)salts_values;
+		uint32_t* essid_block = (uint32_t*)salts_values;
 		memset(nt_buffer, 0, sizeof(nt_buffer));
 
 		// For all salts
-		for(unsigned int j = 0; j < num_diff_salts; j++, essid_block+=SALT_SIZE/4)
+		for(uint32_t j = 0; j < num_diff_salts; j++, essid_block+=SALT_SIZE/4)
 		{
 			wpa_body_c_code(nt_buffer, essid_block, crypt_result, sha1_hash, opad_state, ipad_state, W);
 
 			// Search for a match
-			unsigned int index = salt_index[j];
+			uint32_t index = salt_index[j];
 
 			// Partial match
 			while(index != NO_ELEM)
@@ -1563,28 +1617,28 @@ PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, g
 			}
 		}
 	}
-	ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + CHARSET_INDEX_IN_KERNELS, FALSE);
+	return ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + CHARSET_INDEX_IN_KERNELS, FALSE);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Phrases
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+PRIVATE int ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
 {
-	ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + PHRASES_INDEX_IN_KERNELS, FALSE);
+	return ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + PHRASES_INDEX_IN_KERNELS, FALSE);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UTF8
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+PRIVATE int ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
 {
-	ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + UTF8_INDEX_IN_KERNELS, FALSE);
+	return ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + UTF8_INDEX_IN_KERNELS, FALSE);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Rules
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 extern int provider_index;
 
-PRIVATE void ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+PRIVATE int ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
 {
 	int i, kernel2common_index;
 
@@ -1597,23 +1651,27 @@ PRIVATE void ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_ind
 				goto out;
 			}
 out:
-	ocl_protocol_common_init(param, gpu_device_index, gen, gpu_dcc2_crypt, kernels2common + kernel2common_index, TRUE);
+	return ocl_protocol_common_init(param, gpu_device_index, gen, gpu_dcc2_crypt, kernels2common + kernel2common_index, TRUE);
 }
 #endif
 
-PRIVATE int bench_values[] = {1,4,16,64};
 Format wpa_format = {
 	"WPA-PSK",
 	"Wi-Fi Protected Access (WPA / WPA2), Pre-shared key (PSK, also known as Personal mode).",
+	WPA_PREFIX,
 	PLAINTEXT_LENGTH,
 	BINARY_SIZE,
 	SALT_SIZE,
 	9,
-	bench_values,
-	LENGHT(bench_values),
+	NULL,
+	0,
 	get_binary,
+	binary2hex,
+	DEFAULT_VALUE_MAP_INDEX,
+	DEFAULT_VALUE_MAP_INDEX,
 	wpa_line_is_valid,
 	add_hash_from_line,
+	NULL,
 #ifdef _M_X64
 	{{CPU_CAP_AVX2, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_avx2}, {CPU_CAP_AVX, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_v128}, {CPU_CAP_SSE2, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_sse2}},
 #else

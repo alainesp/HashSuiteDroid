@@ -1,0 +1,51 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android" >
+
+     <item
+        android:id="@+id/start_attack"
+        android:showAsAction="always"
+        android:icon="@drawable/ic_action_play"
+        android:title="Start"/>
+     
+     <item
+        android:id="@+id/import_file"
+        android:showAsAction="never"
+        android:icon="@drawable/ic_action_import"
+        android:title="Import"/>
+     
+     <item
+        android:id="@+id/export"
+        android:showAsAction="never"
+        android:icon="@drawable/ic_action_export"
+        android:title="Export"/>
+     
+      <item
+        android:id="@+id/resume_attack"
+        android:showAsAction="never"
+        android:icon="@drawable/ic_action_fast_forward"
+        android:title="Resume"/>
+      
+      <item
+        android:id="@+id/clear_all"
+        android:showAsAction="never"
+        android:icon="@drawable/ic_action_remove"
+        android:title="Clear Accounts"/>
+    
+      <item
+        android:id="@+id/downloader"
+        android:showAsAction="never"
+        android:icon="@drawable/ic_action_download"
+        android:title="Download wordlists"/>
+      
+    <item
+        android:id="@+id/benchmark"
+        android:showAsAction="never"
+        android:icon="@drawable/ic_action_alarms"
+        android:title="Benchmark"/>
+    
+     <item
+        android:id="@+id/about"
+        android:showAsAction="never"
+        android:icon="@drawable/ic_action_about"
+        android:title="About"/>
+
+</menu>

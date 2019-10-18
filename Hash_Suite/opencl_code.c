@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2015 by Alain Espinosa
+// Copyright (c) 2011-2016 by Alain Espinosa
 
 #include <ctype.h>
 #include "common.h"
@@ -9,6 +9,8 @@
 #else
 	#include <dlfcn.h>
 #endif
+
+#ifdef HS_OPENCL_SUPPORT
 
 PRIVATE HS_DLL_HANDLE hOpenCL = NULL;
 
@@ -75,11 +77,11 @@ PUBLIC tcuFuncSetCacheConfig    *cuFuncSetCacheConfig	= NULL;
 PRIVATE HMODULE hnvml = NULL;
 #include "OpenCL\nvml.h"
 typedef nvmlReturn_t DECLDIR tnvmlInit(void);
-typedef nvmlReturn_t DECLDIR tnvmlDeviceGetCount(unsigned int *deviceCount);
-typedef nvmlReturn_t DECLDIR tnvmlDeviceGetHandleByIndex(unsigned int index, nvmlDevice_t *device);
-typedef nvmlReturn_t DECLDIR tnvmlDeviceGetName(nvmlDevice_t device, char *name, unsigned int length);
-typedef nvmlReturn_t DECLDIR tnvmlDeviceGetFanSpeed(nvmlDevice_t device, unsigned int *speed);
-typedef nvmlReturn_t DECLDIR tnvmlDeviceGetTemperature(nvmlDevice_t device, nvmlTemperatureSensors_t sensorType, unsigned int *temp);
+typedef nvmlReturn_t DECLDIR tnvmlDeviceGetCount(uint32_t *deviceCount);
+typedef nvmlReturn_t DECLDIR tnvmlDeviceGetHandleByIndex(uint32_t index, nvmlDevice_t *device);
+typedef nvmlReturn_t DECLDIR tnvmlDeviceGetName(nvmlDevice_t device, char *name, uint32_t length);
+typedef nvmlReturn_t DECLDIR tnvmlDeviceGetFanSpeed(nvmlDevice_t device, uint32_t *speed);
+typedef nvmlReturn_t DECLDIR tnvmlDeviceGetTemperature(nvmlDevice_t device, nvmlTemperatureSensors_t sensorType, uint32_t *temp);
 PRIVATE tnvmlInit* pnvmlInit = NULL;
 PRIVATE tnvmlDeviceGetCount* pnvmlDeviceGetCount = NULL;
 PRIVATE tnvmlDeviceGetHandleByIndex* pnvmlDeviceGetHandleByIndex = NULL;
@@ -128,7 +130,7 @@ PRIVATE void* __stdcall ADL_Main_Memory_Alloc ( int iSize )
     return lpBuffer;
 }
 
-PUBLIC int gpu_get_updated_status(unsigned int gpu_index, GPUStatus* status)
+PUBLIC int gpu_get_updated_status(uint32_t gpu_index, GPUStatus* status)
 {
 	if (status)
 		status->flag = GPU_STATUS_FAILED;
@@ -421,7 +423,7 @@ PRIVATE void get_device_info_extended(int gpu_index)
 	gpu_devices[gpu_index].max_clock_frequency = 0;
 	gpu_devices[gpu_index].global_memory_size = 0;
 	gpu_devices[gpu_index].local_memory_size = 0;
-#ifdef ANDROID
+#ifdef __ANDROID__
 	gpu_devices[gpu_index].NUM_KEYS_OPENCL_DIVIDER = 8;
 	gpu_devices[gpu_index].flags |= GPU_FLAG_HAD_UNIFIED_MEMORY;
 
@@ -476,7 +478,7 @@ PRIVATE void get_device_info_extended(int gpu_index)
 	pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DEVICE_PREFERRED_VECTOR_WIDTH_INT , sizeof(cl_uint), &gpu_devices[gpu_index].vector_int_size, NULL);
 	if (gpu_type == CL_DEVICE_TYPE_CPU)
 	{
-#ifdef ANDROID
+#ifdef __ANDROID__
 		if (current_cpu.capabilites[CPU_CAP_NEON])
 			gpu_devices[gpu_index].vector_int_size = 8;
 #else
@@ -506,8 +508,10 @@ PRIVATE void get_device_info_extended(int gpu_index)
 	pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DEVICE_GLOBAL_MEM_CACHE_SIZE, sizeof(cl_ulong), &gpu_devices[gpu_index].l2_cache_size, NULL);
 	gpu_devices[gpu_index].l2_cache_size /= 1024;
 
-//#define ANDROID 1
-#ifdef ANDROID
+//#define __ANDROID__ 1
+#ifdef __ANDROID__
+    if(gpu_devices[gpu_index].max_clock_frequency < 10)
+        gpu_devices[gpu_index].max_clock_frequency = 200;// By default 200MHz
 	if (strstr(gpu_devices[gpu_index].vendor_string, "QUALCOMM"))//Checked
 	{
 		gpu_devices[gpu_index].vendor_icon = 20;
@@ -518,6 +522,7 @@ PRIVATE void get_device_info_extended(int gpu_index)
 		//gpu_devices[gpu_index].lm_compiler_options = "-qcom-sched-rule=2";
 
 		// Try to read the max GPU clock in a configuration file
+		// Mali: /sys/class/misc/mali0/device/clock
 		FILE* gpu_freq = fopen("/sys/class/kgsl/kgsl-3d0/max_gpuclk", "r");
 		if(gpu_freq)
 		{
@@ -544,13 +549,13 @@ PRIVATE void get_device_info_extended(int gpu_index)
 
 		buffer_str[0] = 0;
 		pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DRIVER_VERSION, sizeof(buffer_str), buffer_str, NULL);
-		char* build_date = strstr(buffer_str, "Build Date: ");
-		if (build_date)
-		{
-			strcpy(gpu_devices[gpu_index].driver_version, "Build ");
-			memcpy(gpu_devices[gpu_index].driver_version+6, build_date+12, 8);
-			gpu_devices[gpu_index].driver_version[14] = 0;
-		}
+		char* build_date = strstr(buffer_str, "Date: ");
+        if (build_date)
+        {
+            strcpy(gpu_devices[gpu_index].driver_version, "Build ");
+            memcpy(gpu_devices[gpu_index].driver_version+6, build_date+6, 8);
+            gpu_devices[gpu_index].driver_version[14] = 0;
+        }
 	}
 #else
 	if(strstr(gpu_devices[gpu_index].vendor_string, "Advanced Micro Devices"))//Checked
@@ -778,6 +783,8 @@ error_out:
 
 		if (gpu_devices[gpu_index].major_cc < 3)
 			GPU_SET_FLAG_DISABLE(gpu_devices[gpu_index].flags, GPU_FLAG_HAD_LM_UNROll);
+		else
+			GPU_SET_FLAG_DISABLE(gpu_devices[gpu_index].flags, GPU_FLAG_LM_USE_SHARED_MEMORY);
 
 		// Check cuda API for more data
 		if(init_cuda())
@@ -789,7 +796,7 @@ error_out:
 				gpu_devices[gpu_index].flags |= GPU_FLAG_NVIDIA_LOP3;
 
 			int device_count, i, j;
-			unsigned int nvml_device_count = 0;
+			uint32_t nvml_device_count = 0;
 			cuDeviceGetCount(&device_count);
 			if (hnvml)
 				pnvmlDeviceGetCount(&nvml_device_count);
@@ -893,7 +900,7 @@ PRIVATE void find_all_gpus()
 	cl_platform_id platform[16];
 	cl_uint num_platforms, num_devices, p;
 	cl_bool bool_param;
-	unsigned int i,j;
+	uint32_t i,j;
 	char exts[1024];
 	cl_device_id gpus_id[MAX_NUMBER_GPUS_SUPPORTED];
 
@@ -1009,7 +1016,7 @@ PUBLIC void create_opencl_param(OpenCL_Param* result, cl_uint gpu_index, generat
 	result->max_work_group_size = gpu_devices[gpu_index].max_work_group_size;
 	result->use_ptx = use_ptx && (gpu_devices[gpu_index].flags & GPU_FLAG_SUPPORT_PTX);
 
-#ifndef ANDROID
+#ifndef __ANDROID__
 	if(result->use_ptx)
 		result->cu_id = cuda_gpu_devices[gpu_index];
 	else
@@ -1017,7 +1024,7 @@ PUBLIC void create_opencl_param(OpenCL_Param* result, cl_uint gpu_index, generat
 		result->id = gpu_devices[gpu_index].cl_id;
 
 	// Create the OpenCl context
-#ifndef ANDROID
+#ifndef __ANDROID__
 	if(result->use_ptx)
 		code = cuCtxCreate(&result->cu_context, CU_CTX_LMEM_RESIZE_TO_MAX | CU_CTX_SCHED_YIELD, result->cu_id);
 	else
@@ -1068,7 +1075,7 @@ PUBLIC void release_opencl_param(OpenCL_Param* param)
 		// Release memory objects
 		for(i = 0; i < LENGHT(param->mems); i++)
 		{
-#ifndef ANDROID
+#ifndef __ANDROID__
 			if( param->use_ptx && param->cu_mems[i])	cuMemFree(param->cu_mems[i]);
 #endif
 			if(!param->use_ptx && param->mems[i])		pclReleaseMemObject(param->mems[i]);
@@ -1108,7 +1115,7 @@ PUBLIC void release_opencl_param(OpenCL_Param* param)
 		}*/
 
 		// Release program
-#ifndef ANDROID
+#ifndef __ANDROID__
 		if( param->use_ptx && param->cu_module)	cuModuleUnload(param->cu_module);
 #endif
 		if(!param->use_ptx && param->program)	pclReleaseProgram(param->program);
@@ -1117,7 +1124,7 @@ PUBLIC void release_opencl_param(OpenCL_Param* param)
 		if(!param->use_ptx && param->queue)	pclReleaseCommandQueue(param->queue);
 
 		// Release context
-#ifndef ANDROID
+#ifndef __ANDROID__
 		if( param->use_ptx && param->cu_context)	cuCtxDestroy(param->cu_context);
 #endif
 		if(!param->use_ptx && param->context)		pclReleaseContext(param->context);
@@ -1133,7 +1140,7 @@ PUBLIC int build_opencl_program(OpenCL_Param* param, const char* source, char* c
 	//int64_t init = get_milliseconds();
 
 	// Perform runtime source compilation, and obtain kernel entry point.
-#ifndef ANDROID
+#ifndef __ANDROID__
 	if(param->use_ptx)
 		code = cuModuleLoadData(&param->cu_module, source);
 	else
@@ -1149,7 +1156,7 @@ PUBLIC int build_opencl_program(OpenCL_Param* param, const char* source, char* c
 		{
 #ifdef _DEBUG
 
-#ifdef ANDROID
+#ifdef __ANDROID__
 #define DEBUG_DIR "/sdcard/"
 #else
 #define DEBUG_DIR "C:\\Users\\alain\\Desktop\\"
@@ -1203,19 +1210,23 @@ PUBLIC int build_opencl_program(OpenCL_Param* param, const char* source, char* c
 	return TRUE;
 }
 
-PUBLIC void create_opencl_mem(OpenCL_Param* param, unsigned int index, cl_mem_flags flag, size_t size, void* host_ptr)
+PUBLIC int create_opencl_mem(OpenCL_Param* param, uint32_t index, cl_mem_flags flag, size_t size, void* host_ptr)
 {
-#ifndef ANDROID
+#ifndef __ANDROID__
 	if(param->use_ptx)
-		cuMemAlloc(&param->cu_mems[index], size);
+		return (CUDA_SUCCESS == cuMemAlloc(&param->cu_mems[index], size));
 	else
 #endif
-		param->mems[index] = pclCreateBuffer(param->context, flag, size, host_ptr, NULL);
+	{
+		cl_int error_code;
+		param->mems[index] = pclCreateBuffer(param->context, flag, size, host_ptr, &error_code);
+		return (CL_SUCCESS == error_code);
+	}
 }
-PUBLIC int create_kernel(OpenCL_Param* param, unsigned int index, char* kernel_name)
+PUBLIC int create_kernel(OpenCL_Param* param, uint32_t index, char* kernel_name)
 {
 	cl_int code;
-#ifndef ANDROID
+#ifndef __ANDROID__
 	if(param->use_ptx)
 		code = cuModuleGetFunction(param->cu_kernels+index, param->cu_module, kernel_name);
 	else
@@ -1223,9 +1234,9 @@ PUBLIC int create_kernel(OpenCL_Param* param, unsigned int index, char* kernel_n
 		param->kernels[index] = pclCreateKernel( param->program, kernel_name, &code );
 	return code;
 }
-PUBLIC void cl_write_buffer(OpenCL_Param* param, unsigned int index, size_t size, void* ptr)
+PUBLIC void cl_write_buffer(OpenCL_Param* param, uint32_t index, size_t size, void* ptr)
 {
-#ifndef ANDROID
+#ifndef __ANDROID__
 	if(param->use_ptx)
 		cuMemcpyHtoD(param->cu_mems[index], ptr, size);
 	else
@@ -1268,6 +1279,10 @@ PUBLIC cl_ulong ocl_calculate_best_work_group(OpenCL_Param* param, cl_kernel* ke
 {
 	cl_uint zero = 0;
 	// Select best work_group
+	if (change_param && !kernel_param)
+		while (param->NUM_KEYS_OPENCL >= max_keys)
+			param->NUM_KEYS_OPENCL /= 2;
+
 	size_t num_work_items = param->NUM_KEYS_OPENCL;
 	int kernel_index = 0;
 
@@ -1437,7 +1452,7 @@ PRIVATE void generate_kernel_params(char* source, cl_uint key_lenght)
 	strcat(source, "__global uint* restrict output");
 
 	if (num_passwords_loaded > 1)
-		strcat(source, ",const __global uint* restrict table,const __global uint* restrict binary_values,const __global uint* restrict same_hash_next,const __global uint* restrict bit_table");
+		strcat(source, ",const __global uint* restrict cbg_table,const __global uint* restrict binary_values,const __global ushort* restrict cbg_filter");
 }
 PUBLIC void ocl_charset_load_buffer_be(char* source, cl_uint key_lenght, cl_uint* vector_size, DivisionParams div_param, char* nt_buffer[])
 {
@@ -1515,34 +1530,13 @@ PUBLIC void ocl_charset_load_buffer_be(char* source, cl_uint key_lenght, cl_uint
 		nt_buffer[i] = "";
 }
 
-PRIVATE cl_bool exist_value_map_collision(int BINARY_SIZE, int value_map_pos)
+
+PRIVATE char* ocl_gen_charset_code_common(GPUDevice* gpu, ocl_write_header_func* ocl_write_header, int BINARY_SIZE, DivisionParams* div_param, cl_uint max_num_kernels)
 {
-	cl_uint* bin = (cl_uint*)binary_values;
-	BINARY_SIZE /= sizeof(cl_uint);
-
-	for (cl_uint i = 0; i < num_passwords_loaded; i++)
-	{
-		cl_uint value_map = bin[i*BINARY_SIZE + value_map_pos];
-
-		cl_uint partial_collission_index = same_hash_next[i];
-		while (partial_collission_index != NO_ELEM)
-		{
-			if (value_map == bin[partial_collission_index*BINARY_SIZE + value_map_pos])
-				return CL_TRUE;
-
-			partial_collission_index = same_hash_next[partial_collission_index];
-		}
-	}
-
-	return CL_FALSE;
-}
-PRIVATE char* ocl_gen_charset_code_common(cl_uint ntlm_size_bit_table, GPUDevice* gpu, ocl_write_header_func* ocl_write_header, int BINARY_SIZE, int value_map_pos, cl_bool* value_map_collision, DivisionParams* div_param, cl_uint max_num_kernels)
-{
-	value_map_collision[0] = exist_value_map_collision(BINARY_SIZE, value_map_pos);
 	char* source = (char*)malloc(1024 * 64 * max_num_kernels);
 
 	//Initial values
-	ocl_write_header(source, gpu, ntlm_size_bit_table);
+	ocl_write_header(source, gpu, /*ntlm_size_bit_table*/0);
 	sprintf(source + strlen(source), "#define NUM_CHAR_IN_CHARSET %uu\n", num_char_in_charset);
 
 	strcat(source, "__constant uchar charset[]={");
@@ -1567,14 +1561,13 @@ PRIVATE char* ocl_gen_charset_code_common(cl_uint ntlm_size_bit_table, GPUDevice
 
 	return source;
 }
-PRIVATE char* ocl_gen_charset_code(cl_uint ntlm_size_bit_table, cl_uint output_size, GPUDevice* gpu, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func* ocl_gen_kernel_with_lenght, int BINARY_SIZE, int value_map_pos, cl_uint workgroup, cl_bool require_workgroup)
+PRIVATE char* ocl_gen_charset_code(cl_uint output_size, GPUDevice* gpu, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func* ocl_gen_kernel_with_lenght, int BINARY_SIZE, cl_uint workgroup, cl_bool require_workgroup)
 {
-	cl_bool value_map_collision;
 	DivisionParams div_param;
 	char* str_comp[] = { ".s0", ".s1", ".s2", ".s3", ".s4", ".s5", ".s6", ".s7", ".s8", ".s9", ".sa", ".sb", ".sc", ".sd", ".se", ".sf" };
 	if (gpu->vector_int_size == 1)str_comp[0] = "";
 
-	char* source = ocl_gen_charset_code_common(ntlm_size_bit_table, gpu, ocl_write_header, BINARY_SIZE, value_map_pos, &value_map_collision, &div_param, __max(1, max_lenght - current_key_lenght + 1));
+	char* source = ocl_gen_charset_code_common(gpu, ocl_write_header, BINARY_SIZE, &div_param, __max(1, max_lenght - current_key_lenght + 1));
 	
 	// Generate code for all lengths in range
 	for (cl_uint i = current_key_lenght; i <= max_lenght; i++)
@@ -1590,19 +1583,18 @@ PRIVATE char* ocl_gen_charset_code(cl_uint ntlm_size_bit_table, cl_uint output_s
 		// Begin function code
 		sprintf(source + strlen(source), "){uint max_number=get_global_id(0);");
 
-		ocl_gen_kernel_with_lenght(source + strlen(source), i, gpu->vector_int_size, ntlm_size_bit_table, output_size, div_param, str_comp, value_map_collision, workgroup);
+		ocl_gen_kernel_with_lenght(source + strlen(source), i, gpu->vector_int_size, /*ntlm_size_bit_table*/0, output_size, div_param, str_comp, /*value_map_collision*/0, workgroup);
 	}
 
 	return source;
 }
-PRIVATE char* ocl_gen_charset_code_many_kernels(cl_uint ntlm_size_bit_table, cl_uint output_size, GPUDevice* gpu, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func** ocl_gen_kernel_with_lenght, cl_uint num_gen_kernels, int BINARY_SIZE, int value_map_pos, cl_uint workgroup)
+PRIVATE char* ocl_gen_charset_code_many_kernels(cl_uint output_size, GPUDevice* gpu, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func** ocl_gen_kernel_with_lenght, cl_uint num_gen_kernels, int BINARY_SIZE, cl_uint workgroup)
 {
-	cl_bool value_map_collision;
 	DivisionParams div_param;
 	char* str_comp[] = { ".s0", ".s1", ".s2", ".s3", ".s4", ".s5", ".s6", ".s7", ".s8", ".s9", ".sa", ".sb", ".sc", ".sd", ".se", ".sf" };
 	if (gpu->vector_int_size == 1)str_comp[0] = "";
 
-	char* source = ocl_gen_charset_code_common(ntlm_size_bit_table, gpu, ocl_write_header, BINARY_SIZE, value_map_pos, &value_map_collision, &div_param, num_gen_kernels);
+	char* source = ocl_gen_charset_code_common(gpu, ocl_write_header, BINARY_SIZE, &div_param, num_gen_kernels);
 
 	// Generate code for all lengths in range
 	for (cl_uint i = 0; i < num_gen_kernels; i++)
@@ -1615,14 +1607,13 @@ PRIVATE char* ocl_gen_charset_code_many_kernels(cl_uint ntlm_size_bit_table, cl_
 		// Begin function code
 		sprintf(source + strlen(source), "){uint max_number=get_global_id(0);");
 
-		ocl_gen_kernel_with_lenght[i](source + strlen(source), max_lenght, gpu->vector_int_size, ntlm_size_bit_table, output_size, div_param, str_comp, value_map_collision, workgroup);
+		ocl_gen_kernel_with_lenght[i](source + strlen(source), max_lenght, gpu->vector_int_size, /*ntlm_size_bit_table*/0, output_size, div_param, str_comp, /*value_map_collision*/0, workgroup);
 	}
 
 	return source;
 }
-PRIVATE char* ocl_gen_charset_code_depend_workgroup(cl_uint ntlm_size_bit_table, cl_uint output_size, GPUDevice* gpu, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func* ocl_gen_kernel_with_lenght, int BINARY_SIZE, int value_map_pos, cl_uint max_work_group_size)
+PRIVATE char* ocl_gen_charset_code_depend_workgroup(cl_uint output_size, GPUDevice* gpu, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func* ocl_gen_kernel_with_lenght, int BINARY_SIZE, cl_uint max_work_group_size)
 {
-	cl_bool value_map_collision;
 	DivisionParams div_param;
 	cl_uint workgroup_map[32];
 	cl_uint count_workgroup = 0;
@@ -1633,7 +1624,7 @@ PRIVATE char* ocl_gen_charset_code_depend_workgroup(cl_uint ntlm_size_bit_table,
 	for (cl_uint workgroup = max_work_group_size; workgroup >= OCL_MIN_WORKGROUP_SIZE; count_workgroup++, workgroup /= 2)
 		workgroup_map[count_workgroup] = workgroup;
 
-	char* source = ocl_gen_charset_code_common(ntlm_size_bit_table, gpu, ocl_write_header, BINARY_SIZE, value_map_pos, &value_map_collision, &div_param, __max(1, count_workgroup));
+	char* source = ocl_gen_charset_code_common(gpu, ocl_write_header, BINARY_SIZE, &div_param, __max(1, count_workgroup));
 
 	// Generate code for all lengths in range
 	for (cl_uint i = 0; i < count_workgroup; i++)
@@ -1646,7 +1637,7 @@ PRIVATE char* ocl_gen_charset_code_depend_workgroup(cl_uint ntlm_size_bit_table,
 		// Begin function code
 		sprintf(source + strlen(source), "){uint max_number=get_global_id(0);");
 
-		ocl_gen_kernel_with_lenght(source + strlen(source), max_lenght, gpu->vector_int_size, ntlm_size_bit_table, output_size, div_param, str_comp, value_map_collision, workgroup_map[i]);
+		ocl_gen_kernel_with_lenght(source + strlen(source), max_lenght, gpu->vector_int_size, /*ntlm_size_bit_table*/0, output_size, div_param, str_comp, /*value_map_collision*/0, workgroup_map[i]);
 	}
 
 	return source;
@@ -1714,14 +1705,14 @@ PRIVATE void ocl_charset_work(OpenCL_Param* param)
 	release_opencl_param(param);
 	finish_thread();
 }
-PRIVATE void ocl_charset_init_common(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE, int value_map_pos
-	, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func** ocl_gen_kernel_with_lenght, cl_uint num_gen_kernels, void* ocl_empty_hash, cl_uint local_bytes_needed, cl_uint* ntlm_size_bit_table_ptr, cl_uint keys_opencl_divider)
+PRIVATE int ocl_charset_init_common(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE
+	, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func** ocl_gen_kernel_with_lenght, cl_uint num_gen_kernels, void* ocl_empty_hash, cl_uint local_bytes_needed, cl_uint keys_opencl_divider)
 {
-	cl_uint ntlm_size_bit_table;//                                          Max surpluss because OCL_MULTIPLE_WORKGROUP_SIZE
-	cl_uint output_size = 2 * sizeof(cl_uint)* (num_passwords_loaded + ((cl_uint)gpu_devices[gpu_index].max_work_group_size)*num_char_in_charset);
+	//																						Max surpluss because OCL_MULTIPLE_WORKGROUP_SIZE
+	cl_uint output_size = 2 * sizeof(cl_uint)* (__min(num_passwords_loaded, 10000000) + ((cl_uint)gpu_devices[gpu_index].max_work_group_size)*num_char_in_charset);
 
 	create_opencl_param(param, gpu_index, gen, output_size, FALSE);
-	if (!param)	return;
+	if (!param)	return FALSE;
 
 	// Do not allow blank in GPU
 	if (current_key_lenght == 0)
@@ -1748,35 +1739,29 @@ PRIVATE void ocl_charset_init_common(OpenCL_Param* param, cl_uint gpu_index, gen
 		param->output = (cl_uint*)malloc(output_size);
 	}
 
-	// Take into account the amount of cache
-	if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
-		ntlm_size_bit_table = size_bit_table;
-	else
-		ntlm_size_bit_table = get_bit_table_mask(num_passwords_loaded, gpu_devices[gpu_index].l1_cache_size * 1024, gpu_devices[gpu_index].l2_cache_size * 1024);
-
-	*ntlm_size_bit_table_ptr = ntlm_size_bit_table;
-
 	// Create memory objects
 #ifndef HS_OCL_CURRENT_KEY_AS_REGISTERS
-	create_opencl_mem(param, GPU_CURRENT_KEY, CL_MEM_READ_ONLY, MAX_KEY_LENGHT, NULL);
+	if(!create_opencl_mem(param, GPU_CURRENT_KEY, CL_MEM_READ_ONLY, MAX_KEY_LENGHT, NULL))
+	{
+		release_opencl_param(param);
+		return FALSE;
+	}
 #endif
-	create_opencl_mem(param, GPU_OUTPUT, CL_MEM_READ_WRITE, sizeof(cl_uint)+output_size, NULL);
+	if(!create_opencl_mem(param, GPU_OUTPUT, CL_MEM_READ_WRITE, sizeof(cl_uint)+output_size, NULL)) { release_opencl_param(param); return FALSE; }
 
 	if (num_passwords_loaded > 1)
 	{
 		if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
 		{
-			create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*(size_table + 1), table);
-			create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*(ntlm_size_bit_table / 32 + 1), bit_table);
-			create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, BINARY_SIZE*num_passwords_loaded, binary_values);
-			create_opencl_mem(param, GPU_SAME_HASH_NEXT, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*num_passwords_loaded, same_hash_next);
+			if(!create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*(cbg_mask + 1ull), cbg_table))				{ release_opencl_param(param); return FALSE; }
+			if(!create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_ushort)*(cbg_mask + 1ull), cbg_filter))		{ release_opencl_param(param); return FALSE; }
+			if(!create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, BINARY_SIZE*num_passwords_loaded, binary_values))	{ release_opencl_param(param); return FALSE; }
 		}
 		else
 		{
-			create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY, sizeof(cl_uint)*(size_table + 1), NULL);
-			create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY, sizeof(cl_uint)*(ntlm_size_bit_table / 32 + 1), NULL);
-			create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL);
-			create_opencl_mem(param, GPU_SAME_HASH_NEXT, CL_MEM_READ_ONLY, sizeof(cl_uint)*num_passwords_loaded, NULL);
+			if(!create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY, sizeof(cl_uint)*(cbg_mask + 1ull), NULL))			{ release_opencl_param(param); return FALSE; }
+			if(!create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY, sizeof(cl_ushort)*(cbg_mask + 1ull), NULL))	{ release_opencl_param(param); return FALSE; }
+			if(!create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL))	{ release_opencl_param(param); return FALSE; }
 		}
 	}
 
@@ -1789,23 +1774,11 @@ PRIVATE void ocl_charset_init_common(OpenCL_Param* param, cl_uint gpu_index, gen
 	cl_write_buffer(param, GPU_OUTPUT, sizeof(cl_uint), zero);
 	if (num_passwords_loaded > 1 && !(gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY))
 	{
-		// Create and initialize bitmaps
-		cl_uint* my_bit_table = (cl_uint*)calloc(ntlm_size_bit_table / 32 + 1, sizeof(cl_uint));
-
-		for (cl_uint i = 0; i < num_passwords_loaded; i++)
-		{
-			cl_uint value_map = ((cl_uint*)binary_values)[i * (BINARY_SIZE / sizeof(cl_uint)) + value_map_pos] & ntlm_size_bit_table;
-			my_bit_table[value_map >> 5] |= 1 << (value_map & 31);
-		}
-
-		cl_write_buffer(param, GPU_TABLE, sizeof(cl_uint)* (size_table + 1), table);
-		cl_write_buffer(param, GPU_BIT_TABLE, sizeof(cl_uint)* (ntlm_size_bit_table / 32 + 1), my_bit_table);
+		cl_write_buffer(param, GPU_TABLE, sizeof(cl_uint)* (cbg_mask + 1ull), cbg_table);
+		cl_write_buffer(param, GPU_BIT_TABLE, sizeof(cl_ushort)* (cbg_mask+1ull), cbg_filter);
 		cl_write_buffer(param, GPU_BINARY_VALUES, BINARY_SIZE*num_passwords_loaded, binary_values);
-		cl_write_buffer(param, GPU_SAME_HASH_NEXT, sizeof(cl_uint)* num_passwords_loaded, same_hash_next);
 
 		pclFinish(param->queue);
-
-		free(my_bit_table);
 	}
 
 	// Generate code
@@ -1814,7 +1787,7 @@ PRIVATE void ocl_charset_init_common(OpenCL_Param* param, cl_uint gpu_index, gen
 
 	if (num_gen_kernels > 1)
 	{
-		source = ocl_gen_charset_code_many_kernels(*ntlm_size_bit_table_ptr, param->param0, &gpu_devices[gpu_index], ocl_write_header, ocl_gen_kernel_with_lenght, num_gen_kernels, BINARY_SIZE, value_map_pos, (cl_uint)param->max_work_group_size);
+		source = ocl_gen_charset_code_many_kernels(param->param0, &gpu_devices[gpu_index], ocl_write_header, ocl_gen_kernel_with_lenght, num_gen_kernels, BINARY_SIZE, (cl_uint)param->max_work_group_size);
 	}
 	else
 	{
@@ -1822,10 +1795,10 @@ PRIVATE void ocl_charset_init_common(OpenCL_Param* param, cl_uint gpu_index, gen
 		{
 			if (param->max_work_group_size*local_bytes_needed >= gpu_devices[gpu_index].local_memory_size)
 				param->max_work_group_size = floor_power_2((cl_uint)((gpu_devices[gpu_index].local_memory_size - 1) / local_bytes_needed));
-			source = ocl_gen_charset_code_depend_workgroup(*ntlm_size_bit_table_ptr, param->param0, &gpu_devices[gpu_index], ocl_write_header, *ocl_gen_kernel_with_lenght, BINARY_SIZE, value_map_pos, (cl_uint)param->max_work_group_size);// Generate opencl code
+			source = ocl_gen_charset_code_depend_workgroup(param->param0, &gpu_devices[gpu_index], ocl_write_header, *ocl_gen_kernel_with_lenght, BINARY_SIZE, (cl_uint)param->max_work_group_size);// Generate opencl code
 		}
 		else
-			source = ocl_gen_charset_code(*ntlm_size_bit_table_ptr, param->param0, &gpu_devices[gpu_index], ocl_write_header, *ocl_gen_kernel_with_lenght, BINARY_SIZE, value_map_pos, (cl_uint)param->max_work_group_size, CL_FALSE);// Generate opencl code
+			source = ocl_gen_charset_code(param->param0, &gpu_devices[gpu_index], ocl_write_header, *ocl_gen_kernel_with_lenght, BINARY_SIZE, (cl_uint)param->max_work_group_size, CL_FALSE);// Generate opencl code
 	}
 
 	//size_t len = strlen(source);
@@ -1839,7 +1812,7 @@ PRIVATE void ocl_charset_init_common(OpenCL_Param* param, cl_uint gpu_index, gen
 	if (!build_opencl_program(param, source, gpu_devices[gpu_index].compiler_options))
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	cl_uint min_i = 0, max_i = 0;
@@ -1869,7 +1842,7 @@ PRIVATE void ocl_charset_init_common(OpenCL_Param* param, cl_uint gpu_index, gen
 		if (code != CL_SUCCESS)
 		{
 			release_opencl_param(param);
-			return;
+			return FALSE;
 		}
 
 		// Set OpenCL kernel params
@@ -1890,8 +1863,7 @@ PRIVATE void ocl_charset_init_common(OpenCL_Param* param, cl_uint gpu_index, gen
 		{
 			pclSetKernelArg(param->kernels[i], num_param_regs+1, sizeof(cl_mem), (void*)&param->mems[GPU_TABLE]);
 			pclSetKernelArg(param->kernels[i], num_param_regs+2, sizeof(cl_mem), (void*)&param->mems[GPU_BINARY_VALUES]);
-			pclSetKernelArg(param->kernels[i], num_param_regs+3, sizeof(cl_mem), (void*)&param->mems[GPU_SAME_HASH_NEXT]);
-			pclSetKernelArg(param->kernels[i], num_param_regs+4, sizeof(cl_mem), (void*)&param->mems[GPU_BIT_TABLE]);
+			pclSetKernelArg(param->kernels[i], num_param_regs+3, sizeof(cl_mem), (void*)&param->mems[GPU_BIT_TABLE]);
 		}
 	}
 
@@ -1902,9 +1874,11 @@ PRIVATE void ocl_charset_init_common(OpenCL_Param* param, cl_uint gpu_index, gen
 
 	free(source);
 	*gpu_crypt = ocl_charset_work;
+
+	return TRUE;
 }
 
-PRIVATE void ocl_charset_init_second_test(OpenCL_Param* param, cl_uint gpu_index, int BINARY_SIZE, int value_map_pos, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func* ocl_gen_kernel_with_lenght, cl_uint ntlm_size_bit_table, cl_bool require_workgroup)
+PRIVATE int ocl_charset_init_second_test(OpenCL_Param* param, cl_uint gpu_index, int BINARY_SIZE, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func* ocl_gen_kernel_with_lenght, cl_bool require_workgroup)
 {
 	// Release kernels
 	for (cl_uint i = 0; i < LENGHT(param->kernels); i++)
@@ -1915,13 +1889,13 @@ PRIVATE void ocl_charset_init_second_test(OpenCL_Param* param, cl_uint gpu_index
 		}
 
 	// Now the normal kernels
-	char* source = ocl_gen_charset_code(ntlm_size_bit_table, param->param0, &gpu_devices[gpu_index], ocl_write_header, ocl_gen_kernel_with_lenght, BINARY_SIZE, value_map_pos, (cl_uint)param->max_work_group_size, require_workgroup);// Generate opencl code
+	char* source = ocl_gen_charset_code(param->param0, &gpu_devices[gpu_index], ocl_write_header, ocl_gen_kernel_with_lenght, BINARY_SIZE, (cl_uint)param->max_work_group_size, require_workgroup);// Generate opencl code
 
 	// Perform runtime source compilation
 	if (!build_opencl_program(param, source, gpu_devices[gpu_index].compiler_options))
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	// Crypt by lenght
@@ -1933,7 +1907,7 @@ PRIVATE void ocl_charset_init_second_test(OpenCL_Param* param, cl_uint gpu_index
 		if (code != CL_SUCCESS)
 		{
 			release_opencl_param(param);
-			return;
+			return FALSE;
 		}
 
 		// Set OpenCL kernel params
@@ -1951,22 +1925,24 @@ PRIVATE void ocl_charset_init_second_test(OpenCL_Param* param, cl_uint gpu_index
 		{
 			pclSetKernelArg(param->kernels[i], num_param_regs+1, sizeof(cl_mem), (void*)&param->mems[GPU_TABLE]);
 			pclSetKernelArg(param->kernels[i], num_param_regs+2, sizeof(cl_mem), (void*)&param->mems[GPU_BINARY_VALUES]);
-			pclSetKernelArg(param->kernels[i], num_param_regs+3, sizeof(cl_mem), (void*)&param->mems[GPU_SAME_HASH_NEXT]);
-			pclSetKernelArg(param->kernels[i], num_param_regs+4, sizeof(cl_mem), (void*)&param->mems[GPU_BIT_TABLE]);
+			pclSetKernelArg(param->kernels[i], num_param_regs+3, sizeof(cl_mem), (void*)&param->mems[GPU_BIT_TABLE]);
 		}
 	}
 
 	free(source);
+	return TRUE;
 }
 
-PUBLIC void ocl_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE, int value_map_pos
+PUBLIC int ocl_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE
 	, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func* ocl_gen_kernel_with_lenght, void* ocl_empty_hash, cl_uint local_bytes_needed, cl_uint keys_opencl_divider)
 {
-	cl_uint ntlm_size_bit_table;
-	ocl_charset_init_common(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, value_map_pos, ocl_write_header, &ocl_gen_kernel_with_lenght, 1, ocl_empty_hash, local_bytes_needed, &ntlm_size_bit_table, keys_opencl_divider);
+	if (!ocl_charset_init_common(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_header, &ocl_gen_kernel_with_lenght, 1, ocl_empty_hash, local_bytes_needed, keys_opencl_divider))
+		return FALSE;
 
 	if (local_bytes_needed)
-		ocl_charset_init_second_test(param, gpu_index, BINARY_SIZE, value_map_pos, ocl_write_header, ocl_gen_kernel_with_lenght, ntlm_size_bit_table, CL_TRUE);
+		return ocl_charset_init_second_test(param, gpu_index, BINARY_SIZE, ocl_write_header, ocl_gen_kernel_with_lenght, CL_TRUE);
+
+	return TRUE;
 }
 
 // Select the best implementation of the provided
@@ -1976,15 +1952,14 @@ typedef struct OclImplementationParams
 	cl_ulong duration;
 }
 OclImplementationParams;
-PUBLIC void ocl_charset_kernels_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE, int value_map_pos, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func** ocl_gen_kernel_with_lenght, void* ocl_empty_hash, cl_uint keys_opencl_divider)
+PUBLIC int ocl_charset_kernels_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_with_lenght_func** ocl_gen_kernel_with_lenght, void* ocl_empty_hash, cl_uint keys_opencl_divider)
 {
-	cl_uint ntlm_size_bit_table;
-
 	cl_uint num_gen_kernels = 0;
 	for (; ocl_gen_kernel_with_lenght[num_gen_kernels]; num_gen_kernels++);
 
 	// Generate kernels code
-	ocl_charset_init_common(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, value_map_pos, ocl_write_header, ocl_gen_kernel_with_lenght, num_gen_kernels, ocl_empty_hash, CL_FALSE, &ntlm_size_bit_table, keys_opencl_divider);
+	if (!ocl_charset_init_common(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_header, ocl_gen_kernel_with_lenght, num_gen_kernels, ocl_empty_hash, CL_FALSE, keys_opencl_divider))
+		return FALSE;
 
 	// Find what kernel implementation is best
 	OclImplementationParams* implementation_params = (OclImplementationParams*)malloc(sizeof(OclImplementationParams)*num_gen_kernels);
@@ -2044,11 +2019,12 @@ PUBLIC void ocl_charset_kernels_init(OpenCL_Param* param, cl_uint gpu_index, gen
 	change_value_proportionally(&param->NUM_KEYS_OPENCL, (cl_uint)best_duration);
 	param->max_work_group_size = implementation_params[best_index].max_work_group_size;
 
-	ocl_charset_init_second_test(param, gpu_index, BINARY_SIZE, value_map_pos, ocl_write_header, ocl_gen_kernel_with_lenght[best_index], ntlm_size_bit_table, CL_FALSE);
+	ocl_charset_init_second_test(param, gpu_index, BINARY_SIZE, ocl_write_header, ocl_gen_kernel_with_lenght[best_index], CL_FALSE);
 
 	//hs_log(HS_LOG_INFO, "SHA1 Best Implementation", "index: %i\nduration: %ums\nworkgroup: %u", best_index, (cl_uint)best_duration, (cl_uint)param->max_work_group_size);
 
 	free(implementation_params);
+	return TRUE;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Common opencl (UTF8 and PHRASES) non-salted
@@ -2064,11 +2040,11 @@ PUBLIC void ocl_convert_2_big_endian(char* source, char* data, char* W)
 	}
 	else if (isdigit(data[1]))// Constant
 	{
-		unsigned int x;
+		uint32_t x;
 		int is_hex = !strncmp(data, "+0x", 3) || !strncmp(data, "+0X", 3);
 		sscanf(data+1, is_hex ? "%x" : "%u", &x);
 
-		x = rotate(x, 16U); x = ((x & 0x00FF00FF) << 8) + ((x >> 8) & 0x00FF00FF);
+		x = ROTATE(x, 16U); x = ((x & 0x00FF00FF) << 8) + ((x >> 8) & 0x00FF00FF);
 		sprintf(source + strlen(source), "%s=%uu;", W, x);
 	}
 	else// Variable
@@ -2121,11 +2097,10 @@ PRIVATE void ocl_work(OpenCL_Param* param)
 
 	finish_thread();
 }
-PUBLIC void ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE, int value_map_pos
+PUBLIC int ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE
 	, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_func* ocl_gen_kernel, oclKernel2Common* ocl_kernel_provider, cl_uint keys_multipler, ocl_begin_rule_funtion* ocl_load)
 {
-	cl_uint ntlm_size_bit_table;
-	cl_uint output_size = 2 * sizeof(cl_uint)*num_passwords_loaded;
+	cl_uint output_size = 2 * sizeof(cl_uint) * __min(10000000, num_passwords_loaded);
 
 	create_opencl_param(param, gpu_index, gen, output_size, FALSE);
 
@@ -2145,22 +2120,16 @@ PUBLIC void ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key
 		param->output = (cl_uint*)malloc(output_size);
 	}
 
-	// Take into account the amount of cache
-	if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
-		ntlm_size_bit_table = size_bit_table;
-	else
-		ntlm_size_bit_table = get_bit_table_mask(num_passwords_loaded, gpu_devices[gpu_index].l1_cache_size * 1024, gpu_devices[gpu_index].l2_cache_size * 1024);
-
 	// Generate code
-	char* source = (char*)malloc(1024 * 16);
+	char* source = (char*)malloc(1024 * 32);
 
 	// Write the definitions needed by the opencl implementation
-	ocl_write_header(source, &gpu_devices[gpu_index], ntlm_size_bit_table);
+	ocl_write_header(source, &gpu_devices[gpu_index], /*ntlm_size_bit_table*/0);
 	// Kernel needed to convert from * to the common format
 	ocl_kernel_provider->gen_kernel(source, param->NUM_KEYS_OPENCL);
 
 	// Write the kernel
-	ocl_gen_kernel(source, "crypt", ocl_load, NULL, NULL, NULL, NTLM_MAX_KEY_LENGHT, param->NUM_KEYS_OPENCL, exist_value_map_collision(BINARY_SIZE, value_map_pos), NULL, gpu_devices[gpu_index].vector_int_size);
+	ocl_gen_kernel(source, "crypt", ocl_load, NULL, NULL, NULL, NTLM_MAX_KEY_LENGHT, param->NUM_KEYS_OPENCL, FALSE, NULL, gpu_devices[gpu_index].vector_int_size);
 	//{// Uncomment this to view code
 	//	FILE* code = fopen("C:\\Users\\alain\\Desktop\\opencl_code.c","w");
 	//	fwrite(source, 1, strlen(source), code);
@@ -2171,7 +2140,7 @@ PUBLIC void ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key
 	if (!build_opencl_program(param, source, gpu_devices[gpu_index].compiler_options))
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	// Kernels
@@ -2179,7 +2148,7 @@ PUBLIC void ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key
 	if (code != CL_SUCCESS)
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	// Generate kernels by lenght
@@ -2187,28 +2156,26 @@ PUBLIC void ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key
 	if (code != CL_SUCCESS)
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	// Create memory objects
-	create_opencl_mem(param, GPU_CURRENT_KEY, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL * param->NUM_KEYS_OPENCL, NULL);
-	create_opencl_mem(param, GPU_OUTPUT, CL_MEM_READ_WRITE, sizeof(cl_uint)+output_size, NULL);
+	if (!create_opencl_mem(param, GPU_CURRENT_KEY, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL * param->NUM_KEYS_OPENCL, NULL)) { release_opencl_param(param); return FALSE; }
+	if (!create_opencl_mem(param, GPU_OUTPUT, CL_MEM_READ_WRITE, sizeof(cl_uint)+output_size, NULL))						{ release_opencl_param(param); return FALSE; }
 
 	if (num_passwords_loaded > 1)
 	{
 		if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
 		{
-			create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*(size_table + 1), table);
-			create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*(ntlm_size_bit_table / 32 + 1), bit_table);
-			create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, BINARY_SIZE*num_passwords_loaded, binary_values);
-			create_opencl_mem(param, GPU_SAME_HASH_NEXT, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*num_passwords_loaded, same_hash_next);
+			if (!create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*(cbg_mask + 1ull), cbg_table))				{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_ushort)*(cbg_mask + 1ull), cbg_filter))		{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, BINARY_SIZE*num_passwords_loaded, binary_values))	{ release_opencl_param(param); return FALSE; }
 		}
 		else
 		{
-			create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY, sizeof(cl_uint)*(size_table + 1), NULL);
-			create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY, sizeof(cl_uint)*(ntlm_size_bit_table / 32 + 1), NULL);
-			create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL);
-			create_opencl_mem(param, GPU_SAME_HASH_NEXT, CL_MEM_READ_ONLY, sizeof(cl_uint)*num_passwords_loaded, NULL);
+			if (!create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY, sizeof(cl_uint)*(cbg_mask + 1ull), NULL))		{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY, sizeof(cl_ushort)*(cbg_mask + 1ull), NULL))	{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL)) { release_opencl_param(param); return FALSE; }
 		}
 	}
 	ocl_kernel_provider->setup_params(param, &gpu_devices[gpu_index]);
@@ -2221,8 +2188,7 @@ PUBLIC void ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key
 	{
 		pclSetKernelArg(param->kernels[0], 2, sizeof(cl_mem), (void*)&param->mems[GPU_TABLE]);
 		pclSetKernelArg(param->kernels[0], 3, sizeof(cl_mem), (void*)&param->mems[GPU_BINARY_VALUES]);
-		pclSetKernelArg(param->kernels[0], 4, sizeof(cl_mem), (void*)&param->mems[GPU_SAME_HASH_NEXT]);
-		pclSetKernelArg(param->kernels[0], 5, sizeof(cl_mem), (void*)&param->mems[GPU_BIT_TABLE]);
+		pclSetKernelArg(param->kernels[0], 4, sizeof(cl_mem), (void*)&param->mems[GPU_BIT_TABLE]);
 	}
 
 	// Copy data to GPU
@@ -2231,21 +2197,11 @@ PUBLIC void ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key
 	if (num_passwords_loaded > 1 && !(gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY))
 	{
 		// Create and initialize bitmaps
-		cl_uint* my_bit_table = (cl_uint*)calloc(ntlm_size_bit_table / 32 + 1, sizeof(cl_uint));
-
-		for (cl_uint i = 0; i < num_passwords_loaded; i++)
-		{
-			cl_uint value_map = ((cl_uint*)binary_values)[i * (BINARY_SIZE / sizeof(cl_uint)) + value_map_pos] & ntlm_size_bit_table;
-			my_bit_table[value_map >> 5] |= 1 << (value_map & 31);
-		}
-
-		cl_write_buffer(param, GPU_TABLE, sizeof(cl_uint)* (size_table + 1), table);
-		cl_write_buffer(param, GPU_BIT_TABLE, sizeof(cl_uint)* (ntlm_size_bit_table / 32 + 1), my_bit_table);
+		cl_write_buffer(param, GPU_TABLE, sizeof(cl_uint)* (cbg_mask + 1ull), cbg_table);
+		cl_write_buffer(param, GPU_BIT_TABLE, sizeof(cl_ushort)* (cbg_mask + 1ull), cbg_filter);
 		cl_write_buffer(param, GPU_BINARY_VALUES, BINARY_SIZE*num_passwords_loaded, binary_values);
-		cl_write_buffer(param, GPU_SAME_HASH_NEXT, sizeof(cl_uint)* num_passwords_loaded, same_hash_next);
 
 		pclFinish(param->queue);
-		free(my_bit_table);
 	}
 
 	pclFinish(param->queue);
@@ -2287,6 +2243,175 @@ PUBLIC void ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key
 	pclFinish(param->queue);
 
 	*gpu_crypt = ocl_work;
+	return TRUE;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Phrases opencl optimizations
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#define WORD_POS_MASK		0x07ffffff
+#define GET_WORD_POS(x)		(word_pos[(x)] & WORD_POS_MASK)
+#define GET_WORD_LEN(x)		(word_pos[(x)] >> 27)
+
+extern uint32_t* word_pos;
+extern unsigned char* words;
+extern uint32_t num_words;
+
+PRIVATE void ocl_phrases_work(OpenCL_Param* param)
+{
+	cl_uint num_found;
+	cl_uint sentence[MAX_KEY_LENGHT_SMALL + 2];
+
+	HS_SET_PRIORITY_GPU_THREAD;
+
+	while (continue_attack && param->gen(sentence, param->NUM_KEYS_OPENCL, param->thread_id))
+	{
+		cl_uint num_keys_filled = sentence[0];
+		size_t num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(num_keys_filled, param->max_work_group_size);// Convert to multiple of work_group_size
+
+		// TODO: Check if there is some problem
+		pclEnqueueWriteBuffer(param->queue, param->mems[GPU_CURRENT_KEY], CL_FALSE, 0, (sentence[1] + 1)*sizeof(cl_uint), sentence + 1, 0, NULL, NULL);
+		pclEnqueueNDRangeKernel(param->queue, param->kernels[0], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+		pclEnqueueReadBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 0, 4, &num_found, 0, NULL, NULL);
+
+		// GPU found some passwords
+		if (num_found)
+			ocl_common_process_found(param, &num_found, kernels2common[PHRASES_INDEX_IN_KERNELS].get_key, sentence, num_work_items, num_keys_filled);
+
+		report_keys_processed(num_keys_filled);
+	}
+
+	release_opencl_param(param);
+	finish_thread();
+}
+PUBLIC int ocl_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE, ocl_gen_phrases_kernel_func* ocl_gen_kernel_phrases, cl_uint keys_multipler)
+{
+	cl_uint output_size = 2 * sizeof(cl_uint)*(__min(10000000, num_passwords_loaded) + (cl_uint)gpu_devices[gpu_index].max_work_group_size);
+
+	create_opencl_param(param, gpu_index, gen, output_size, FALSE);
+
+	// Set appropriate number of candidates
+	param->NUM_KEYS_OPENCL *= keys_multipler;
+
+	// The output size take into consideration the possible found keys
+	if (num_passwords_loaded > 1 && param->NUM_KEYS_OPENCL > num_passwords_loaded)
+	{
+		output_size = 2 * sizeof(cl_uint)*__min(param->NUM_KEYS_OPENCL, (cl_uint)(gpu_devices[gpu_index].max_mem_alloc_size / 2 / sizeof(cl_uint)));
+		free(param->output);
+		param->output = (cl_uint*)malloc(output_size);
+	}
+
+	// The size is: (position of last element) + (length of last element) + a plus to ensure correct read by uint------------------
+	cl_uint size_words = GET_WORD_POS(num_words - 1) + GET_WORD_LEN(num_words - 1) + 4;
+
+	// Create words aligned to 4 bytes
+	cl_uint size_new_word = size_words + 3 * num_words;
+	unsigned char* new_words = (unsigned char*)malloc(size_new_word);
+	cl_uint* new_word_pos = (cl_uint*)malloc(num_words*sizeof(cl_uint));
+	cl_uint new_pos = 0;
+	memset(new_words, 0, size_new_word);
+	for (cl_uint i = 0; i < num_words; i++)
+	{
+		cl_uint len = GET_WORD_LEN(i);
+		memcpy(new_words + new_pos, words + GET_WORD_POS(i), len);
+		new_word_pos[i] = new_pos / 4 + (len << 27) + MAX_KEY_LENGHT_SMALL;
+		new_pos += ((len + 3) / 4) * 4;
+		// If bigger than GPU memory
+		if (new_pos >= gpu_devices[gpu_index].max_mem_alloc_size)
+		{
+			num_words = i;
+			new_pos -= ((len + 3) / 4) * 4;
+			break;
+		}
+	}
+	size_new_word = new_pos;
+
+	// Params needed
+	if (!create_opencl_mem(param, GPU_CURRENT_KEY, CL_MEM_READ_ONLY, MAX_KEY_LENGHT_SMALL*sizeof(cl_uint) + size_new_word + sizeof(cl_uint)*num_words, NULL)) { release_opencl_param(param); return FALSE; }
+	// Write to gpu memory
+	pclEnqueueWriteBuffer(param->queue, param->mems[GPU_CURRENT_KEY], CL_FALSE, MAX_KEY_LENGHT_SMALL*sizeof(cl_uint), size_new_word, new_words, 0, NULL, NULL);
+	pclEnqueueWriteBuffer(param->queue, param->mems[GPU_CURRENT_KEY], CL_FALSE, MAX_KEY_LENGHT_SMALL*sizeof(cl_uint) + size_new_word, sizeof(cl_uint)*num_words, new_word_pos, 0, NULL, NULL);
+	pclFinish(param->queue);
+
+	free(new_words);
+	free(new_word_pos);
+	//-----------------------------------------------------------------------------------------------------------------------------------
+	// Generate code
+	char* source = ocl_gen_kernel_phrases("crypt", FALSE, gpu_devices + gpu_index, /*ntlm_size_bit_table*/0, size_new_word);
+	// Uncomment this to view code
+	//size_t len = strlen(source);
+	//FILE* code = fopen("C:\\Users\\alain\\Desktop\\opencl_code.c","w");
+	//fwrite(source, 1, len, code);
+	//fclose(code);
+
+	// Perform runtime source compilation
+	if (!build_opencl_program(param, source, gpu_devices[gpu_index].compiler_options))
+	{
+		release_opencl_param(param);
+		return FALSE;
+	}
+
+	// Generate kernels by lenght
+	if (create_kernel(param, 0, "crypt") != CL_SUCCESS)
+	{
+		release_opencl_param(param);
+		return FALSE;
+	}
+
+	// Create memory objects
+	if (!create_opencl_mem(param, GPU_OUTPUT, CL_MEM_READ_WRITE, sizeof(cl_uint) + output_size, NULL)) { release_opencl_param(param); return FALSE; }
+
+	if (num_passwords_loaded > 1)
+	{
+		if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
+		{
+			if (!create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*(cbg_mask + 1ull), cbg_table))				{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_ushort)*(cbg_mask + 1ull), cbg_filter))		{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, BINARY_SIZE*num_passwords_loaded, binary_values))	{ release_opencl_param(param); return FALSE; }
+		}
+		else
+		{
+			if (!create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY, sizeof(cl_uint)*(cbg_mask + 1ull), NULL))		{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY, sizeof(cl_ushort)*(cbg_mask + 1ull), NULL))	{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL)) { release_opencl_param(param); return FALSE; }
+		}
+	}
+
+	// Set OpenCL kernel params
+	pclSetKernelArg(param->kernels[0], 0, sizeof(cl_mem), &param->mems[GPU_CURRENT_KEY]);
+	pclSetKernelArg(param->kernels[0], 1, sizeof(cl_mem), &param->mems[GPU_OUTPUT]);
+
+	if (num_passwords_loaded > 1)
+	{
+		pclSetKernelArg(param->kernels[0], 2, sizeof(cl_mem), &param->mems[GPU_TABLE]);
+		pclSetKernelArg(param->kernels[0], 3, sizeof(cl_mem), &param->mems[GPU_BINARY_VALUES]);
+		pclSetKernelArg(param->kernels[0], 4, sizeof(cl_mem), &param->mems[GPU_BIT_TABLE]);
+	}
+
+	// Copy data to GPU
+	memset(source, 0, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint));
+	cl_write_buffer(param, GPU_OUTPUT, sizeof(cl_uint), source);
+	if (num_passwords_loaded > 1 && !(gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY))
+	{
+		// Create and initialize bitmaps
+		cl_write_buffer(param, GPU_TABLE, sizeof(cl_uint)* (cbg_mask + 1ull), cbg_table);
+		cl_write_buffer(param, GPU_BIT_TABLE, sizeof(cl_ushort)* (cbg_mask + 1ull), cbg_filter);
+		cl_write_buffer(param, GPU_BINARY_VALUES, BINARY_SIZE*num_passwords_loaded, binary_values);
+
+		pclFinish(param->queue);
+	}
+
+	pclFinish(param->queue);
+	free(source);
+
+	// Find working workgroup
+	// Hack: For NVIDIA and AMD there is a bug preventing NUM_KEYS_OPENCL greater than 24 bits
+	cl_ulong duration = ocl_calculate_best_work_group(param, param->kernels, (num_passwords_loaded==1) ? UINT_MAX : 0x1000000, NULL, 0, CL_FALSE, CL_TRUE);
+	if (duration < OCL_NORMAL_KERNEL_TIME/2)
+		param->NUM_KEYS_OPENCL = ((param->NUM_KEYS_OPENCL-1)<<1) & (~((cl_uint)param->max_work_group_size-1));
+
+	*gpu_crypt = ocl_phrases_work;
+	return TRUE;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2295,15 +2420,15 @@ PUBLIC void ocl_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key
 extern int current_rules_count;
 extern int* rules_remapped;
 extern int provider_index;
-void rules_calculate_key_space(unsigned int num_keys_original, int64_t num_keys_in_memory, int thread_id);
+void rules_calculate_key_space(uint32_t num_keys_original, int64_t num_keys_in_memory, uint32_t thread_id);
+void rules_report_remain_key_space(int64_t pnum_keys_in_memory, uint32_t thread_id);
 
-PRIVATE char* ocl_gen_rules_code(GPUDevice* gpu, OpenCL_Param* param, int kernel2common_index, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_func* ocl_gen_kernel, cl_uint ntlm_size_bit_table, void* salt_param, int BINARY_SIZE, int value_map_pos, int FORMAT_BUFFER
+PRIVATE char* ocl_gen_rules_code(GPUDevice* gpu, OpenCL_Param* param, int kernel2common_index, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_func* ocl_gen_kernel,
+	cl_uint ntlm_size_bit_table, void* salt_param, int BINARY_SIZE, int FORMAT_BUFFER, cl_uint common_NUM_KEYS_OPENCL, cl_uint ordered_NUM_KEYS_OPENCL
 #ifndef OCL_RULES_ALL_IN_GPU
 	, int current_lenght
 #endif
-	)
-{
-	cl_uint value_map_collision = FORMAT_USE_SALT ? ntlm_size_bit_table : exist_value_map_collision(BINARY_SIZE, value_map_pos);
+){
 #ifdef OCL_RULES_ALL_IN_GPU
 	char* base_source = (char*)malloc(1024 * 32 * __max(1, current_rules_count)*(NTLM_MAX_KEY_LENGHT + 1));
 #else
@@ -2319,9 +2444,9 @@ PRIVATE char* ocl_gen_rules_code(GPUDevice* gpu, OpenCL_Param* param, int kernel
 #endif
 	{
 		// Kernel needed to convert from * to the common format
-		kernels2common[kernel2common_index].gen_kernel(base_source, param->NUM_KEYS_OPENCL);
+		kernels2common[kernel2common_index].gen_kernel(base_source, common_NUM_KEYS_OPENCL);
 		// Kernel needed to convert from common format to the ordered by lenght format
-		ocl_gen_kernel_common_2_ordered(base_source, param->NUM_KEYS_OPENCL, NTLM_MAX_KEY_LENGHT);
+		ocl_gen_kernel_common_2_ordered(base_source, common_NUM_KEYS_OPENCL, ordered_NUM_KEYS_OPENCL, NTLM_MAX_KEY_LENGHT);
 	}
 #ifndef OCL_RULES_ALL_IN_GPU
 	else
@@ -2333,11 +2458,11 @@ PRIVATE char* ocl_gen_rules_code(GPUDevice* gpu, OpenCL_Param* param, int kernel
 		int num_constants_written = 0;
 
 		// Generate one kernel for each rule
-		#ifdef OCL_RULES_ALL_IN_GPU
+	#ifdef OCL_RULES_ALL_IN_GPU
 		for (cl_uint lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
-#else
+	#else
 		cl_uint lenght = current_lenght;
-#endif
+	#endif
 		{
 			for (int i = 0; i < current_rules_count; i++)
 			{
@@ -2370,7 +2495,7 @@ PRIVATE char* ocl_gen_rules_code(GPUDevice* gpu, OpenCL_Param* param, int kernel
 				sprintf(kernel_name, "ru_%il%i", i, lenght);
 				sprintf(found_param, "(%uu+%s)", (rules_remapped[i] << 22) + (lenght << 27), rules[rules_remapped[i]].ocl.found_param);
 				//sprintf(source + strlen(source), "\n__attribute__((work_group_size_hint(64, 1, 1))) ");
-				ocl_gen_kernel(source + strlen(source), kernel_name, rules[rules_remapped[i]].ocl.begin[FORMAT_BUFFER], rules[rules_remapped[i]].ocl.end, found_param, need_param_ptr, lenght, param->NUM_KEYS_OPENCL, value_map_collision, salt_param, gpu->vector_int_size);
+				ocl_gen_kernel(source + strlen(source), kernel_name, rules[rules_remapped[i]].ocl.begin[FORMAT_BUFFER], rules[rules_remapped[i]].ocl.end, found_param, need_param_ptr, lenght, ordered_NUM_KEYS_OPENCL, ntlm_size_bit_table, salt_param, gpu->vector_int_size);
 			}
 		}
 		free(constants_written);
@@ -2470,6 +2595,7 @@ PRIVATE void ocl_protocol_rules_work(OpenCL_Param* param)
 		size_t num_work_items = kernel2common->process_buffer(buffer, result, param, &num_keys_filled);
 
 		// Convert to ordered by lenght
+		pclSetKernelArg(param->kernels[KERNEL_ORDERED_INDEX], 2, sizeof(cl_uint), (void*)&num_keys_filled);
 		while (CL_INVALID_WORK_GROUP_SIZE == pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_ORDERED_INDEX], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
 			param->max_work_group_size /= 2;
 		pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_TRUE, 0, (NTLM_MAX_KEY_LENGHT + 1) * sizeof(cl_uint), &gpu_num_keys_by_len, 0, NULL, NULL);
@@ -2566,7 +2692,7 @@ PRIVATE void ocl_protocol_rules_work(OpenCL_Param* param)
 			pclFinish(param->queue);
 			// GPU found some passwords
 			if (num_found)
-				ocl_rules_process_found(param, &num_found, gpu_num_keys_by_len, gpu_pos_ordered_by_len);
+				ocl_rules_process_found(param, &num_found, gpu_num_keys_by_len, gpu_pos_ordered_by_len, param->NUM_KEYS_OPENCL);
 		}
 	}
 
@@ -2642,7 +2768,7 @@ PRIVATE void ocl_protocol_rules_work(OpenCL_Param* param)
 				pclEnqueueReadBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 0, 4, &num_found, 0, NULL, NULL);
 				// GPU found some passwords
 				if (num_found)
-					ocl_rules_process_found(param, &num_found, gpu_num_keys_by_len, gpu_pos_ordered_by_len);
+					ocl_rules_process_found(param, &num_found, gpu_num_keys_by_len, gpu_pos_ordered_by_len, param->NUM_KEYS_OPENCL);
 			}
 		}
 
@@ -2682,6 +2808,7 @@ PRIVATE void ocl_dcc_protocol_rules_work(OpenCL_Param* param)
 		size_t num_work_items = kernel2common->process_buffer(buffer, result, param, &num_keys_filled);
 
 		// Convert to ordered by lenght
+		pclSetKernelArg(param->kernels[KERNEL_ORDERED_INDEX], 2, sizeof(cl_uint), (void*)&num_keys_filled);
 		while (CL_INVALID_WORK_GROUP_SIZE == pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_ORDERED_INDEX], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
 			param->max_work_group_size /= 2;
 		pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_TRUE, 0, (NTLM_MAX_KEY_LENGHT + 1) * sizeof(cl_uint), &gpu_num_keys_by_len, 0, NULL, NULL);
@@ -2812,7 +2939,7 @@ PRIVATE void ocl_dcc_protocol_rules_work(OpenCL_Param* param)
 			pclFinish(param->queue);
 			// GPU found some passwords
 			if (num_found)
-				ocl_rules_process_found(param, &num_found, gpu_num_keys_by_len, gpu_pos_ordered_by_len);
+				ocl_rules_process_found(param, &num_found, gpu_num_keys_by_len, gpu_pos_ordered_by_len, param->NUM_KEYS_OPENCL);
 		}
 	}
 
@@ -2923,7 +3050,7 @@ PRIVATE void ocl_dcc_protocol_rules_work(OpenCL_Param* param)
 			pclEnqueueReadBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 0, 4, &num_found, 0, NULL, NULL);
 			// GPU found some passwords
 			if (num_found)
-				ocl_rules_process_found(param, &num_found, gpu_num_keys_by_len, gpu_pos_ordered_by_len);
+				ocl_rules_process_found(param, &num_found, gpu_num_keys_by_len, gpu_pos_ordered_by_len, param->NUM_KEYS_OPENCL);
 		}
 
 	free(buffer);
@@ -2931,7 +3058,7 @@ PRIVATE void ocl_dcc_protocol_rules_work(OpenCL_Param* param)
 
 	finish_thread();
 }
-PUBLIC void ocl_rules_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE, int value_map_pos, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_func* ocl_gen_kernel, int FORMAT_BUFFER, cl_uint keys_opencl_divider)
+PUBLIC int ocl_rules_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_func* ocl_gen_kernel, int FORMAT_BUFFER, cl_uint keys_opencl_divider)
 {
 	int kernel2common_index;
 	cl_uint gpu_key_buffer_lenght = 0;
@@ -2977,7 +3104,7 @@ out:
 	}
 	else
 	{
-#ifdef ANDROID
+#ifdef __ANDROID__
 		param->NUM_KEYS_OPENCL *= multipler < 95 ? 16 : 1;
 #else
 		param->NUM_KEYS_OPENCL *= multipler < 95 ? 64 : 4;
@@ -3002,26 +3129,20 @@ out:
 		small_salts_values = ocl_dcc_shrink_salts_size(salt_values_str, &Part.num_salt_diff_parts);
 	}
 	else
-	{
-	// Take into account the amount of cache
-		if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
-		Part.ntlm_size_bit_table = size_bit_table;
-	else
-		Part.ntlm_size_bit_table = get_bit_table_mask(num_passwords_loaded, gpu_devices[gpu_index].l1_cache_size * 1024, gpu_devices[gpu_index].l2_cache_size * 1024);
-	}
+		Part.ntlm_size_bit_table = 0;
 
 	// Generate code
 #ifdef OCL_RULES_ALL_IN_GPU
-	char* source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, Part.ntlm_size_bit_table, salt_values_str, BINARY_SIZE, value_map_pos, FORMAT_BUFFER);
+	char* source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, Part.ntlm_size_bit_table, salt_values_str, BINARY_SIZE, FORMAT_BUFFER, param->NUM_KEYS_OPENCL, param->NUM_KEYS_OPENCL);
 #else
-	char* source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, Part.ntlm_size_bit_table, salt_values_str, BINARY_SIZE, value_map_pos, FORMAT_BUFFER, -1);
+	char* source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, Part.ntlm_size_bit_table, salt_values_str, BINARY_SIZE, FORMAT_BUFFER, param->NUM_KEYS_OPENCL, param->NUM_KEYS_OPENCL, -1);
 #endif
 
 	// Perform runtime source compilation
 	if (!build_opencl_program(param, source, gpu_devices[gpu_index].compiler_options))
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	// Crypt by length
@@ -3029,20 +3150,21 @@ out:
 	if (code != CL_SUCCESS)
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 	code = create_kernel(param, KERNEL_ORDERED_INDEX, "common2ordered");
 	if (code != CL_SUCCESS)
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 #ifndef OCL_RULES_ALL_IN_GPU
 	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
 	{
 		free(source);
-		source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, Part.ntlm_size_bit_table, salt_values_str, BINARY_SIZE, value_map_pos, FORMAT_BUFFER, len);
+		source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, Part.ntlm_size_bit_table,
+			salt_values_str, BINARY_SIZE, FORMAT_BUFFER, param->NUM_KEYS_OPENCL, param->NUM_KEYS_OPENCL, len);
 
 		param->rules.program = pclCreateProgramWithSource( param->context, 1, (char const **)(&source), NULL, &code );
 		// Build program
@@ -3058,7 +3180,7 @@ out:
 		else
 		{
 			release_opencl_param(param);
-			return;
+			return FALSE;
 		}
 		pclReleaseProgram(param->rules.program);
 		param->rules.program = NULL;
@@ -3080,15 +3202,15 @@ out:
 			if (code != CL_SUCCESS)
 			{
 				release_opencl_param(param);
-				return;
+				return FALSE;
 			}
 		}
 #endif
 
 	// Create memory objects
-	create_opencl_mem(param, GPU_ORDERED_KEYS, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint)+param->NUM_KEYS_OPENCL*gpu_key_buffer_lenght, NULL);
-	create_opencl_mem(param, GPU_CURRENT_KEY, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL*param->NUM_KEYS_OPENCL, NULL);
-	create_opencl_mem(param, GPU_OUTPUT, CL_MEM_READ_WRITE, sizeof(cl_uint)+output_size, NULL);
+	if (!create_opencl_mem(param, GPU_ORDERED_KEYS, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint)+param->NUM_KEYS_OPENCL*gpu_key_buffer_lenght, NULL))	{ release_opencl_param(param); return FALSE; }
+	if (!create_opencl_mem(param, GPU_CURRENT_KEY, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL*param->NUM_KEYS_OPENCL, NULL))											{ release_opencl_param(param); return FALSE; }
+	if (!create_opencl_mem(param, GPU_OUTPUT, CL_MEM_READ_WRITE, sizeof(cl_uint)+output_size, NULL))																{ release_opencl_param(param); return FALSE; }
 
 	if(num_diff_salts > 1)
 	{
@@ -3110,17 +3232,15 @@ out:
 	{
 		if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
 		{
-			create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*(size_table + 1), table);
-			create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*(Part.ntlm_size_bit_table / 32 + 1), bit_table);
-			create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, BINARY_SIZE*num_passwords_loaded, binary_values);
-			create_opencl_mem(param, GPU_SAME_HASH_NEXT, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*num_passwords_loaded, same_hash_next);
+			if (!create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*(cbg_mask + 1ull), cbg_table))				{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_ushort)*(cbg_mask + 1ull), cbg_filter))		{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, BINARY_SIZE*num_passwords_loaded, binary_values))	{ release_opencl_param(param); return FALSE; }
 		}
 		else
 		{
-			create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY, sizeof(cl_uint)*(size_table + 1), NULL);
-			create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY, sizeof(cl_uint)*(Part.ntlm_size_bit_table / 32 + 1), NULL);
-			create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL);
-			create_opencl_mem(param, GPU_SAME_HASH_NEXT, CL_MEM_READ_ONLY, sizeof(cl_uint)*num_passwords_loaded, NULL);
+			if (!create_opencl_mem(param, GPU_TABLE, CL_MEM_READ_ONLY, sizeof(cl_uint)*(cbg_mask + 1ull), NULL))		{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BIT_TABLE, CL_MEM_READ_ONLY, sizeof(cl_ushort)*(cbg_mask + 1ull), NULL))	{ release_opencl_param(param); return FALSE; }
+			if (!create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL)) { release_opencl_param(param); return FALSE; }
 		}
 	}
 
@@ -3148,8 +3268,7 @@ out:
 			{
 				pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 2, sizeof(cl_mem), (void*)&param->mems[GPU_TABLE]);
 				pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 3, sizeof(cl_mem), (void*)&param->mems[GPU_BINARY_VALUES]);
-				pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 4, sizeof(cl_mem), (void*)&param->mems[GPU_SAME_HASH_NEXT]);
-				pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 5, sizeof(cl_mem), (void*)&param->mems[GPU_BIT_TABLE]);
+				pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 4, sizeof(cl_mem), (void*)&param->mems[GPU_BIT_TABLE]);
 			}
 		}
 #endif
@@ -3171,21 +3290,11 @@ out:
 	if (!FORMAT_USE_SALT && num_passwords_loaded > 1 && !(gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY))
 	{
 		// Create and initialize bitmaps
-		cl_uint* my_bit_table = (cl_uint*)calloc(Part.ntlm_size_bit_table / 32 + 1, sizeof(cl_uint));
-
-		for (cl_uint i = 0; i < num_passwords_loaded; i++)
-		{
-			cl_uint value_map = ((cl_uint*)binary_values)[i * (BINARY_SIZE / sizeof(cl_uint)) + value_map_pos] & Part.ntlm_size_bit_table;
-			my_bit_table[value_map >> 5] |= 1 << (value_map & 31);
-		}
-
-		cl_write_buffer(param, GPU_TABLE, sizeof(cl_uint)* (size_table + 1), table);
-		cl_write_buffer(param, GPU_BIT_TABLE, sizeof(cl_uint)* (Part.ntlm_size_bit_table / 32 + 1), my_bit_table);
+		cl_write_buffer(param, GPU_TABLE, sizeof(cl_uint)* (cbg_mask + 1ull), cbg_table);
+		cl_write_buffer(param, GPU_BIT_TABLE, sizeof(cl_ushort)* (cbg_mask + 1ull), cbg_filter);
 		cl_write_buffer(param, GPU_BINARY_VALUES, BINARY_SIZE*num_passwords_loaded, binary_values);
-		cl_write_buffer(param, GPU_SAME_HASH_NEXT, sizeof(cl_uint)* num_passwords_loaded, same_hash_next);
 
 		pclFinish(param->queue);
-		free(my_bit_table);
 	}
 
 	pclFinish(param->queue);
@@ -3273,8 +3382,546 @@ out:
 #ifndef OCL_RULES_ALL_IN_GPU
 	param->rules.gpu_index = gpu_index;
 #endif
+	return TRUE;
 }
 
+// Fast Salted
+PRIVATE void ocl_ssha_protocol_rules_work(OpenCL_Param* param)
+{
+	cl_uint zero = 0;
+	int num_keys_filled;
+	cl_uint gpu_num_keys_by_len[NTLM_MAX_KEY_LENGHT + 1];
+	cl_uint gpu_offsets_by_len[NTLM_MAX_KEY_LENGHT + 1];
+	cl_uint gpu_pos_ordered_by_len[NTLM_MAX_KEY_LENGHT + 1];
+	cl_uint num_found = 0;
+
+	// Size in uint
+	for (cl_uint i = 0, j = 32; i <= NTLM_MAX_KEY_LENGHT; i++)
+	{
+		gpu_pos_ordered_by_len[i] = j;
+		j += (i + 3) / 4 * param->param1 * 2;
+	}
+	memset(gpu_num_keys_by_len, 0, sizeof(gpu_num_keys_by_len));
+	memset(gpu_offsets_by_len, 0, sizeof(gpu_offsets_by_len));
+
+	oclKernel2Common* kernel2common = (oclKernel2Common*)param->additional_param;
+	void* buffer = malloc(kernel2common->get_buffer_size(param));
+
+	HS_SET_PRIORITY_GPU_THREAD;
+	memset(buffer, 0, kernel2common->get_buffer_size(param));
+
+	int result = param->gen(buffer, param->param1, param->thread_id);
+	int64_t num_keys_in_memory = 0;
+	cl_uint min_keys_crypt = param->NUM_KEYS_OPENCL / num_diff_salts;
+	cl_uint rest_keys_crypt = param->NUM_KEYS_OPENCL % num_diff_salts;
+	while (continue_attack && result)
+	{
+		// Process common
+		size_t num_work_items = kernel2common->process_buffer(buffer, result, param, &num_keys_filled);
+
+		// Convert to ordered by lenght
+		pclSetKernelArg(param->kernels[KERNEL_ORDERED_INDEX], 2, sizeof(cl_uint), (void*)&num_keys_filled);
+		while (CL_INVALID_WORK_GROUP_SIZE == pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_ORDERED_INDEX], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
+			param->max_work_group_size /= 2;
+		pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_TRUE, 0, (NTLM_MAX_KEY_LENGHT + 1) * sizeof(cl_uint), &gpu_num_keys_by_len, 0, NULL, NULL);
+		num_keys_in_memory = 0;
+		// Calculate the number of keys in memory
+		for (int lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+			for (int i = 0; i < current_rules_count; i++)
+			{
+				int64_t multipler = rules[rules_remapped[i]].multipler;
+				if (rules[rules_remapped[i]].depend_key_lenght)
+					multipler = multipler / RULE_LENGHT_COMMON * __max(0, lenght + rules[rules_remapped[i]].key_lenght_sum);
+
+				num_keys_in_memory += gpu_num_keys_by_len[lenght] * multipler;
+			}
+		rules_calculate_key_space(num_keys_filled, num_keys_in_memory, param->thread_id);
+
+		for (int lenght = 0; continue_attack && lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+		{
+			cl_uint num_keys_complete_proccessed_total = 0;// The total of keys completly proccessed
+			cl_uint current_num_keys = gpu_num_keys_by_len[lenght];
+			cl_uint current_offsets_by_len = gpu_offsets_by_len[lenght];
+
+			while (continue_attack && (current_num_keys * num_diff_salts - current_offsets_by_len) >= param->NUM_KEYS_OPENCL)
+			{
+				oclru_check_binary_present(param, lenght);
+
+				// Take into account in the offset the already proccessed keys
+				cl_uint current_offset = current_offsets_by_len + num_keys_complete_proccessed_total*num_diff_salts;
+
+				cl_uint new_rest = rest_keys_crypt + current_offsets_by_len;
+				cl_uint num_keys_complete_proccessed = min_keys_crypt;
+				if (new_rest >= num_diff_salts)
+				{
+					num_keys_complete_proccessed++;
+					new_rest -= num_diff_salts;
+				}				
+
+				// Do actual hashing
+				for (int i = 0; continue_attack && i < current_rules_count; i++)
+				{
+					size_t work_group_size_rl = param->rules.work_group_sizes[i + lenght*current_rules_count];
+					size_t num_work_items_len = param->NUM_KEYS_OPENCL;
+
+					if (rules[rules_remapped[i]].ocl.max_param_value)
+					{
+						// Some param
+						int max_param_value = rules[rules_remapped[i]].ocl.max_param_value;
+						if (rules[rules_remapped[i]].depend_key_lenght)
+							max_param_value = lenght + rules[rules_remapped[i]].key_lenght_sum;
+
+						for (int j = 0; continue_attack && j < max_param_value; j++)
+						{
+							pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], param->param0, sizeof(cl_uint), &j);//additional param
+							pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 4, sizeof(current_offset), &current_offset);
+							pclEnqueueNDRangeKernel(param->queue, param->rules.kernels[i + lenght*current_rules_count], 1, NULL, &num_work_items_len, &work_group_size_rl, 0, NULL, NULL);		
+						}
+					}
+					else
+					{
+						pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 4, sizeof(current_offset), (void*)&current_offset);
+						pclEnqueueNDRangeKernel(param->queue, param->rules.kernels[i + lenght*current_rules_count], 1, NULL, &num_work_items_len, &work_group_size_rl, 0, NULL, NULL);
+					}
+				}
+				pclFinish(param->queue);
+
+				if (continue_attack)
+				{
+					num_keys_complete_proccessed_total += num_keys_complete_proccessed;
+					current_num_keys -= num_keys_complete_proccessed;
+					current_offsets_by_len = new_rest;
+
+					int64_t num_keys_complete_proccessed_rules = 0;
+					for (int i = 0; i < current_rules_count; i++)
+					{
+						int64_t multipler = rules[rules_remapped[i]].multipler;
+						if (rules[rules_remapped[i]].depend_key_lenght)
+							multipler = multipler / RULE_LENGHT_COMMON * __max(0, lenght + rules[rules_remapped[i]].key_lenght_sum);
+
+						num_keys_complete_proccessed_rules += ((int64_t)num_keys_complete_proccessed) * multipler;
+					}
+					report_keys_processed(num_keys_complete_proccessed_rules);
+					num_keys_in_memory -= num_keys_complete_proccessed_rules;
+					rules_calculate_key_space(0, num_keys_in_memory, param->thread_id);
+				}
+			}
+			pclEnqueueReadBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 0, 4, &num_found, 0, NULL, NULL);
+			// GPU found some passwords
+			if (num_found)
+				ocl_rules_process_found(param, &num_found, gpu_num_keys_by_len, gpu_pos_ordered_by_len, param->param1 * 2);
+
+			if (continue_attack && num_keys_complete_proccessed_total)
+			{
+				gpu_num_keys_by_len[lenght] = current_num_keys;
+				gpu_offsets_by_len[lenght] = current_offsets_by_len;
+
+				if (num_keys_complete_proccessed_total)
+				{
+					cl_uint len = (lenght + 3) / 4;
+					//__kernel void move_to_begin(__global uint* keys, uint base_pos, uint len, uint offset, uint count)
+					pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 1, sizeof(cl_uint), gpu_pos_ordered_by_len + lenght);
+					pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 2, sizeof(cl_uint), &len);
+					pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 3, sizeof(cl_uint), &num_keys_complete_proccessed_total);
+					pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 4, sizeof(cl_uint), gpu_num_keys_by_len + lenght);
+					size_t num_work_items_move = OCL_MULTIPLE_WORKGROUP_SIZE(gpu_num_keys_by_len[lenght], param->max_work_group_size);
+					pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 1, NULL, &num_work_items_move, &param->max_work_group_size, 0, NULL, NULL);
+
+					pclEnqueueWriteBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_FALSE, lenght*sizeof(cl_uint), sizeof(cl_uint), gpu_num_keys_by_len + lenght, 0, NULL, NULL);
+				}
+			}
+		}
+
+		// Next block of keys
+		if (continue_attack)
+			result = param->gen(buffer, param->param1, param->thread_id);
+	}
+
+	// Get the last passwords from memory
+	pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_TRUE, 0, (NTLM_MAX_KEY_LENGHT + 1) * sizeof(cl_uint), &gpu_num_keys_by_len, 0, NULL, NULL);
+	num_keys_in_memory = 0;
+	// Calculate the number of keys in memory
+	for (int lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+		for (int i = 0; i < current_rules_count; i++)
+		{
+			int64_t multipler = rules[rules_remapped[i]].multipler;
+			if (rules[rules_remapped[i]].depend_key_lenght)
+				multipler = multipler / RULE_LENGHT_COMMON * __max(0, lenght + rules[rules_remapped[i]].key_lenght_sum);
+
+			num_keys_in_memory += gpu_num_keys_by_len[lenght] * multipler;
+		}
+	rules_report_remain_key_space(num_keys_in_memory, param->thread_id);
+
+	for (int lenght = 0; /*continue_attack &&*/ lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+	{
+		cl_uint num_keys_complete_proccessed_total = 0;// The total of keys completly proccessed
+
+		while (gpu_num_keys_by_len[lenght])
+		{
+			oclru_check_binary_present(param, lenght);
+
+			// Take into account in the offset the already proccessed keys
+			cl_uint current_offset = gpu_offsets_by_len[lenght] + num_keys_complete_proccessed_total*num_diff_salts;
+
+			cl_uint new_rest = rest_keys_crypt + gpu_offsets_by_len[lenght];
+			cl_uint num_keys_complete_proccessed = min_keys_crypt;
+			if (new_rest >= num_diff_salts)
+			{
+				num_keys_complete_proccessed++;
+				new_rest -= num_diff_salts;
+			}
+
+			cl_uint remaining_items = gpu_num_keys_by_len[lenght] * num_diff_salts - gpu_offsets_by_len[lenght];
+			size_t num_work_items_len = param->NUM_KEYS_OPENCL;
+			if (remaining_items <= param->NUM_KEYS_OPENCL)
+				num_work_items_len = OCL_MULTIPLE_WORKGROUP_SIZE(remaining_items, param->max_work_group_size);
+
+			// Do actual hashing
+			for (int i = 0; /*continue_attack &&*/ i < current_rules_count; i++)
+			{
+				size_t work_group_size_rl = param->rules.work_group_sizes[i + lenght*current_rules_count];
+
+				if (rules[rules_remapped[i]].ocl.max_param_value)
+				{
+					// Some params
+					int max_param_value = rules[rules_remapped[i]].ocl.max_param_value;
+					if (rules[rules_remapped[i]].depend_key_lenght)
+						max_param_value = lenght + rules[rules_remapped[i]].key_lenght_sum;
+
+					for (int j = 0; /*continue_attack &&*/ j < max_param_value; j++)
+					{
+						pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], param->param0, sizeof(cl_uint), &j);//additional param
+						pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 4, sizeof(current_offset), &current_offset);
+						pclEnqueueNDRangeKernel(param->queue, param->rules.kernels[i + lenght*current_rules_count], 1, NULL, &num_work_items_len, &work_group_size_rl, 0, NULL, NULL);
+					}
+				}
+				else
+				{
+					pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 4, sizeof(current_offset), &current_offset);
+					pclEnqueueNDRangeKernel(param->queue, param->rules.kernels[i + lenght*current_rules_count], 1, NULL, &num_work_items_len, &work_group_size_rl, 0, NULL, NULL);
+				}
+			}
+
+			pclEnqueueReadBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 0, 4, &num_found, 0, NULL, NULL);
+			// GPU found some passwords
+			if (num_found)
+				ocl_rules_process_found(param, &num_found, gpu_num_keys_by_len, gpu_pos_ordered_by_len, param->param1 * 2);
+
+			if (remaining_items <= param->NUM_KEYS_OPENCL)
+			{
+				num_keys_complete_proccessed_total += gpu_num_keys_by_len[lenght];
+				gpu_num_keys_by_len[lenght] = 0;
+				new_rest = 0;
+			}
+			else
+			{
+				if (num_keys_complete_proccessed)
+				{
+					num_keys_complete_proccessed_total += num_keys_complete_proccessed;
+					gpu_num_keys_by_len[lenght] -= num_keys_complete_proccessed;
+				}
+				gpu_offsets_by_len[lenght] = new_rest;
+			}
+		}
+
+		int64_t num_keys_complete_proccessed_rules = 0;
+		for (int i = 0; i < current_rules_count; i++)
+		{
+			int64_t multipler = rules[rules_remapped[i]].multipler;
+			if (rules[rules_remapped[i]].depend_key_lenght)
+				multipler = multipler / RULE_LENGHT_COMMON * __max(0, lenght + rules[rules_remapped[i]].key_lenght_sum);
+
+			num_keys_complete_proccessed_rules += ((int64_t)num_keys_complete_proccessed_total) * multipler;
+		}
+		report_keys_processed(num_keys_complete_proccessed_rules);
+	}
+
+	free(buffer);
+	release_opencl_param(param);
+
+	finish_thread();
+}
+PUBLIC int ocl_rules_init_ssha(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, int BINARY_SIZE, int SALT_SIZE, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_func* ocl_gen_kernel, int FORMAT_BUFFER, cl_uint keys_opencl_divider)
+{
+	int kernel2common_index;
+	cl_uint gpu_key_buffer_lenght = 0;
+	cl_uint output_size = 3 * sizeof(cl_uint)*num_passwords_loaded;
+	int multipler = 0;
+
+	// Find a compatible generate_key_funtion function for a given key_provider
+	for (int i = 0; i < LENGHT(key_providers[provider_index].impls); i++)
+		for (kernel2common_index = 0; kernel2common_index < (int)num_kernels2common; kernel2common_index++)
+			if (key_providers[provider_index].impls[i].protocol == kernels2common[kernel2common_index].protocol)
+			{
+				gen = key_providers[provider_index].impls[i].generate;
+				goto out;
+			}
+out:
+	create_opencl_param(param, gpu_index, gen, output_size, FALSE);
+
+	// Count the possible number of generated keys
+	for (int i = 0; i < current_rules_count; i++)
+		multipler += rules[rules_remapped[i]].multipler;
+
+	// Size in bytes
+	for (int i = 1; i <= NTLM_MAX_KEY_LENGHT; i++)
+		gpu_key_buffer_lenght += (i + 3) / 4 * sizeof(cl_uint);
+
+	// Set appropriate number of candidates
+	param->NUM_KEYS_OPENCL /= 4;
+	param->NUM_KEYS_OPENCL /= keys_opencl_divider;
+
+	// The minimum workable num_work_items for the GPU to be in use
+	param->param1 = __max((param->NUM_KEYS_OPENCL + num_diff_salts - 1) / num_diff_salts, gpu_devices[gpu_index].cores * 64 / gpu_devices[gpu_index].NUM_KEYS_OPENCL_DIVIDER);
+
+	if (param->param1*gpu_key_buffer_lenght >= (gpu_devices[gpu_index].max_mem_alloc_size - MAX_KEY_LENGHT_SMALL * sizeof(cl_uint)))
+		param->param1 = (cl_uint)(gpu_devices[gpu_index].max_mem_alloc_size - MAX_KEY_LENGHT_SMALL * sizeof(cl_uint) - 1) / 2 / gpu_key_buffer_lenght;
+
+	// The output size take into consideration the possible found keys
+	if (num_passwords_loaded > 1 && multipler*param->param1 > num_passwords_loaded)
+	{
+		// Reserve to output at maximum half the MAX_MEM_ALLOC_SIZE
+		output_size = __min(3 * sizeof(cl_uint)*multipler*param->param1, (cl_uint)(gpu_devices[gpu_index].max_mem_alloc_size / 2));
+		free(param->output);
+		param->output = (cl_uint*)malloc(output_size);
+	}
+
+	// Generate code
+#ifdef OCL_RULES_ALL_IN_GPU
+	char* source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, 0, NULL, BINARY_SIZE, FORMAT_BUFFER, param->param1, param->param1*2);
+#else
+	char* source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, 0, NULL, BINARY_SIZE, FORMAT_BUFFER, param->param1, param->param1*2, -1);
+#endif
+	sprintf(source + strlen(source),
+			"\n__kernel void move_to_begin(__global uint* keys, uint base_pos, uint len, uint offset, uint count)"
+			"{"
+				"uint idx=get_global_id(0);"
+				"if(idx>=count)return;"
+
+				"for(uint i=0;i<len;i++)"
+					"keys[base_pos+i*%uu+idx]=keys[base_pos+i*%uu+idx+offset];"
+			"}\n", 2 * param->param1, 2 * param->param1);
+
+	// Perform runtime source compilation
+	if (!build_opencl_program(param, source, gpu_devices[gpu_index].compiler_options))
+	{
+		release_opencl_param(param);
+		return FALSE;
+	}
+
+	// Crypt by length
+	create_kernel(param, KERNEL_PROCESS_KEY_INDEX, "process_key");
+	create_kernel(param, KERNEL_ORDERED_INDEX, "common2ordered");
+	create_kernel(param, KERNEL_RULE_MOVE_TO_BEGIN, "move_to_begin");
+
+#ifndef OCL_RULES_ALL_IN_GPU
+	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
+	{
+		cl_int code;
+		free(source);
+		source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, 0, NULL, BINARY_SIZE, FORMAT_BUFFER, param->param1, param->param1 * 2, len);
+
+		param->rules.program = pclCreateProgramWithSource(param->context, 1, (char const **)(&source), NULL, &code);
+		// Build program
+		if (pclBuildProgram(param->rules.program, 1, &param->id, gpu_devices[gpu_index].compiler_options, NULL, NULL) == CL_SUCCESS)
+		{
+			pclGetProgramInfo(param->rules.program, CL_PROGRAM_BINARY_SIZES, sizeof(size_t), &param->rules.binaries_size[len], NULL);
+			param->rules.binaries[len] = malloc(param->rules.binaries_size[len]);
+			unsigned char* buffers[1] = { param->rules.binaries[len] };
+			code = pclGetProgramInfo(param->rules.program, CL_PROGRAM_BINARIES, sizeof(buffers), &buffers, NULL);
+			if (code != CL_SUCCESS)
+				code++;
+		}
+		else
+		{
+			release_opencl_param(param);
+			return FALSE;
+		}
+		pclReleaseProgram(param->rules.program);
+		param->rules.program = NULL;
+	}
+#endif
+
+	// Create rules kernels
+	param->rules.num_kernels = current_rules_count*(NTLM_MAX_KEY_LENGHT + 1);
+	param->rules.kernels = (cl_kernel*)calloc(param->rules.num_kernels, sizeof(cl_kernel));
+	param->rules.work_group_sizes = (size_t*)malloc(sizeof(size_t)*param->rules.num_kernels);
+
+#ifdef OCL_RULES_ALL_IN_GPU
+	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
+		for (int i = 0; i < current_rules_count; i++)
+		{
+			cl_int code;
+			char name_buffer[12];
+			sprintf(name_buffer, "ru_%il%i", i, len);
+			param->rules.kernels[i + len*current_rules_count] = pclCreateKernel(param->program, name_buffer, &code);
+			if (code != CL_SUCCESS)
+			{
+				release_opencl_param(param);
+				return FALSE;
+			}
+		}
+#endif
+
+	// Create memory objects
+	create_opencl_mem(param, GPU_ORDERED_KEYS, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint) + param->param1*2*gpu_key_buffer_lenght, NULL);
+	create_opencl_mem(param, GPU_CURRENT_KEY, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL*param->param1, NULL);
+	create_opencl_mem(param, GPU_OUTPUT, CL_MEM_READ_WRITE, sizeof(cl_uint) + output_size, NULL);
+	create_opencl_mem(param, GPU_SALT_VALUES, CL_MEM_READ_ONLY, sizeof(cl_uint)*SALT_SIZE*num_diff_salts, NULL);
+	create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL);
+
+	if (num_diff_salts < num_passwords_loaded)
+	{
+		if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
+		{
+			create_opencl_mem(param, GPU_SALT_INDEX, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*num_passwords_loaded, salt_index);
+			create_opencl_mem(param, GPU_SAME_SALT_NEXT, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*num_passwords_loaded, same_salt_next);
+		}
+		else
+		{
+			create_opencl_mem(param, GPU_SALT_INDEX, CL_MEM_READ_ONLY, sizeof(cl_uint)*num_passwords_loaded, NULL);
+			create_opencl_mem(param, GPU_SAME_SALT_NEXT, CL_MEM_READ_ONLY, sizeof(cl_uint)*num_passwords_loaded, NULL);
+		}
+	}
+
+	// Set OpenCL kernel params
+	kernels2common[kernel2common_index].setup_params(param, &gpu_devices[gpu_index]);
+
+	pclSetKernelArg(param->kernels[KERNEL_ORDERED_INDEX], 0, sizeof(cl_mem), &param->mems[GPU_CURRENT_KEY]);
+	pclSetKernelArg(param->kernels[KERNEL_ORDERED_INDEX], 1, sizeof(cl_mem), &param->mems[GPU_ORDERED_KEYS]);
+
+	pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 0, sizeof(cl_mem), &param->mems[GPU_ORDERED_KEYS]);
+
+#ifdef OCL_RULES_ALL_IN_GPU
+	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
+		for (int i = 0; i < current_rules_count; i++)
+		{
+			pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 0, sizeof(cl_mem), &param->mems[GPU_ORDERED_KEYS]);
+			pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 1, sizeof(cl_mem), &param->mems[GPU_OUTPUT]);
+			pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 2, sizeof(cl_mem), &param->mems[GPU_BINARY_VALUES]);
+			pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 3, sizeof(cl_mem), &param->mems[GPU_SALT_VALUES]);
+
+			if (num_diff_salts < num_passwords_loaded)
+			{
+				pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 5, sizeof(cl_mem), &param->mems[GPU_SALT_INDEX]);
+				pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 6, sizeof(cl_mem), &param->mems[GPU_SAME_SALT_NEXT]);
+			}
+		}
+#endif
+
+	// Copy data to GPU
+	memset(source, 0, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint));
+	cl_write_buffer(param, GPU_OUTPUT, sizeof(cl_uint), source);
+	cl_write_buffer(param, GPU_ORDERED_KEYS, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint), source);
+	{
+		// Facilitate cache
+		cl_uint* bin = (cl_uint*)binary_values;
+		cl_uint* my_binary_values = (cl_uint*)malloc(BINARY_SIZE * num_passwords_loaded);
+		for (cl_uint i = 0; i < num_passwords_loaded; i++)
+		{
+			my_binary_values[i + 0 * num_passwords_loaded] = bin[5 * i + 0];
+			my_binary_values[i + 1 * num_passwords_loaded] = bin[5 * i + 1];
+			my_binary_values[i + 2 * num_passwords_loaded] = bin[5 * i + 2];
+			my_binary_values[i + 3 * num_passwords_loaded] = bin[5 * i + 3];
+			my_binary_values[i + 4 * num_passwords_loaded] = bin[5 * i + 4];
+		}
+
+		cl_write_buffer(param, GPU_BINARY_VALUES, BINARY_SIZE * num_passwords_loaded, my_binary_values);
+		pclFinish(param->queue);
+		free(my_binary_values);
+	}
+	pclEnqueueWriteBuffer(param->queue, param->mems[GPU_SALT_VALUES], CL_FALSE, 0, sizeof(cl_uint)*SALT_SIZE*num_diff_salts, salts_values, 0, NULL, NULL);
+	if (num_diff_salts < num_passwords_loaded && !(gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY))
+	{
+		pclEnqueueWriteBuffer(param->queue, param->mems[GPU_SALT_INDEX], CL_FALSE, 0, sizeof(cl_uint) * num_passwords_loaded, salt_index, 0, NULL, NULL);
+		pclEnqueueWriteBuffer(param->queue, param->mems[GPU_SAME_SALT_NEXT], CL_FALSE, 0, sizeof(cl_uint) * num_passwords_loaded, same_salt_next, 0, NULL, NULL);
+	}
+
+	pclFinish(param->queue);
+	free(source);
+
+	// Find working workgroup
+#define RULE_NUM_WORK_ITEMS_DIVIDER	16
+	int64_t init = get_milliseconds();
+	size_t num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(param->NUM_KEYS_OPENCL / RULE_NUM_WORK_ITEMS_DIVIDER, param->max_work_group_size);
+	size_t max_work_group_size = param->max_work_group_size;
+	cl_uint zero = 0;
+	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
+	{
+		oclru_check_binary_present(param, len);
+
+		for (int i = 0; i < current_rules_count; i++)
+		{
+			cl_kernel kernel = param->rules.kernels[i + len*current_rules_count];
+			int bad_execution = FALSE;
+			int rule_tryed = TRUE;
+
+			if (rules[rules_remapped[i]].ocl.max_param_value)
+			{
+				int max_param_value = rules[rules_remapped[i]].ocl.max_param_value;
+				if (rules[rules_remapped[i]].depend_key_lenght)
+					max_param_value = len + rules[rules_remapped[i]].key_lenght_sum;
+
+				if (max_param_value <= 0)
+					rule_tryed = FALSE;
+			}
+
+			if (rule_tryed)
+			{
+				pclSetKernelArg(kernel, 4, sizeof(zero), (void*)&zero);
+
+				if (rules[rules_remapped[i]].ocl.max_param_value)
+					pclSetKernelArg(kernel, param->param0, sizeof(cl_uint), &zero);//additional param
+
+				pclFinish(param->queue);
+
+				int64_t init_kernel = get_milliseconds(), duration_kernel;
+				if (CL_SUCCESS != pclEnqueueNDRangeKernel(param->queue, kernel, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
+					bad_execution = TRUE;
+				if (CL_SUCCESS != pclFinish(param->queue))
+					bad_execution = TRUE;
+				duration_kernel = (get_milliseconds() - init_kernel)*RULE_NUM_WORK_ITEMS_DIVIDER;
+				if (!bad_execution && duration_kernel > (OCL_NORMAL_KERNEL_TIME * 4 / 3))
+					hs_log(HS_LOG_WARNING, "Rules to long", "Rules kernel duration: %ums", (cl_uint)duration_kernel);
+
+				cl_write_buffer(param, GPU_OUTPUT, sizeof(cl_uint), &zero);
+
+				while (bad_execution && param->max_work_group_size >= OCL_MIN_WORKGROUP_SIZE)
+				{
+					param->max_work_group_size /= 2;
+					bad_execution = FALSE;
+					pclFinish(param->queue);
+
+					init_kernel = get_milliseconds();
+					if (CL_SUCCESS != pclEnqueueNDRangeKernel(param->queue, kernel, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
+						bad_execution = TRUE;
+					if (CL_SUCCESS != pclFinish(param->queue))
+						bad_execution = TRUE;
+					duration_kernel = (get_milliseconds() - init_kernel)*RULE_NUM_WORK_ITEMS_DIVIDER;
+					if (!bad_execution && duration_kernel > (OCL_NORMAL_KERNEL_TIME * 4 / 3))
+						hs_log(HS_LOG_WARNING, "Rules to long", "Rules kernel duration: %ums", (cl_uint)duration_kernel);
+
+					cl_write_buffer(param, GPU_OUTPUT, sizeof(cl_uint), &zero);
+				}
+
+				param->rules.work_group_sizes[i + len*current_rules_count] = param->max_work_group_size;
+				param->max_work_group_size = max_work_group_size;
+			}
+		}
+	}
+	pclFinish(param->queue);
+
+	int64_t duration = get_milliseconds() - init;
+	if (duration > 2000)
+		hs_log(HS_LOG_WARNING, "Test Suite", "Rule check good workgroup: %i ms", (int)duration);
+
+	*gpu_crypt = ocl_ssha_protocol_rules_work;
+	param->additional_param = kernels2common + kernel2common_index;
+#ifndef OCL_RULES_ALL_IN_GPU
+	param->rules.gpu_index = gpu_index;
+#endif
+	return TRUE;
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Common opencl salted slow
@@ -3297,7 +3944,7 @@ PRIVATE void ocl_slow_hashes_get_key(void* buffer, unsigned char* out_key, cl_ui
 PRIVATE void ocl_rule_work_slow_hashes(OpenCL_Param* param)
 {
 	int num_keys_filled, zero = 0;
-	unsigned int num_keys_transformed = 0;
+	uint32_t num_keys_transformed = 0;
 
 	oclKernel2Common* kernel2common = (oclKernel2Common*)param->additional_param;
 	ocl_slow_work_body_func* ocl_work_body = (ocl_slow_work_body_func*)param->additional_param1;
@@ -3416,7 +4063,7 @@ PRIVATE void ocl_work_slow_hashes(OpenCL_Param* param)
 
 	finish_thread();
 }
-PUBLIC void ocl_init_slow_hashes(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules, cl_uint size_big_chunk
+PUBLIC int ocl_init_slow_hashes(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules, cl_uint size_big_chunk
 	, int BINARY_SIZE, int SALT_SIZE, ocl_gen_kernels_func* ocl_gen_kernels, ocl_slow_work_body_func* ocl_work_body, cl_uint num_keys_divider)
 {
 	//cl_int code;
@@ -3503,7 +4150,7 @@ PUBLIC void ocl_init_slow_hashes(OpenCL_Param* param, cl_uint gpu_index, generat
 	if(!build_opencl_program(param, source, gpu_devices[gpu_index].compiler_options))
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	// Crypt Kernels
@@ -3524,7 +4171,7 @@ PUBLIC void ocl_init_slow_hashes(OpenCL_Param* param, cl_uint gpu_index, generat
 			if (code != CL_SUCCESS)
 			{
 				release_opencl_param(param);
-				return;
+				return FALSE;
 			}
 		}
 		create_kernel(param, KERNEL_RULE_MOVE_TO_BEGIN, "move_to_begin");
@@ -3581,6 +4228,535 @@ PUBLIC void ocl_init_slow_hashes(OpenCL_Param* param, cl_uint gpu_index, generat
 	free(source);
 	
 	*gpu_crypt = use_rules ? ocl_rule_work_slow_hashes : ocl_work_slow_hashes;
+	return TRUE;
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Common opencl salted slow ordered (md5crypt,...)
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+PUBLIC void ocl_slow_ordered_found(OpenCL_Param* param, cl_uint* num_found, cl_uint gpu_max_num_keys, cl_uint gpu_base_pos, cl_uint lenght)
+{
+	// Keys found
+	unsigned char key[MAX_KEY_LENGHT_SMALL];
+
+	pclEnqueueReadBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 4, 2 * sizeof(cl_uint)*num_found[0], param->output, 0, NULL, NULL);
+
+	// Iterate all found passwords
+	for (cl_uint i = 0; i < num_found[0]; i++)
+	{
+		cl_uint key_index = param->output[2 * i];
+		cl_uint hash_index = param->output[2 * i + 1];
+
+		if (hash_index < num_passwords_loaded && !((is_foundBit[hash_index >> 5] >> (hash_index & 31)) & 1) && key_index < gpu_max_num_keys)
+		{
+			// Get the cleartext of the original key
+			for (cl_uint j = 0; j < (lenght + 3) / 4; j++)
+				pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_FALSE, 4 * (gpu_base_pos + key_index + j*param->param1*2), sizeof(cl_uint), key + 4 * j, 0, NULL, NULL);
+
+			pclFinish(param->queue);
+			key[lenght] = 0;
+			password_was_found(hash_index, key);
+		}
+	}
+
+	num_found[0] = 0;
+	pclEnqueueWriteBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 0, sizeof(cl_uint), num_found, 0, NULL, NULL);
+}
+PRIVATE void ocl_rule_work_slow_hashes_ordered(OpenCL_Param* param)
+{
+	cl_uint zero = 0;
+	int num_keys_filled;
+	cl_uint gpu_num_keys_by_len[NTLM_MAX_KEY_LENGHT + 1];
+	cl_uint gpu_offsets_by_len[NTLM_MAX_KEY_LENGHT + 1];
+	cl_uint gpu_pos_ordered_by_len[NTLM_MAX_KEY_LENGHT + 1];
+
+	// Size in uint
+	for (cl_uint i = 0, j = 32; i <= NTLM_MAX_KEY_LENGHT; i++)
+	{
+		gpu_pos_ordered_by_len[i] = j;
+		j += (i + 3) / 4 * param->param1 * 2;
+	}
+	memset(gpu_num_keys_by_len, 0, sizeof(gpu_num_keys_by_len));
+	memset(gpu_offsets_by_len, 0, sizeof(gpu_offsets_by_len));
+
+	oclKernel2Common* kernel2common = (oclKernel2Common*)param->additional_param;
+	ocl_slow_ordered_work_body_func* ocl_work_body = (ocl_slow_ordered_work_body_func*)param->additional_param1;
+	void* buffer = malloc(kernel2common->get_buffer_size(param));
+
+	HS_SET_PRIORITY_GPU_THREAD;
+	memset(buffer, 0, kernel2common->get_buffer_size(param));
+
+	int result = param->gen(buffer, param->param1, param->thread_id);
+	int64_t num_keys_in_memory = 0;
+	cl_uint num_keys_transformed = 0;
+	cl_uint min_keys_crypt = param->NUM_KEYS_OPENCL / num_diff_salts;
+	cl_uint rest_keys_crypt = param->NUM_KEYS_OPENCL % num_diff_salts;
+	while (continue_attack && result)
+	{
+		// Process common
+		size_t num_work_items = kernel2common->process_buffer(buffer, result, param, &num_keys_filled);
+
+		// Calculate num_keys_in_memory
+		num_keys_in_memory = 0;
+		for (int i = 0; i < current_rules_count; i++)
+			num_keys_in_memory += ((int64_t)num_keys_filled) * rules[rules_remapped[i]].multipler;
+		for (cl_uint lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+			num_keys_in_memory += gpu_num_keys_by_len[lenght];
+		rules_calculate_key_space(num_keys_filled, num_keys_in_memory, param->thread_id);
+
+		cl_int rule_param = 0;
+		// Foreach rule
+		for (int rule_index = 0; continue_attack && rule_index < current_rules_count;)
+		{
+			pclEnqueueWriteBuffer(param->queue, param->mems[GPU_OUTPUT], CL_FALSE, 0, 4, &zero, 0, NULL, NULL);
+
+			if (rules[rules_remapped[rule_index]].multipler > 1)
+				pclSetKernelArg(param->rules.kernels[rule_index], 4, sizeof(rule_param), &rule_param);
+			pclSetKernelArg(param->rules.kernels[rule_index], 3, sizeof(num_keys_filled), &num_keys_filled);
+			pclEnqueueNDRangeKernel(param->queue, param->rules.kernels[rule_index], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+			pclEnqueueReadBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 0, 4, &num_keys_transformed, 0, NULL, NULL);
+
+			// Calculate cycle state
+			rule_param++;
+			if (rules[rules_remapped[rule_index]].depend_key_lenght)
+			{
+				// TODO: Make this generic
+				if (rule_param >= (15 + rules[rules_remapped[rule_index]].key_lenght_sum) * rules[rules_remapped[rule_index]].multipler / RULE_LENGHT_COMMON)
+				{
+					rule_index++;
+					rule_param = 0;
+				}
+			}
+			else if (rule_param >= rules[rules_remapped[rule_index]].multipler)
+			{
+				rule_index++;
+				rule_param = 0;
+			}
+			if (num_keys_transformed == 0)
+				continue;
+
+			// Convert to ordered by lenght
+			size_t ordered_num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(num_keys_transformed, param->max_work_group_size);
+			pclSetKernelArg(param->kernels[KERNEL_ORDERED_INDEX], 2, sizeof(cl_uint), &num_keys_transformed);
+			while (CL_INVALID_WORK_GROUP_SIZE == pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_ORDERED_INDEX], 1, NULL, &ordered_num_work_items, &param->max_work_group_size, 0, NULL, NULL))
+				param->max_work_group_size /= 2;
+			pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_TRUE, 0, (NTLM_MAX_KEY_LENGHT + 1) * sizeof(cl_uint), &gpu_num_keys_by_len, 0, NULL, NULL);
+
+			// Execute format
+			pclEnqueueWriteBuffer(param->queue, param->mems[GPU_OUTPUT], CL_FALSE, 0, 4, &zero, 0, NULL, NULL);
+			for (cl_uint lenght = 0; continue_attack && lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+			{
+				cl_uint num_keys_complete_proccessed_total = 0;// The total of keys completly proccessed
+
+				while ((gpu_num_keys_by_len[lenght] * num_diff_salts - gpu_offsets_by_len[lenght]) >= param->NUM_KEYS_OPENCL)
+				{
+					// Take into account in the offset the already proccessed keys
+					cl_uint current_offset = gpu_offsets_by_len[lenght] + num_keys_complete_proccessed_total*num_diff_salts;
+
+					cl_uint new_rest = rest_keys_crypt + gpu_offsets_by_len[lenght];
+					cl_uint num_keys_complete_proccessed = min_keys_crypt;
+					if (new_rest >= num_diff_salts)
+					{
+						num_keys_complete_proccessed++;
+						new_rest -= num_diff_salts;
+					}
+					num_keys_complete_proccessed_total += num_keys_complete_proccessed;
+					gpu_num_keys_by_len[lenght] -= num_keys_complete_proccessed;
+					gpu_offsets_by_len[lenght] = new_rest;
+
+					ocl_work_body(param, lenght, num_keys_complete_proccessed_total + (new_rest ? 1 : 0), gpu_pos_ordered_by_len[lenght], current_offset, param->NUM_KEYS_OPENCL);
+				}
+
+				if (num_keys_complete_proccessed_total)
+				{
+					cl_uint len = (lenght + 3) / 4;
+					//__kernel void move_to_begin(__global uint* keys, uint base_pos, uint len, uint offset, uint count)
+					pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 1, sizeof(cl_uint), gpu_pos_ordered_by_len + lenght);
+					pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 2, sizeof(cl_uint), &len);
+					pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 3, sizeof(cl_uint), &num_keys_complete_proccessed_total);
+					pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 4, sizeof(cl_uint), gpu_num_keys_by_len + lenght);
+					size_t num_work_items_move = OCL_MULTIPLE_WORKGROUP_SIZE(gpu_num_keys_by_len[lenght], param->max_work_group_size);
+					pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 1, NULL, &num_work_items_move, &param->max_work_group_size, 0, NULL, NULL);
+
+					pclEnqueueWriteBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_FALSE, lenght*sizeof(cl_uint), sizeof(cl_uint), gpu_num_keys_by_len + lenght, 0, NULL, NULL);
+					report_keys_processed(num_keys_complete_proccessed_total);
+				}
+			}
+
+			// Calculate num_keys_in_memory
+			num_keys_in_memory = rule_param ? ((int64_t)num_keys_filled) * (rules[rules_remapped[rule_index]].multipler - rule_param) : 0;
+			for (int i = rule_index + 1; i < current_rules_count; i++)
+				num_keys_in_memory += ((int64_t)num_keys_filled) * rules[rules_remapped[i]].multipler;
+			for (cl_uint lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+				num_keys_in_memory += gpu_num_keys_by_len[lenght];
+			rules_calculate_key_space(0, num_keys_in_memory, param->thread_id);
+		}
+
+		// More keys
+		if (continue_attack)
+			result = param->gen(buffer, param->param1, param->thread_id);
+	}
+
+	num_keys_in_memory = 0;
+	// Calculate the number of keys in memory
+	for (cl_uint lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+		num_keys_in_memory += gpu_num_keys_by_len[lenght];
+	rules_report_remain_key_space(num_keys_in_memory, param->thread_id);
+
+	// Process the remaining in memory
+	for (cl_uint lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+	{
+		cl_uint num_keys_complete_proccessed_total = 0;// The total of keys completly proccessed
+
+		while (gpu_num_keys_by_len[lenght])
+		{
+			// Take into account in the offset the already proccessed keys
+			cl_uint current_offset = gpu_offsets_by_len[lenght] + num_keys_complete_proccessed_total*num_diff_salts;
+
+			cl_uint new_rest = rest_keys_crypt + gpu_offsets_by_len[lenght];
+			cl_uint num_keys_complete_proccessed = min_keys_crypt;
+			if (new_rest >= num_diff_salts)
+			{
+				num_keys_complete_proccessed++;
+				new_rest -= num_diff_salts;
+			}
+
+			cl_uint remaining_items = gpu_num_keys_by_len[lenght] * num_diff_salts - gpu_offsets_by_len[lenght];
+			size_t num_work_items = param->NUM_KEYS_OPENCL;
+			if (remaining_items <= param->NUM_KEYS_OPENCL)
+				num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(remaining_items, param->max_work_group_size);
+
+			if (remaining_items <= param->NUM_KEYS_OPENCL)
+			{
+				num_keys_complete_proccessed_total += gpu_num_keys_by_len[lenght];
+				gpu_num_keys_by_len[lenght] = 0;
+				new_rest = 0;
+			}
+			else
+			{
+				if (num_keys_complete_proccessed)
+				{
+					num_keys_complete_proccessed_total += num_keys_complete_proccessed;
+					gpu_num_keys_by_len[lenght] -= num_keys_complete_proccessed;
+				}
+				gpu_offsets_by_len[lenght] = new_rest;
+			}
+
+			ocl_work_body(param, lenght, num_keys_complete_proccessed_total + (new_rest ? 1 : 0), gpu_pos_ordered_by_len[lenght], current_offset, num_work_items);
+		}
+		report_keys_processed(num_keys_complete_proccessed_total);
+	}
+
+	free(buffer);
+	release_opencl_param(param);
+
+	finish_thread();
+}
+PRIVATE void ocl_work_slow_hashes_ordered(OpenCL_Param* param)
+{
+	cl_uint zero = 0;
+	int num_keys_filled;
+	cl_uint gpu_num_keys_by_len[NTLM_MAX_KEY_LENGHT + 1];
+	cl_uint gpu_offsets_by_len[NTLM_MAX_KEY_LENGHT + 1];
+	cl_uint gpu_pos_ordered_by_len[NTLM_MAX_KEY_LENGHT + 1];
+	
+	// Size in uint
+	for (cl_uint i = 0, j = 32; i <= NTLM_MAX_KEY_LENGHT; i++)
+	{
+		gpu_pos_ordered_by_len[i] = j;
+		j += (i + 3) / 4 * param->param1 * 2;
+	}
+	memset(gpu_num_keys_by_len, 0, sizeof(gpu_num_keys_by_len));
+	memset(gpu_offsets_by_len, 0, sizeof(gpu_offsets_by_len));
+
+	oclKernel2Common* kernel2common = (oclKernel2Common*)param->additional_param;
+	ocl_slow_ordered_work_body_func* ocl_work_body = (ocl_slow_ordered_work_body_func*)param->additional_param1;
+	void* buffer = malloc(kernel2common->get_buffer_size(param));
+
+	HS_SET_PRIORITY_GPU_THREAD;
+	memset(buffer, 0, kernel2common->get_buffer_size(param));
+
+	int result = param->gen(buffer, param->param1, param->thread_id);
+
+	cl_uint min_keys_crypt = param->NUM_KEYS_OPENCL / num_diff_salts;
+	cl_uint rest_keys_crypt = param->NUM_KEYS_OPENCL % num_diff_salts;
+	while (continue_attack && result)
+	{
+		// Process common
+		size_t num_work_items = kernel2common->process_buffer(buffer, result, param, &num_keys_filled);
+
+		// Convert to ordered by lenght
+		pclSetKernelArg(param->kernels[KERNEL_ORDERED_INDEX], 2, sizeof(cl_uint), &num_keys_filled);
+		while (CL_INVALID_WORK_GROUP_SIZE == pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_ORDERED_INDEX], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
+			param->max_work_group_size /= 2;
+		pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_TRUE, 0, (NTLM_MAX_KEY_LENGHT + 1) * sizeof(cl_uint), &gpu_num_keys_by_len, 0, NULL, NULL);
+
+		for (cl_uint lenght = 0; continue_attack && lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+		{
+			cl_uint num_keys_complete_proccessed_total = 0;// The total of keys completly proccessed
+
+			while ((gpu_num_keys_by_len[lenght] * num_diff_salts - gpu_offsets_by_len[lenght]) >= param->NUM_KEYS_OPENCL)
+			{
+				// Take into account in the offset the already proccessed keys
+				cl_uint current_offset = gpu_offsets_by_len[lenght] + num_keys_complete_proccessed_total*num_diff_salts;
+
+				cl_uint new_rest = rest_keys_crypt + gpu_offsets_by_len[lenght];
+				cl_uint num_keys_complete_proccessed = min_keys_crypt;
+				if (new_rest >= num_diff_salts)
+				{
+					num_keys_complete_proccessed++;
+					new_rest -= num_diff_salts;
+				}
+				num_keys_complete_proccessed_total += num_keys_complete_proccessed;
+				gpu_num_keys_by_len[lenght] -= num_keys_complete_proccessed;
+				gpu_offsets_by_len[lenght] = new_rest;
+
+				ocl_work_body(param, lenght, num_keys_complete_proccessed_total + (new_rest ? 1 : 0), gpu_pos_ordered_by_len[lenght], current_offset, param->NUM_KEYS_OPENCL);
+			}
+
+			if (num_keys_complete_proccessed_total)
+			{
+				cl_uint len = (lenght + 3) / 4;
+				//__kernel void move_to_begin(__global uint* keys, uint base_pos, uint len, uint offset, uint count)
+				pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 1, sizeof(cl_uint), gpu_pos_ordered_by_len + lenght);
+				pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 2, sizeof(cl_uint), &len);
+				pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 3, sizeof(cl_uint), &num_keys_complete_proccessed_total);
+				pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 4, sizeof(cl_uint), gpu_num_keys_by_len + lenght);
+				num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(gpu_num_keys_by_len[lenght], param->max_work_group_size);
+				pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+
+				pclEnqueueWriteBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_FALSE, lenght*sizeof(cl_uint), sizeof(cl_uint), gpu_num_keys_by_len + lenght, 0, NULL, NULL);
+				report_keys_processed(num_keys_complete_proccessed_total);
+			}
+		}
+
+		// More keys
+		if (continue_attack)
+			result = param->gen(buffer, param->param1, param->thread_id);
+	}
+
+	// Process the remaining in memory
+	for (cl_uint lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+	{
+		cl_uint num_keys_complete_proccessed_total = 0;// The total of keys completly proccessed
+
+		while (gpu_num_keys_by_len[lenght])
+		{
+			// Take into account in the offset the already proccessed keys
+			cl_uint current_offset = gpu_offsets_by_len[lenght] + num_keys_complete_proccessed_total*num_diff_salts;
+
+			cl_uint new_rest = rest_keys_crypt + gpu_offsets_by_len[lenght];
+			cl_uint num_keys_complete_proccessed = min_keys_crypt;
+			if (new_rest >= num_diff_salts)
+			{
+				num_keys_complete_proccessed++;
+				new_rest -= num_diff_salts;
+			}
+
+			cl_uint remaining_items = gpu_num_keys_by_len[lenght] * num_diff_salts - gpu_offsets_by_len[lenght];
+			size_t num_work_items = param->NUM_KEYS_OPENCL;
+			if (remaining_items <= param->NUM_KEYS_OPENCL)
+				num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(remaining_items, param->max_work_group_size);
+
+			if (remaining_items <= param->NUM_KEYS_OPENCL)
+			{
+				num_keys_complete_proccessed_total += gpu_num_keys_by_len[lenght];
+				gpu_num_keys_by_len[lenght] = 0;
+				new_rest = 0;
+			}
+			else
+			{
+				if (num_keys_complete_proccessed)
+				{
+					num_keys_complete_proccessed_total += num_keys_complete_proccessed;
+					gpu_num_keys_by_len[lenght] -= num_keys_complete_proccessed;
+				}
+				gpu_offsets_by_len[lenght] = new_rest;
+			}
+
+			ocl_work_body(param, lenght, num_keys_complete_proccessed_total + (new_rest ? 1 : 0), gpu_pos_ordered_by_len[lenght], current_offset, num_work_items);
+		}
+		report_keys_processed(num_keys_complete_proccessed_total);
+	}
+
+	free(buffer);
+	release_opencl_param(param);
+
+	finish_thread();
+}
+PUBLIC int ocl_init_slow_hashes_ordered(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules, cl_uint size_big_chunk
+	, int BINARY_SIZE, int SALT_SIZE, ocl_gen_kernels_func* ocl_gen_kernels, ocl_slow_ordered_work_body_func* ocl_work_body, cl_uint num_keys_divider, cl_uint MAX_KEY_LENGHT)
+{
+	//cl_int code;
+	cl_uint output_size = 2 * sizeof(cl_uint)*num_passwords_loaded;
+
+	create_opencl_param(param, gpu_index, gen, output_size, FALSE);
+	param->additional_param = ocl_kernel_provider;
+	param->additional_param1 = ocl_work_body;
+
+	param->NUM_KEYS_OPENCL /= num_keys_divider;
+	if (param->NUM_KEYS_OPENCL < param->max_work_group_size)
+	{
+		param->max_work_group_size = param->NUM_KEYS_OPENCL = __max(OCL_MIN_WORKGROUP_SIZE, param->NUM_KEYS_OPENCL);
+	}
+
+	// Permit to be used as buffer for keys
+	size_big_chunk = __max(8u, size_big_chunk);
+	while ((size_big_chunk*sizeof(cl_uint)*param->NUM_KEYS_OPENCL) > gpu_devices[gpu_index].max_mem_alloc_size)
+		param->NUM_KEYS_OPENCL /= 2;
+
+	cl_uint gpu_key_buffer_lenght = 0;
+	// Size in bytes
+	for (cl_uint i = 1; i <= MAX_KEY_LENGHT; i++)
+		gpu_key_buffer_lenght += (i + 3) / 4 * sizeof(cl_uint);
+
+	// The minimum workable num_work_items for the GPU to be in use
+	param->param1 = __max((param->NUM_KEYS_OPENCL + num_diff_salts - 1) / num_diff_salts, gpu_devices[gpu_index].cores * 64 / gpu_devices[gpu_index].NUM_KEYS_OPENCL_DIVIDER);
+
+	if(2 * param->param1*gpu_key_buffer_lenght >= (gpu_devices[gpu_index].max_mem_alloc_size - MAX_KEY_LENGHT_SMALL * sizeof(cl_uint)))
+		param->param1 = (cl_uint)(gpu_devices[gpu_index].max_mem_alloc_size - MAX_KEY_LENGHT_SMALL * sizeof(cl_uint) - 1) / 2 / gpu_key_buffer_lenght;
+
+	// The output size take into consideration the possible found keys
+	if (param->NUM_KEYS_OPENCL > num_passwords_loaded)
+	{
+		output_size = __min(2 * sizeof(cl_uint)*param->NUM_KEYS_OPENCL, (cl_uint)(gpu_devices[gpu_index].max_mem_alloc_size / 2));
+		free(param->output);
+		param->output = (cl_uint*)malloc(output_size);
+	}
+
+	// Generate code
+	char* source = ocl_gen_kernels(&gpu_devices[gpu_index], ocl_kernel_provider, param, use_rules);
+	// Kernel needed to convert from common format to the ordered by lenght format
+	ocl_gen_kernel_common_2_ordered(source + strlen(source), param->param1, 2 * param->param1, MAX_KEY_LENGHT);
+
+	if (use_rules)
+	{
+		// This is because AMD compiler do not support __constant vars inside a kernel
+		ocl_write_code** constants_written = (ocl_write_code**)malloc(current_rules_count*sizeof(ocl_write_code*));
+		int num_constants_written = 0;
+
+		// Generate one kernel for each rule
+		for (int i = 0; i < current_rules_count; i++)
+		{
+			char rule_name[12];
+
+			// If needed to use constants -> write it only once
+			if (rules[rules_remapped[i]].ocl.setup_constants)
+			{
+				int constants_already_written = FALSE, j;
+				// Check if was written before
+				for (j = 0; j < num_constants_written; j++)
+					if (rules[rules_remapped[i]].ocl.setup_constants == constants_written[j])
+					{
+						constants_already_written = TRUE;
+						break;
+					}
+				if (!constants_already_written)
+				{
+					constants_written[num_constants_written] = rules[rules_remapped[i]].ocl.setup_constants;
+					num_constants_written++;
+					rules[rules_remapped[i]].ocl.setup_constants(source);
+				}
+			}
+			// Write the kernel
+			sprintf(rule_name, "rule_%i", i);
+			rules[rules_remapped[i]].ocl.common_implementation(source, rule_name, param->param1, param->param1);
+		}
+
+		free(constants_written);
+	}
+	sprintf(source + strlen(source),
+			"\n__kernel void move_to_begin(__global uint* keys, uint base_pos, uint len, uint offset, uint count)"
+			"{"
+				"uint idx=get_global_id(0);"
+				"if(idx>=count)return;"
+
+				"for(uint i=0;i<len;i++)"
+					"keys[base_pos+i*%uu+idx]=keys[base_pos+i*%uu+idx+offset];"
+			"}", 2 * param->param1, 2 * param->param1);
+	//size_t len = strlen(source);
+
+	// Perform runtime source compilation
+	if (!build_opencl_program(param, source, gpu_devices[gpu_index].compiler_options))
+	{
+		release_opencl_param(param);
+		return FALSE;
+	}
+
+	// Crypt Kernels
+	create_kernel(param, KERNEL_PROCESS_KEY_INDEX, "process_key");
+	create_kernel(param, KERNEL_ORDERED_INDEX, "common2ordered");
+	create_kernel(param, KERNEL_RULE_MOVE_TO_BEGIN, "move_to_begin");
+	if (use_rules)
+	{
+		param->rules.num_kernels = current_rules_count;
+		param->rules.kernels = (cl_kernel*)malloc(sizeof(cl_kernel)*current_rules_count);
+		// Generate one kernel for each rule
+		for (int i = 0; i < current_rules_count; i++)
+		{
+			cl_int code;
+			char rule_name[12];
+
+			// Write the kernel
+			sprintf(rule_name, "rule_%i", i);
+			param->rules.kernels[i] = pclCreateKernel(param->program, rule_name, &code);
+			if (code != CL_SUCCESS)
+			{
+				release_opencl_param(param);
+				return FALSE;
+			}
+		}
+	}
+
+	// Create memory objects
+	if (use_rules)
+		create_opencl_mem(param, GPU_RULE_SLOW_TRANSFORMED_KEYS, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL * param->param1, NULL);
+
+	create_opencl_mem(param, GPU_CURRENT_KEY, CL_MEM_READ_WRITE, size_big_chunk*sizeof(cl_uint)*param->NUM_KEYS_OPENCL, NULL);
+	create_opencl_mem(param, GPU_OUTPUT, CL_MEM_READ_WRITE, sizeof(cl_uint) + output_size, NULL);
+	create_opencl_mem(param, GPU_ORDERED_KEYS, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint) + 2 * param->param1 * gpu_key_buffer_lenght, NULL);
+	if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
+	{
+		create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, BINARY_SIZE*num_passwords_loaded, binary_values);
+		create_opencl_mem(param, GPU_SALT_VALUES, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, SALT_SIZE*num_diff_salts, salts_values);
+	}
+	else
+	{
+		create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL);
+		create_opencl_mem(param, GPU_SALT_VALUES, CL_MEM_READ_ONLY, SALT_SIZE*num_diff_salts, NULL);
+	}
+
+	ocl_kernel_provider->setup_params(param, &gpu_devices[gpu_index]);
+	// Order params
+	pclSetKernelArg(param->kernels[KERNEL_ORDERED_INDEX], 0, sizeof(cl_mem), &param->mems[use_rules ? GPU_RULE_SLOW_TRANSFORMED_KEYS : GPU_CURRENT_KEY]);
+	pclSetKernelArg(param->kernels[KERNEL_ORDERED_INDEX], 1, sizeof(cl_mem), &param->mems[GPU_ORDERED_KEYS]);
+
+	pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 0, sizeof(cl_mem), &param->mems[GPU_ORDERED_KEYS]);
+
+	// Set OpenCL kernel params
+	if (use_rules)
+		for (int i = 0; i < current_rules_count; i++)
+		{
+			pclSetKernelArg(param->rules.kernels[i], 0, sizeof(cl_mem), &param->mems[GPU_CURRENT_KEY]);
+			pclSetKernelArg(param->rules.kernels[i], 1, sizeof(cl_mem), &param->mems[GPU_RULE_SLOW_TRANSFORMED_KEYS]);
+			pclSetKernelArg(param->rules.kernels[i], 2, sizeof(cl_mem), &param->mems[GPU_OUTPUT]);
+		}
+
+	// Copy data to GPU
+	memset(source, 0, MAX_KEY_LENGHT_SMALL* sizeof(cl_uint));
+	cl_write_buffer(param, GPU_OUTPUT, sizeof(cl_uint), source);
+	cl_write_buffer(param, GPU_ORDERED_KEYS, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint), source);
+	if (!(gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY))
+	{
+		pclEnqueueWriteBuffer(param->queue, param->mems[GPU_BINARY_VALUES], CL_FALSE, 0, BINARY_SIZE*num_passwords_loaded, binary_values, 0, NULL, NULL);
+		pclEnqueueWriteBuffer(param->queue, param->mems[GPU_SALT_VALUES], CL_FALSE, 0, SALT_SIZE*num_diff_salts, salts_values, 0, NULL, NULL);
+	}
+	pclFinish(param->queue);
+
+	free(source);
+
+	*gpu_crypt = use_rules ? ocl_rule_work_slow_hashes_ordered : ocl_work_slow_hashes_ordered;
+
+	return TRUE;
 }
 ////////////////////////////////////////////////////////////////////////////////////////
 // Select best work_group/implementation
@@ -3910,3 +5086,5 @@ PUBLIC const char* sha1_process_sha1_body =
 				"DCC2_R(13,10,5,15);C+=rotate(D,5u)+(E^A^B)+CONST4+W13;E=rotate(E,30u);"
 				"DCC2_R(14,11,6,0);B+=rotate(C,5u)+(D^E^A)+CONST4+W14;D=rotate(D,30u);"
 				"DCC2_R(15,12,7,1);A+=rotate(B,5u)+(C^D^E)+CONST4+W15;C=rotate(C,30u);";
+
+#endif

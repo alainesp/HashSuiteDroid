@@ -1,0 +1,41 @@
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 28
+    buildToolsVersion "28.0.3"
+
+    defaultConfig {
+        applicationId "com.hashsuite.droid"
+        minSdkVersion 11
+        targetSdkVersion 28
+
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
+            moduleName "HashSuiteNative"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+			useProguard false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+        }
+    }
+
+    lintOptions {
+        checkReleaseBuilds true
+        // Or, if you prefer, you can continue to check for errors in release builds,
+        // but continue the build even when errors are found:
+        abortOnError true
+    }
+    externalNativeBuild {
+        ndkBuild {
+            path file('src/main/jni/Android.mk')
+        }
+    }
+}
+
+dependencies {
+    implementation project(':aFileDialog')
+}

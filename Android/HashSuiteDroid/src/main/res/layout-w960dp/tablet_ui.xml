@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:baselineAligned="false"
+    android:orientation="horizontal"
+    android:background="#FFFFFF">
+ 
+ 	<LinearLayout
+    	android:layout_width="0dp"
+    	android:layout_height="match_parent"
+    	android:orientation="vertical"
+    	android:layout_weight="2">
+    
+    <fragment android:id="@+id/status_fragment"
+        android:name="com.hashsuite.droid.StatusFragment"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        tools:layout="@layout/status_tab" />
+
+
+    <fragment android:id="@+id/hashes_fragment"
+        android:name="com.hashsuite.droid.HashesFragment"
+        android:layout_width="fill_parent"
+        android:layout_height="fill_parent"
+        tools:layout="@layout/main_tab" />
+
+	</LinearLayout>
+
+ 	 <fragment android:id="@+id/param_fragment"
+        android:name="com.hashsuite.droid.PreferenceFragment"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1" />
+</LinearLayout>

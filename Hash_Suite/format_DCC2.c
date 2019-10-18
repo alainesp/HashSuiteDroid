@@ -21,7 +21,7 @@
 
 
 int dcc_line_is_valid(char* user_name, char* dcc, char* unused, char* unused1);
-void dcc_add_hash_from_line(ImportParam* param, char* user_name, char* dcc, sqlite3_int64 tag_id, int db_index);
+sqlite3_int64 dcc_add_hash_from_line(ImportParam* param, char* user_name, char* dcc, int db_index);
 PRIVATE int dcc2_line_is_valid(char* user_name, char* dcc, char* unused, char* unused1)
 {
 	if (user_name && !memcmp(user_name, "$DCC2$10240#", 12))
@@ -33,7 +33,7 @@ PRIVATE int dcc2_line_is_valid(char* user_name, char* dcc, char* unused, char* u
 	}
 	return dcc_line_is_valid(user_name, dcc, unused, unused1);
 }
-PRIVATE void add_hash_from_line(ImportParam* param, char* user_name, char* dcc, char* unused, char* unused1, sqlite3_int64 tag_id)
+PRIVATE sqlite3_int64 add_hash_from_line(ImportParam* param, char* user_name, char* dcc, char* unused, char* unused1)
 {
 	if (user_name && !memcmp(user_name, "$DCC2$10240#", 12))
 	{
@@ -46,19 +46,19 @@ PRIVATE void add_hash_from_line(ImportParam* param, char* user_name, char* dcc, 
 			strcpy(user, user_name + 12);
 			hex[0] = ':';
 			// Insert hash and account
-			insert_hash_account(param, _strlwr(user), user_name + 12, DCC2_INDEX, tag_id);
+			return insert_hash_account1(param, _strlwr(user), user_name + 12, DCC2_INDEX);
 		}
 	}
-	dcc_add_hash_from_line(param, user_name, dcc, tag_id, DCC2_INDEX);
+	return dcc_add_hash_from_line(param, user_name, dcc, DCC2_INDEX);
 }
 
-PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, void* salt_void)
+PRIVATE uint32_t get_binary(const unsigned char* ciphertext, void* binary, void* salt_void)
 {
-	unsigned int* out = (unsigned int*)binary;
-	unsigned int* salt = (unsigned int*)salt_void;
-	unsigned int i = 0;
-	unsigned int temp;
-	unsigned int salt_lenght = 0;
+	uint32_t* out = (uint32_t*)binary;
+	uint32_t* salt = (uint32_t*)salt_void;
+	uint32_t i = 0;
+	uint32_t temp;
+	uint32_t salt_lenght = 0;
 	char ciphertext_buffer[64];
 
 	//length=11 for save memory
@@ -69,9 +69,9 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	for(; ciphertext[salt_lenght] != ':'; salt_lenght++);
 	// Convert salt-----------------------------------------------------
 	for(; i < salt_lenght/2; i++)
-		salt[i] = ((unsigned int)ciphertext[2*i]) | ((unsigned int)ciphertext[2*i+1]) << 16;
+		salt[i] = ((uint32_t)ciphertext[2*i]) | ((uint32_t)ciphertext[2*i+1]) << 16;
 
-	salt[i] = (salt_lenght%2) ? ((unsigned int)ciphertext[2*i]) | 0x800000 : 0x80;
+	salt[i] = (salt_lenght%2) ? ((uint32_t)ciphertext[2*i]) | 0x800000 : 0x80;
 	salt[10] = (8 + salt_lenght) << 4;
 
 	ciphertext += salt_lenght + 1;
@@ -96,32 +96,48 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	
 	return out[0];
 }
+PRIVATE void binary2hex(const void* binary, const uint32_t* salt, unsigned char* ciphertext)
+{
+	uint32_t salt_lenght = (salt[10] >> 4) - 8;
+	// Convert to username
+	for (uint32_t i = 0; i < salt_lenght / 2; i++)
+	{
+		ciphertext[2 * i + 0] = salt[i] & 0xFF;
+		ciphertext[2 * i + 1] = (salt[i] >> 16) & 0xFF;
+	}
+	if (salt_lenght % 2)
+		ciphertext[2 * (salt_lenght / 2)] = salt[salt_lenght / 2] & 0xFF;
 
-void sha1_process_block_simd(unsigned int* state, unsigned int* W, unsigned int simd_with);
-void sha1_process_block_hmac_sha1(const unsigned int state[5], unsigned int sha1_hash[5], unsigned int W[16]);
+	ciphertext[salt_lenght] = ':';
+
+	binary_to_hex(binary, ciphertext + salt_lenght + 1, BINARY_SIZE / sizeof(uint32_t), FALSE);
+}
+
+void sha1_process_block_simd(uint32_t* state, uint32_t* W, uint32_t simd_with);
+void sha1_process_block_hmac_sha1(const uint32_t state[5], uint32_t sha1_hash[5], uint32_t W[16]);
 void hmac_sha1_init_simd(uint32_t* key, uint32_t* key_lenghts, uint32_t simd_with, uint32_t multiplier, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W);
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // C Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void dcc_salt_part_c_code(unsigned int* salt_buffer, unsigned int* crypt_result);
+void dcc_salt_part_c_code(uint32_t* salt_buffer, uint32_t* crypt_result);
 #ifndef HS_TESTING
 PRIVATE
 #endif
-void dcc2_body_c_code(unsigned int* salt_buffer, unsigned int* crypt_result, unsigned int* sha1_hash, unsigned int* opad_state, unsigned int* ipad_state, unsigned int* W)
+void dcc2_body_c_code(uint32_t* salt_buffer, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
 {
-	unsigned int a = crypt_result[8 + 0];
-	unsigned int b = crypt_result[8 + 1];
-	unsigned int c = crypt_result[8 + 2];
-	unsigned int d = crypt_result[8 + 3];
+	uint32_t a = crypt_result[8 + 0];
+	uint32_t b = crypt_result[8 + 1];
+	uint32_t c = crypt_result[8 + 2];
+	uint32_t d = crypt_result[8 + 3];
 
-	d = rotate(d + SQRT_3, 9);
-	c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = rotate(c, 11);
-	b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = rotate(b, 15);
+	d = ROTATE(d + SQRT_3, 9);
+	c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = ROTATE(c, 11);
+	b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (b ^ c ^ d) + crypt_result[3] + SQRT_3; a = rotate(a, 3);
-	d += (a ^ b ^ c) + salt_buffer[7] + SQRT_3; d = rotate(d, 9);
-	c += (d ^ a ^ b) + salt_buffer[3] + SQRT_3; c = rotate(c, 11);
-	b += (c ^ d ^ a) + SQRT_3; b = rotate(b, 15);
+	a += (b ^ c ^ d) + crypt_result[3] + SQRT_3; a = ROTATE(a, 3);
+	d += (a ^ b ^ c) + salt_buffer[7] + SQRT_3; d = ROTATE(d, 9);
+	c += (d ^ a ^ b) + salt_buffer[3] + SQRT_3; c = ROTATE(c, 11);
+	b += (c ^ d ^ a) + SQRT_3; b = ROTATE(b, 15);
 
 	a += INIT_A;
 	b += INIT_B;
@@ -129,7 +145,7 @@ void dcc2_body_c_code(unsigned int* salt_buffer, unsigned int* crypt_result, uns
 	d += INIT_D;
 
 	//pbkdf2
-	unsigned int salt_len = (salt_buffer[10] >> 3) - 16;
+	uint32_t salt_len = (salt_buffer[10] >> 3) - 16;
 	SWAP_ENDIANNESS(a, a);
 	SWAP_ENDIANNESS(b, b);
 	SWAP_ENDIANNESS(c, c);
@@ -139,10 +155,10 @@ void dcc2_body_c_code(unsigned int* salt_buffer, unsigned int* crypt_result, uns
 	sha1_hash[1] = b;
 	sha1_hash[2] = c;
 	sha1_hash[3] = d;
-	unsigned int len = 4;
+	uint32_t len = 4;
 	hmac_sha1_init_simd(sha1_hash, &len, 1, 1, opad_state, ipad_state, W);
 
-	memcpy(sha1_hash, ipad_state, 5 * sizeof(unsigned int));
+	memcpy(sha1_hash, ipad_state, 5 * sizeof(uint32_t));
 
 	// Process the salt
 	memcpy(W, salt_buffer, salt_len);
@@ -154,9 +170,9 @@ void dcc2_body_c_code(unsigned int* salt_buffer, unsigned int* crypt_result, uns
 
 	sha1_process_block_hmac_sha1(opad_state, sha1_hash, W);
 	// Only copy first 16 bytes, since that is ALL this format uses
-	memcpy(crypt_result + 8, sha1_hash, 4 * sizeof(unsigned int));
+	memcpy(crypt_result + 8, sha1_hash, 4 * sizeof(uint32_t));
 
-	for (unsigned int k = 1; k < 10240; k++)
+	for (uint32_t k = 1; k < 10240; k++)
 	{
 		sha1_process_block_hmac_sha1(ipad_state, sha1_hash, W);
 		sha1_process_block_hmac_sha1(opad_state, sha1_hash, W);
@@ -169,34 +185,34 @@ void dcc2_body_c_code(unsigned int* salt_buffer, unsigned int* crypt_result, uns
 	}
 }
 #ifndef _M_X64
-void dcc_ntlm_part_c_code(unsigned int* nt_buffer, unsigned int* crypt_result);
+void dcc_ntlm_part_c_code(uint32_t* nt_buffer, uint32_t* crypt_result);
 PRIVATE void crypt_ntlm_protocol_c_code(CryptParam* param)
 {
-	unsigned int * nt_buffer = (unsigned int* )calloc(16*NT_NUM_KEYS, sizeof(unsigned int));
+	uint32_t * nt_buffer = (uint32_t* )calloc(16*NT_NUM_KEYS, sizeof(uint32_t));
 	unsigned char* key       = (unsigned char*)calloc(MAX_KEY_LENGHT_SMALL, sizeof(unsigned char));
 
-	unsigned int crypt_result[12], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
+	uint32_t crypt_result[12], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
 	{
-		for(unsigned int i = 0; i < NT_NUM_KEYS; i++)
+		for(uint32_t i = 0; i < NT_NUM_KEYS; i++)
 		{
-			unsigned int* salt_buffer = (unsigned int*)salts_values;
+			uint32_t* salt_buffer = (uint32_t*)salts_values;
 			dcc_ntlm_part_c_code(nt_buffer+i, crypt_result);
 
 			// For all salts
-			for(unsigned int j = 0; continue_attack && j < num_diff_salts; j++, salt_buffer += 11)
+			for(uint32_t j = 0; continue_attack && j < num_diff_salts; j++, salt_buffer += 11)
 			{
 				dcc_salt_part_c_code(salt_buffer, crypt_result);
 				dcc2_body_c_code(salt_buffer, crypt_result, sha1_hash, opad_state, ipad_state, W);
 
 				// Search for a match
-				unsigned int index = salt_index[j];
+				uint32_t index = salt_index[j];
 
 				// Partial match
 				while(index != NO_ELEM)
 				{
-					unsigned int* bin = ((unsigned int*)binary_values) + index*4;
+					uint32_t* bin = ((uint32_t*)binary_values) + index*4;
 
 					// Total match
 					if(crypt_result[8+0] == bin[0] && crypt_result[8+1] == bin[1] && crypt_result[8+2] == bin[2] && crypt_result[8+3] == bin[3])
@@ -230,7 +246,7 @@ PRIVATE void crypt_ntlm_protocol_c_code(CryptParam* param)
 //#define LOAD_BIG_ENDIAN_V128(x) vrev32q_u8(vreinterpretq_u8_u32(x))
 //#endif
 
-PRIVATE void dcc2_body_v128(V128_WORD* crypt_result, unsigned int* salt_buffer, int mul, int index)
+PRIVATE void dcc2_body_v128(V128_WORD* crypt_result, uint32_t* salt_buffer, int mul, int index)
 {
 	V128_WORD* sha1_hash = crypt_result + 12 * mul + 5 * index;
 	V128_WORD* opad_state = sha1_hash + 5 * mul;
@@ -258,7 +274,7 @@ PRIVATE void dcc2_body_v128(V128_WORD* crypt_result, unsigned int* salt_buffer, 
 	d = V128_ADD(d, V128_CONST(INIT_D));
 
 	//pbkdf2
-	unsigned int salt_len = (salt_buffer[10] >> 3) - 16;
+	uint32_t salt_len = (salt_buffer[10] >> 3) - 16;
 	LOAD_BIG_ENDIAN_V128(a);
 	LOAD_BIG_ENDIAN_V128(b);
 	LOAD_BIG_ENDIAN_V128(c);
@@ -277,7 +293,7 @@ PRIVATE void dcc2_body_v128(V128_WORD* crypt_result, unsigned int* salt_buffer, 
 	ipad_state[2] = V128_CONST(INIT_C);
 	ipad_state[3] = V128_CONST(INIT_D);
 	ipad_state[4] = V128_CONST(INIT_E);
-	sha1_process_block_simd((unsigned int*)ipad_state, (unsigned int*)W, 4);
+	sha1_process_block_simd((uint32_t*)ipad_state, (uint32_t*)W, 4);
 
 	// opad_state
 	const_sse2 = V128_CONST(0x5C5C5C5C);
@@ -292,7 +308,7 @@ PRIVATE void dcc2_body_v128(V128_WORD* crypt_result, unsigned int* salt_buffer, 
 	opad_state[2] = V128_CONST(INIT_C);
 	opad_state[3] = V128_CONST(INIT_D);
 	opad_state[4] = V128_CONST(INIT_E);
-	sha1_process_block_simd((unsigned int*)opad_state, (unsigned int*)W, 4);
+	sha1_process_block_simd((uint32_t*)opad_state, (uint32_t*)W, 4);
 
 	memcpy(sha1_hash, ipad_state, 5 * sizeof(V128_WORD));
 
@@ -305,11 +321,11 @@ PRIVATE void dcc2_body_v128(V128_WORD* crypt_result, unsigned int* salt_buffer, 
 	for (int k = 13; k >= 0; k--)
 	{
 		// Convert to BIG_ENDIAN
-		unsigned int x = rotate(((unsigned int*)W)[k], 16U);
+		uint32_t x = ROTATE(((uint32_t*)W)[k], 16U);
 		x = ((x & 0x00FF00FF) << 8) + ((x >> 8) & 0x00FF00FF);
 		W[k] = V128_CONST(x);
 	}
-	sha1_process_block_simd((unsigned int*)sha1_hash, (unsigned int*)W, 4);
+	sha1_process_block_simd((uint32_t*)sha1_hash, (uint32_t*)W, 4);
 }
 
 #ifdef HS_X86
@@ -421,7 +437,7 @@ PUBLIC void sha1_process_sha1_sse2(const __m128i* state, __m128i* sha1_hash, __m
 }
 
 void dcc_ntlm_part_sse2(__m128i* nt_buffer, __m128i* crypt_result);
-void dcc_salt_part_sse2(unsigned int* salt_buffer, __m128i* crypt_result);
+void dcc_salt_part_sse2(uint32_t* salt_buffer, __m128i* crypt_result);
 
 PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
 {
@@ -438,13 +454,13 @@ PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
 	{
-		for(unsigned int i = 0; i < NT_NUM_KEYS/4; i++)
+		for(uint32_t i = 0; i < NT_NUM_KEYS/4; i++)
 		{
-			unsigned int* salt_buffer = (unsigned int*)salts_values;
+			uint32_t* salt_buffer = (uint32_t*)salts_values;
 			dcc_ntlm_part_sse2(nt_buffer+i, crypt_result);
 
 			// For all salts
-			for(unsigned int j = 0; continue_attack && j < num_diff_salts; j++, salt_buffer += 11)
+			for(uint32_t j = 0; continue_attack && j < num_diff_salts; j++, salt_buffer += 11)
 			{
 				dcc_salt_part_sse2(salt_buffer, crypt_result);
 				
@@ -456,7 +472,7 @@ PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
 				crypt_result[(8 + 2)*1 + 0] = sha1_hash[2];
 				crypt_result[(8 + 3)*1 + 0] = sha1_hash[3];
 
-				for(unsigned int k = 1; k < 10240; k++)
+				for(uint32_t k = 1; k < 10240; k++)
 				{
 					sha1_process_sha1_sse2( ipad_state, sha1_hash, W);
 					sha1_process_sha1_sse2( opad_state, sha1_hash, W);
@@ -469,17 +485,17 @@ PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
 				}
 
 				// Search for a match
-				for (unsigned int k = 0; k < 4; k++)
+				for (uint32_t k = 0; k < 4; k++)
 				{
-					unsigned int index = salt_index[j];
+					uint32_t index = salt_index[j];
 					// Partial match
 					while(index != NO_ELEM)
 					{
-						unsigned int* bin = ((unsigned int*)binary_values) + index*4;
+						uint32_t* bin = ((uint32_t*)binary_values) + index*4;
 
 						// Total match
 						if(crypt_result[8+0].m128i_u32[k] == bin[0] && crypt_result[8+1].m128i_u32[k] == bin[1] && crypt_result[8+2].m128i_u32[k] == bin[2] && crypt_result[8+3].m128i_u32[k] == bin[3])
-							password_was_found(index, ntlm2utf8_key((unsigned int*)nt_buffer, key, NT_NUM_KEYS, i*4+k));
+							password_was_found(index, ntlm2utf8_key((uint32_t*)nt_buffer, key, NT_NUM_KEYS, i*4+k));
 					
 						index = same_salt_next[index];
 					}
@@ -526,7 +542,7 @@ void sha1_process_sha1_neon(const void* state, void* sha1_hash, void* W);
 PRIVATE void crypt_ntlm_protocol_v128(CryptParam* param)
 {
 	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT_SMALL, sizeof(unsigned char));
-	unsigned int* nt_buffer	= (unsigned int*)_aligned_malloc(16*4*NT_NUM_KEYS_AVX, 32);
+	uint32_t* nt_buffer	= (uint32_t*)_aligned_malloc(16*4*NT_NUM_KEYS_AVX, 32);
 	V128_WORD* crypt_result = (V128_WORD*)_aligned_malloc(sizeof(V128_WORD)* 2 * (12 + 5 + 5 + 5 + 16), 32);
 
 	V128_WORD* sha1_hash = crypt_result + 24;
@@ -538,13 +554,13 @@ PRIVATE void crypt_ntlm_protocol_v128(CryptParam* param)
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS_AVX, param->thread_id))
 	{
-		for(unsigned int i = 0; i < NT_NUM_KEYS_AVX/8; i++)
+		for(uint32_t i = 0; i < NT_NUM_KEYS_AVX/8; i++)
 		{
-			unsigned int* salt_buffer = (unsigned int*)salts_values;
+			uint32_t* salt_buffer = (uint32_t*)salts_values;
 			dcc_ntlm_part_v128(nt_buffer + 8 * i, crypt_result);
 
 			// For all salts
-			for(unsigned int j = 0; continue_attack && j < num_diff_salts; j++, salt_buffer += 11)
+			for(uint32_t j = 0; continue_attack && j < num_diff_salts; j++, salt_buffer += 11)
 			{
 				dcc_salt_part_v128(salt_buffer, crypt_result);
 
@@ -563,7 +579,7 @@ PRIVATE void crypt_ntlm_protocol_v128(CryptParam* param)
 				crypt_result[(8 + 2)*2 + 1] = sha1_hash[7];
 				crypt_result[(8 + 3)*2 + 1] = sha1_hash[8];
 
-				for(unsigned int k = 1; k < 10240; k++)
+				for(uint32_t k = 1; k < 10240; k++)
 				{
 					sha1_process_sha1_v128(ipad_state, sha1_hash, W);
 					sha1_process_sha1_v128(opad_state, sha1_hash, W);
@@ -580,16 +596,16 @@ PRIVATE void crypt_ntlm_protocol_v128(CryptParam* param)
 					crypt_result[(8+3)*2+1] = V128_XOR(crypt_result[(8+3)*2+1], sha1_hash[8]);
 				}
 
-				for(unsigned int k = 0; k < 8; k++)
+				for(uint32_t k = 0; k < 8; k++)
 				{
 					// Search for a match
-					unsigned int index = salt_index[j];
+					uint32_t index = salt_index[j];
 
 					// Partial match
 					while(index != NO_ELEM)
 					{
-						unsigned int* bin = ((unsigned int*)binary_values) + index * 4;
-						unsigned int* crypt_bin = (unsigned int*)(crypt_result + 8 * 2);
+						uint32_t* bin = ((uint32_t*)binary_values) + index * 4;
+						uint32_t* crypt_bin = (uint32_t*)(crypt_result + 8 * 2);
 
 						// Total match
 						if(crypt_bin[k+8*0] == bin[0] && crypt_bin[k+8*1] == bin[1] && crypt_bin[k+8*2] == bin[2] && crypt_bin[k+8*3] == bin[3])
@@ -632,7 +648,7 @@ void sha1_process_sha1_avx2(const void* state, void* sha1_hash, void* W);
 
 #define LOAD_BIG_ENDIAN_AVX2(x) x = AVX2_XOR(_mm256_slli_epi32(x, 16), _mm256_srli_epi32(x, 16)); x = AVX2_ADD(_mm256_slli_epi32(AVX2_AND(x, _mm256_broadcastd_epi32(_mm_set1_epi32(0x00FF00FF))), 8), AVX2_AND(_mm256_srli_epi32(x, 8), _mm256_broadcastd_epi32(_mm_set1_epi32(0x00FF00FF))));
 
-PRIVATE void dcc2_body_avx2(__m256i* crypt_result, unsigned int* salt_buffer, int index)
+PRIVATE void dcc2_body_avx2(__m256i* crypt_result, uint32_t* salt_buffer, int index)
 {
 	__m256i* sha1_hash = crypt_result + 24 + 5*index;
 	__m256i* opad_state = sha1_hash + 10;
@@ -662,7 +678,7 @@ PRIVATE void dcc2_body_avx2(__m256i* crypt_result, unsigned int* salt_buffer, in
 	d = AVX2_ADD(d, _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_D)));
 
 	//pbkdf2
-	unsigned int salt_len = (salt_buffer[10] >> 3) - 16;
+	uint32_t salt_len = (salt_buffer[10] >> 3) - 16;
 	LOAD_BIG_ENDIAN_AVX2(a);
 	LOAD_BIG_ENDIAN_AVX2(b);
 	LOAD_BIG_ENDIAN_AVX2(c);
@@ -682,7 +698,7 @@ PRIVATE void dcc2_body_avx2(__m256i* crypt_result, unsigned int* salt_buffer, in
 	ipad_state[2] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_C));
 	ipad_state[3] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_D));
 	ipad_state[4] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_E));
-	sha1_process_block_simd( (unsigned int*)ipad_state, (unsigned int*)W, 8 );
+	sha1_process_block_simd( (uint32_t*)ipad_state, (uint32_t*)W, 8 );
 
 	// opad_state
 	for (size_t i = 0; i < 8; i++)
@@ -698,7 +714,7 @@ PRIVATE void dcc2_body_avx2(__m256i* crypt_result, unsigned int* salt_buffer, in
 	opad_state[2] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_C));
 	opad_state[3] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_D));
 	opad_state[4] = _mm256_broadcastd_epi32(_mm_set1_epi32(INIT_E));
-	sha1_process_block_simd( (unsigned int*)opad_state, (unsigned int*)W, 8 );
+	sha1_process_block_simd( (uint32_t*)opad_state, (uint32_t*)W, 8 );
 
 	memcpy(sha1_hash, ipad_state, 5*sizeof(__m256i));
 
@@ -712,17 +728,17 @@ PRIVATE void dcc2_body_avx2(__m256i* crypt_result, unsigned int* salt_buffer, in
 	for (int k = 13; k >= 0; k--)
 	{
 		// Convert to BIG_ENDIAN
-		unsigned int x = rotate(((unsigned int*)W)[k], 16U);
+		uint32_t x = ROTATE(((uint32_t*)W)[k], 16U);
 		x = ((x & 0x00FF00FF) << 8) + ((x >> 8) & 0x00FF00FF);
 		W[k] = _mm256_broadcastd_epi32(_mm_set1_epi32(x));
 	}
-	sha1_process_block_simd( (unsigned int*)sha1_hash, (unsigned int*)W, 8 );
+	sha1_process_block_simd( (uint32_t*)sha1_hash, (uint32_t*)W, 8 );
 }
 
 PRIVATE void crypt_ntlm_protocol_avx2(CryptParam* param)
 {
 	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT_SMALL, sizeof(unsigned char));
-	unsigned int* nt_buffer = (unsigned int*)_aligned_malloc(16 * 4 * NT_NUM_KEYS_AVX, 32);
+	uint32_t* nt_buffer = (uint32_t*)_aligned_malloc(16 * 4 * NT_NUM_KEYS_AVX, 32);
 	__m256i* crypt_result = (__m256i*)_aligned_malloc(sizeof(__m256i)*2*(12+5+5+5+16), 32);
 
 	__m256i* sha1_hash = crypt_result + 24;
@@ -734,13 +750,13 @@ PRIVATE void crypt_ntlm_protocol_avx2(CryptParam* param)
 
 	while(continue_attack && param->gen(nt_buffer, NT_NUM_KEYS_AVX, param->thread_id))
 	{
-		for(unsigned int i = 0; i < NT_NUM_KEYS_AVX/16; i++)
+		for(uint32_t i = 0; i < NT_NUM_KEYS_AVX/16; i++)
 		{
-			unsigned int* salt_buffer = (unsigned int*)salts_values;
+			uint32_t* salt_buffer = (uint32_t*)salts_values;
 			dcc_ntlm_part_avx2(nt_buffer+16*i, crypt_result);
 
 			// For all salts
-			for(unsigned int j = 0; continue_attack && j < num_diff_salts; j++, salt_buffer += 11)
+			for(uint32_t j = 0; continue_attack && j < num_diff_salts; j++, salt_buffer += 11)
 			{
 				dcc_salt_part_avx2(salt_buffer, crypt_result);
 
@@ -759,7 +775,7 @@ PRIVATE void crypt_ntlm_protocol_avx2(CryptParam* param)
 				crypt_result[(8+2)*2+1] = sha1_hash[7];
 				crypt_result[(8+3)*2+1] = sha1_hash[8];
 
-				for(unsigned int k = 1; k < 10240; k++)
+				for(uint32_t k = 1; k < 10240; k++)
 				{
 					sha1_process_sha1_avx2( ipad_state, sha1_hash, W);
 					sha1_process_sha1_avx2( opad_state, sha1_hash, W);
@@ -776,16 +792,16 @@ PRIVATE void crypt_ntlm_protocol_avx2(CryptParam* param)
 					crypt_result[(8+3)*2+1] = _mm256_xor_si256(crypt_result[(8+3)*2+1], sha1_hash[8]);
 				}
 
-				for(unsigned int k = 0; k < 16; k++)
+				for(uint32_t k = 0; k < 16; k++)
 				{
 					// Search for a match
-					unsigned int index = salt_index[j];
+					uint32_t index = salt_index[j];
 
 					// Partial match
 					while(index != NO_ELEM)
 					{
-						unsigned int* bin = ((unsigned int*)binary_values) + index * 4;
-						unsigned int* crypt_bin = (unsigned int*)(crypt_result + 8 * 2);
+						uint32_t* bin = ((uint32_t*)binary_values) + index * 4;
+						uint32_t* crypt_bin = (uint32_t*)(crypt_result + 8 * 2);
 
 						// Total match
 						if(crypt_bin[k+16*0] == bin[0] && crypt_bin[k+16*1] == bin[1] && crypt_bin[k+16*2] == bin[2] && crypt_bin[k+16*3] == bin[3])
@@ -1027,7 +1043,7 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provi
 		"uint idx=get_global_id(0);"
 		"uint W[16];"
 
-		//memcpy(&sha1_hash, &ipad_state, 5*sizeof(unsigned int));
+		//memcpy(&sha1_hash, &ipad_state, 5*sizeof(uint32_t));
 		"uint A=GET_DATA(IPAD_STATE,0);"
 		"uint B=GET_DATA(IPAD_STATE,1);"
 		"uint C=GET_DATA(IPAD_STATE,2);"
@@ -1498,7 +1514,7 @@ sprintf(source + strlen(source), "\n__kernel void dcc2_compare_result(__global u
 
 	return source;
 }
-PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules)
+PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules)
 {
 	// Only one hash
 	// For Intel HD 4600 best DIVIDER=1-2
@@ -1525,7 +1541,8 @@ PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, ge
 	//	32	26.2K
 	//	64	25.1K
 	//	128	14.3K
-	ocl_init_slow_hashes(param, gpu_index, gen, gpu_dcc2_crypt, ocl_kernel_provider, use_rules, 5 + 5 + 5 + 4, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 2);
+	if (!ocl_init_slow_hashes(param, gpu_index, gen, gpu_dcc2_crypt, ocl_kernel_provider, use_rules, 5 + 5 + 5 + 4, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 2))
+		return FALSE;
 
 	// Crypt Kernels
 	create_kernel(param, KERNEL_INDEX_NTLM_PART					, "ntlm_part");
@@ -1591,12 +1608,14 @@ PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, ge
 
 	// Select best params
 	ocl_best_workgroup_pbkdf2(param, KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE, KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE_VEC);
+
+	return TRUE;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Charset
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+PRIVATE int ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
 {
 	// Do not allow blank in GPU
 	if (current_key_lenght == 0)
@@ -1638,23 +1657,23 @@ PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, g
 			}
 		}
 	}
-	ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + CHARSET_INDEX_IN_KERNELS, FALSE);
+	return ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + CHARSET_INDEX_IN_KERNELS, FALSE);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Phrases
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+PRIVATE int ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
 {
-	ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + PHRASES_INDEX_IN_KERNELS, FALSE);
+	return ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + PHRASES_INDEX_IN_KERNELS, FALSE);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UTF8
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+PRIVATE int ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
 {
-	ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + UTF8_INDEX_IN_KERNELS, FALSE);
+	return ocl_protocol_common_init(param, gpu_index, gen, gpu_dcc2_crypt, kernels2common + UTF8_INDEX_IN_KERNELS, FALSE);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1662,7 +1681,7 @@ PRIVATE void ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, gene
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 extern int provider_index;
 
-PRIVATE void ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
+PRIVATE int ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc2_crypt)
 {
 	int i, kernel2common_index;
 
@@ -1675,23 +1694,27 @@ PRIVATE void ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_ind
 				goto out;
 			}
 out:
-	ocl_protocol_common_init(param, gpu_device_index, gen, gpu_dcc2_crypt, kernels2common + kernel2common_index, TRUE);
+	return ocl_protocol_common_init(param, gpu_device_index, gen, gpu_dcc2_crypt, kernels2common + kernel2common_index, TRUE);
 }
 #endif
 
-PRIVATE int bench_values[] = {1,4,16,64};
 Format dcc2_format = {
 	"DCC2"/*"MSCASH2"*/,
 	"Domain Cache Credentials 2 (also know as MSCASH2).",
+	"$DCC2$10240#",
 	PLAINTEXT_LENGTH,
 	BINARY_SIZE,
 	SALT_SIZE,
 	4,
-	bench_values,
-	LENGHT(bench_values),
+	NULL,
+	0,
 	get_binary,
+	binary2hex,
+	DEFAULT_VALUE_MAP_INDEX,
+	DEFAULT_VALUE_MAP_INDEX,
 	dcc2_line_is_valid,
 	add_hash_from_line,
+	NULL,
 #ifdef _M_X64
 	{{CPU_CAP_AVX2, PROTOCOL_NTLM, crypt_ntlm_protocol_avx2}, {CPU_CAP_AVX, PROTOCOL_NTLM, crypt_ntlm_protocol_avx}, {CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}},
 #else

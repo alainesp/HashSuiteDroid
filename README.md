@@ -16,8 +16,9 @@ Features highlight:
 Requirements:
 
 - Android 3.0 or newer.
-- ARM CPU supporting armeabi-v7a.
+- ARM CPU supporting armeabi-v7a or arm64-v8a.
 - INTERNET permission to download wordlists.
+- READ_EXTERNAL_STORAGE permission to import files.
 - WRITE_EXTERNAL_STORAGE permission to export files.
 - WAKE_LOCK permission to prevent Android from putting the CPU to sleep while cracking.
 

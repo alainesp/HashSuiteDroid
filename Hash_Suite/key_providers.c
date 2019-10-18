@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2014 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2014,2016 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include <stdio.h>
@@ -13,12 +13,12 @@
 
 PUBLIC int64_t num_key_space;
 
-PUBLIC unsigned int max_lenght;
-PUBLIC unsigned int min_lenght;
-PUBLIC unsigned int current_key_lenght;
+PUBLIC uint32_t max_lenght;
+PUBLIC uint32_t min_lenght;
+PUBLIC uint32_t current_key_lenght;
 
 PUBLIC void* thread_params = NULL;
-PUBLIC unsigned int num_thread_params = 0;
+PUBLIC uint32_t num_thread_params = 0;
 
 // Mutex for thread-safe access
 PUBLIC HS_MUTEX key_provider_mutex;
@@ -92,54 +92,53 @@ PRIVATE void do_nothing_description(const char* provider_param, char* descriptio
 // Charset mode
 ////////////////////////////////////////////////////////////////////////////////////
 PUBLIC unsigned char charset[256];
-PUBLIC unsigned int num_char_in_charset;
+PUBLIC uint32_t num_char_in_charset;
 PUBLIC unsigned char current_key[MAX_KEY_LENGHT_BIG];
 
-PRIVATE __forceinline void COPY_GENERATE_KEY_PROTOCOL_NTLM_CHARSET(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int index)
+PRIVATE __forceinline void COPY_GENERATE_KEY_PROTOCOL_NTLM_CHARSET(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t index)
 {
-	unsigned int j = 0;
+	uint32_t j = 0;
 
 	for(; j < current_key_lenght/2; j++)
-		nt_buffer[j*NUM_KEYS+index] = ((unsigned int)charset[current_key[2*j]]) | ((unsigned int)charset[current_key[2*j+1]]) << 16;
+		nt_buffer[j*NUM_KEYS+index] = ((uint32_t)charset[current_key[2*j]]) | ((uint32_t)charset[current_key[2*j+1]]) << 16;
 
-	nt_buffer[j*NUM_KEYS+index] = (current_key_lenght & 1) ? ((unsigned int)charset[current_key[2*j]]) | 0x800000 : 0x80;
+	nt_buffer[j*NUM_KEYS+index] = (current_key_lenght & 1) ? ((uint32_t)charset[current_key[2*j]]) | 0x800000 : 0x80;
 	nt_buffer[14*NUM_KEYS+index] = current_key_lenght << 4;
 }
-PRIVATE __forceinline void COPY_GENERATE_KEY_PROTOCOL_NTLM_KEY(unsigned int* nt_buffer, const unsigned char* key, unsigned int NUM_KEYS, unsigned int index)
+PRIVATE __forceinline void COPY_GENERATE_KEY_PROTOCOL_NTLM_KEY(uint32_t* nt_buffer, const unsigned char* key, uint32_t NUM_KEYS, uint32_t index)
 {
-	unsigned int j = 0;
+	uint32_t j = 0;
 
 	for(; j < current_key_lenght/2; j++)	
-		nt_buffer[j*NUM_KEYS+index] = ((unsigned int)key[2*j]) | ((unsigned int)key[2*j+1]) << 16;
+		nt_buffer[j*NUM_KEYS+index] = ((uint32_t)key[2*j]) | ((uint32_t)key[2*j+1]) << 16;
 												
-	nt_buffer[j*NUM_KEYS+index] = (current_key_lenght & 1) ? ((unsigned int)key[2*j]) | 0x800000 : 0x80;
+	nt_buffer[j*NUM_KEYS+index] = (current_key_lenght & 1) ? ((uint32_t)key[2*j]) | 0x800000 : 0x80;
 	nt_buffer[14*NUM_KEYS+index] = current_key_lenght << 4;	
 												
 	for(j++; j < 14; j++)						
 		nt_buffer[j*NUM_KEYS+index] = 0;
 }
-PUBLIC void convert_utf8_2_coalesc(unsigned char* key, unsigned int* nt_buffer, unsigned int max_number, unsigned int len)
+PUBLIC void convert_utf8_2_coalesc(unsigned char* key, uint32_t* nt_buffer, uint32_t max_number, uint32_t len)
 {
 	// Copy key to nt_buffer
-	for (unsigned int j = 0; j < len / 4; j++)
+	for (uint32_t j = 0; j < len / 4; j++)
 	{
-		unsigned int val = key[4 * j];
-		val |= ((unsigned int)key[4 * j + 1]) << 8;
-		val |= ((unsigned int)key[4 * j + 2]) << 16;
-		val |= ((unsigned int)key[4 * j + 3]) << 24;
+		uint32_t val = key[4 * j];
+		val |= ((uint32_t)key[4 * j + 1]) << 8;
+		val |= ((uint32_t)key[4 * j + 2]) << 16;
+		val |= ((uint32_t)key[4 * j + 3]) << 24;
 
 		nt_buffer[j*max_number] = val;
 	}
 
-	unsigned int val = 0x80 << (8 * (len & 3));
-	for (unsigned int k = 0; k < (len & 3); k++)
-		val |= ((unsigned int)key[4 * (len / 4) + k]) << (8 * k);
+	uint32_t val = 0x80 << (8 * (len & 3));
+	for (uint32_t k = 0; k < (len & 3); k++)
+		val |= ((uint32_t)key[4 * (len / 4) + k]) << (8 * k);
 
 	nt_buffer[(len / 4)*max_number] = val;
-	int max_j = (max_lenght > 27) ? 16 : 7;
-	nt_buffer[max_j * max_number] = len << 3;// len
+	nt_buffer[7 * max_number] = len << 3;// len
 	
-	for (int j = (len / 4) + 1; j < max_j; j++)
+	for (int j = (len / 4) + 1; j < 7; j++)
 		nt_buffer[j * max_number] = 0;
 }
 // Copy only non repetitive characters
@@ -177,7 +176,7 @@ PRIVATE int strcpy_no_repetide(unsigned char* dst, char* src)
 PRIVATE void charset_resume(int pmin_lenght, int pmax_lenght, char* param, const char* resume_arg, int format_index)
 {
 	int64_t pow_num;
-	unsigned int i, j;
+	uint32_t i, j;
 
 	memset(current_key, 0, sizeof(current_key));
 
@@ -198,11 +197,11 @@ PRIVATE void charset_resume(int pmin_lenght, int pmax_lenght, char* param, const
 	// Resume
 	if(resume_arg && strlen(resume_arg))
 	{
-		current_key_lenght = (unsigned int)strlen(resume_arg);
+		current_key_lenght = (uint32_t)strlen(resume_arg);
 
 		for(i = 0; i < current_key_lenght; i++)
 			for(j = 0; j < num_char_in_charset; j++)
-				if(resume_arg[i] == charset[j])
+				if (((unsigned char*)resume_arg)[i] == charset[j])
 				{
 					current_key[i] = j;
 					break;
@@ -230,20 +229,20 @@ PRIVATE void charset_resume(int pmin_lenght, int pmax_lenght, char* param, const
 }
 PRIVATE void charset_save_resume_arg(char* resume_arg)
 {
-	unsigned int save_key_lenght = UINT_MAX;
-	unsigned int old_index = 0;
+	uint32_t save_key_lenght = UINT_MAX;
+	uint32_t old_index = 0;
 	unsigned char* buffer = (unsigned char*)thread_params;
 	resume_arg[0] = 0;
 
 	if (thread_params)
 	{
-		unsigned int i, j;
+		uint32_t i, j;
 		HS_ENTER_MUTEX(&key_provider_mutex);
 
 		// Find the most old saved data
 		for (i = 0; i < num_thread_params; i++)
 		{
-			unsigned int thread_key_lenght = ((unsigned int*)thread_params)[8 * i + 7];
+			uint32_t thread_key_lenght = ((uint32_t*)thread_params)[8 * i + 7];
 			if (thread_key_lenght < save_key_lenght)
 			{
 				save_key_lenght = thread_key_lenght;
@@ -273,7 +272,7 @@ PRIVATE void charset_save_resume_arg(char* resume_arg)
 	else
 	{
 		// Save current candidate
-		for (unsigned int i = 0; i < current_key_lenght; i++)
+		for (uint32_t i = 0; i < current_key_lenght; i++)
 			resume_arg[i] = charset[current_key[i]];
 
 		resume_arg[current_key_lenght] = 0;
@@ -282,15 +281,15 @@ PRIVATE void charset_save_resume_arg(char* resume_arg)
 
 // Common
 #include "arch_simd.h"
-//#ifdef ANDROID
-//void memset_uint_neon(unsigned int* buffer, unsigned int value, int size);
+//#ifdef __ANDROID__
+//void memset_uint_neon(uint32_t* buffer, uint32_t value, int size);
 //#define memset_uint_v128 memset_uint_neon
 //#else
 //
 //#ifdef _M_X64
-//void memset_uint_v128(unsigned int* buffer, unsigned int value, int size);
+//void memset_uint_v128(uint32_t* buffer, uint32_t value, int size);
 //#else
-//PRIVATE void memset_uint_v128(V128_WORD* buffer, unsigned int value, int size)
+//PRIVATE void memset_uint_v128(V128_WORD* buffer, uint32_t value, int size)
 //{
 //	V128_WORD vec_value = V128_CONST(value);
 //	size /= 4;
@@ -301,7 +300,7 @@ PRIVATE void charset_save_resume_arg(char* resume_arg)
 //
 //#endif
 // NOTE: For some reason the v128 is slower than simple C code
-PRIVATE void memset_uint(unsigned int* buffer, unsigned int value, int size)
+PRIVATE void memset_uint(uint32_t* buffer, uint32_t value, int size)
 {
 //#ifndef _M_X64
 //	if (current_cpu.capabilites[CPU_CAP_V128])
@@ -340,7 +339,7 @@ PRIVATE void memset_uint(unsigned int* buffer, unsigned int value, int size)
 
 
 // Request 'max_number' keys. Only part with syncronization
-PRIVATE int charset_request(unsigned int max_number, int thread_id, unsigned char* current_key1, unsigned int* current_key_lenght1)
+PRIVATE int charset_request(uint32_t max_number, int thread_id, unsigned char* current_key1, uint32_t* current_key_lenght1)
 {
 	unsigned char* current_save = ((unsigned char*)thread_params) + 32 * thread_id;
 	if (!num_char_in_charset) return 0;
@@ -356,7 +355,7 @@ PRIVATE int charset_request(unsigned int max_number, int thread_id, unsigned cha
 	{
 		// Copy all
 		*current_key_lenght1 = current_key_lenght;
-		((unsigned int*)current_save)[7] = current_key_lenght;
+		((uint32_t*)current_save)[7] = current_key_lenght;
 		memcpy(current_save, current_key, current_key_lenght);
 		memcpy(current_key1, current_key, max_lenght);
 
@@ -367,10 +366,10 @@ PRIVATE int charset_request(unsigned int max_number, int thread_id, unsigned cha
 			max_number--;
 		}
 		// Sum
-		unsigned int i = 0;
+		uint32_t i = 0;
 		while (max_number)
 		{
-			unsigned int current_char = ((unsigned int)current_key[i]) + max_number%num_char_in_charset;
+			uint32_t current_char = ((uint32_t)current_key[i]) + max_number%num_char_in_charset;
 			max_number /= num_char_in_charset;
 
 			if (current_char >= num_char_in_charset)
@@ -394,9 +393,9 @@ PRIVATE int charset_request(unsigned int max_number, int thread_id, unsigned cha
 	return 1;
 }
 
-PRIVATE int charset_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+PRIVATE int charset_gen_ntlm(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
-	unsigned int current_key_lenght1;
+	uint32_t current_key_lenght1;
 	unsigned char current_key1[MAX_KEY_LENGHT_BIG];
 
 	if (!charset_request(max_number, thread_id, current_key1, &current_key_lenght1)) return 0;
@@ -404,16 +403,16 @@ PRIVATE int charset_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, i
 	// If only change first 2 chars --> optimized version
 	if(current_key_lenght1 <= max_lenght && current_key_lenght1 > 2 && (num_char_in_charset-current_key1[0]-1+(num_char_in_charset-current_key1[1]-1)*num_char_in_charset) > max_number)
 	{
-		unsigned int j = 1, key_0, key_1;
-		unsigned int tmp;
+		uint32_t j = 1, key_0, key_1;
+		uint32_t tmp;
 
 		for(; j < current_key_lenght1/2; j++)
 		{
-			tmp = ((unsigned int)charset[current_key1[2*j]]) | ((unsigned int)charset[current_key1[2*j+1]]) << 16;
+			tmp = ((uint32_t)charset[current_key1[2*j]]) | ((uint32_t)charset[current_key1[2*j+1]]) << 16;
 			memset_uint(nt_buffer + j*max_number, tmp, max_number);
 		}
 
-		tmp = (current_key_lenght1 & 1) ? ((unsigned int)charset[current_key1[2*j]]) | 0x800000 : 0x80;
+		tmp = (current_key_lenght1 & 1) ? ((uint32_t)charset[current_key1[2*j]]) | 0x800000 : 0x80;
 		memset_uint(nt_buffer + j*max_number, tmp, max_number);
 
 		tmp = current_key_lenght1 << 4;
@@ -421,11 +420,11 @@ PRIVATE int charset_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, i
 
 		key_0 = current_key1[0];
 		key_1 = current_key1[1];
-		unsigned int i = 0;
+		uint32_t i = 0;
 		j = max_number;
 		for(; i < j; i++)
 		{
-			nt_buffer[i] = ((unsigned int)charset[key_0]) | ((unsigned int)charset[key_1]) << 16;
+			nt_buffer[i] = ((uint32_t)charset[key_0]) | ((uint32_t)charset[key_1]) << 16;
 			// Next key
 			if(++key_0 == num_char_in_charset)
 			{
@@ -435,14 +434,14 @@ PRIVATE int charset_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, i
 		}
 	}
 	else
-		for (unsigned int i = 0; i < max_number; i++)
+		for (uint32_t i = 0; i < max_number; i++)
 		{
-			unsigned int j = 0;
+			uint32_t j = 0;
 			// Copy key to nt_buffer
 			for(; j < current_key_lenght1/2; j++)
-				nt_buffer[j*max_number+i] = ((unsigned int)charset[current_key1[2*j]]) | ((unsigned int)charset[current_key1[2*j+1]]) << 16;
+				nt_buffer[j*max_number+i] = ((uint32_t)charset[current_key1[2*j]]) | ((uint32_t)charset[current_key1[2*j+1]]) << 16;
 
-			nt_buffer[j*max_number+i] = (current_key_lenght1 & 1) ? ((unsigned int)charset[current_key1[2*j]]) | 0x800000 : 0x80;
+			nt_buffer[j*max_number+i] = (current_key_lenght1 & 1) ? ((uint32_t)charset[current_key1[2*j]]) | 0x800000 : 0x80;
 			nt_buffer[14*max_number+i] = current_key_lenght1 << 4;
 
 			// Next key
@@ -466,16 +465,16 @@ PRIVATE int charset_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, i
 
 	return 1;
 }
-PRIVATE int charset_gen_utf8_lm(unsigned char* keys, unsigned int max_number, int thread_id)
+PRIVATE int charset_gen_utf8_lm(unsigned char* keys, uint32_t max_number, int thread_id)
 {
 	int result = 1;
 
-	unsigned int current_key_lenght1;
+	uint32_t current_key_lenght1;
 	unsigned char current_key1[MAX_KEY_LENGHT_BIG];
 
 	if (!charset_request(max_number, thread_id, current_key1, &current_key_lenght1)) return 0;
 
-	for(unsigned int i = 0; i < max_number; i++, keys+=8u)
+	for(uint32_t i = 0; i < max_number; i++, keys+=8u)
 	{
 		// All keys generated
 		if (current_key_lenght1 > max_lenght)
@@ -484,7 +483,7 @@ PRIVATE int charset_gen_utf8_lm(unsigned char* keys, unsigned int max_number, in
 		}
 
 		// Copy key
-		for(unsigned int j = 0; j < current_key_lenght1; j++)
+		for(uint32_t j = 0; j < current_key_lenght1; j++)
 			keys[j] = charset[current_key1[j]];
 
 		// Next key
@@ -509,7 +508,7 @@ PRIVATE int charset_gen_utf8_lm(unsigned char* keys, unsigned int max_number, in
 
 	return result;
 }
-PRIVATE int charset_gen_opencl(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+PRIVATE int charset_gen_opencl(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
 	int result = 1;
 	unsigned char* current_save = ((unsigned char*)thread_params) + 32 * thread_id;
@@ -520,13 +519,13 @@ PRIVATE int charset_gen_opencl(unsigned int* nt_buffer, unsigned int max_number,
 		result = 0;
 	else
 	{
-		unsigned int index = 0;
+		uint32_t index = 0;
 
 		// Ensure begin with aligned key at character 0
 		current_key[0] = 0;
 
 		// Copy all
-		((unsigned int*)current_save)[7] = current_key_lenght;
+		((uint32_t*)current_save)[7] = current_key_lenght;
 		memcpy(current_save, current_key, current_key_lenght);
 		memcpy(nt_buffer, current_key, sizeof(current_key));
 		nt_buffer[8] = current_key_lenght;
@@ -538,8 +537,8 @@ PRIVATE int charset_gen_opencl(unsigned int* nt_buffer, unsigned int max_number,
 			if(++index >= current_key_lenght)
 			{
 				// Calculate how much we exceed
-				unsigned int pow = num_char_in_charset;
-				unsigned int exceed_served = 0;
+				uint32_t pow = num_char_in_charset;
+				uint32_t exceed_served = 0;
 				for(index = 1; index < current_key_lenght; index++, pow*=num_char_in_charset)
 					exceed_served += current_key[index]*pow;
 
@@ -559,7 +558,7 @@ PRIVATE int charset_gen_opencl(unsigned int* nt_buffer, unsigned int max_number,
 	HS_LEAVE_MUTEX(&key_provider_mutex);
 	return result;
 }
-PRIVATE int charset_gen_opencl_no_aligned(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+PRIVATE int charset_gen_opencl_no_aligned(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
 	int result = 1;
 	unsigned char* current_save = ((unsigned char*)thread_params) + 32 * thread_id;
@@ -576,10 +575,10 @@ PRIVATE int charset_gen_opencl_no_aligned(unsigned int* nt_buffer, unsigned int 
 	}
 	else
 	{
-		unsigned int index = 0;
+		uint32_t index = 0;
 
 		// Copy all
-		((unsigned int*)current_save)[7] = current_key_lenght;
+		((uint32_t*)current_save)[7] = current_key_lenght;
 		memcpy(current_save, current_key, current_key_lenght);
 		memcpy(nt_buffer, current_key, sizeof(current_key));
 		nt_buffer[8] = current_key_lenght;
@@ -595,8 +594,8 @@ PRIVATE int charset_gen_opencl_no_aligned(unsigned int* nt_buffer, unsigned int 
 			if(max_number && ++index >= current_key_lenght)
 			{
 				// Calculate how much we exceed
-				unsigned int pow = 1;
-				unsigned int exceed_served = 0;
+				uint32_t pow = 1;
+				uint32_t exceed_served = 0;
 				for(index = 0; index < current_key_lenght; index++, pow*=num_char_in_charset)
 					exceed_served += current_key[index]*pow;
 
@@ -613,58 +612,57 @@ PRIVATE int charset_gen_opencl_no_aligned(unsigned int* nt_buffer, unsigned int 
 	HS_LEAVE_MUTEX(&key_provider_mutex);
 	return result;
 }
-PRIVATE int charset_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+PRIVATE int charset_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
-	unsigned int current_key_lenght1;
+	uint32_t current_key_lenght1;
 	unsigned char current_key1[MAX_KEY_LENGHT_BIG];
-	unsigned int len_index = (max_lenght > 27) ? 16 : 7;
-//#ifdef ANDROID
+//#ifdef __ANDROID__
 //	MEMSET_UINT_DEC* memset_uint = current_cpu.capabilites[CPU_CAP_NEON] ? memset_uint_neon : memset_uint_c_code;
 //#endif
 
 	if (!charset_request(max_number, thread_id, current_key1, &current_key_lenght1)) return 0;
 
 	
-	unsigned int first_amount = 0;
-	unsigned int pow = 1;
+	uint32_t first_amount = 0;
+	uint32_t pow = 1;
 	for (int i = 0; i < 4; i++, pow*=num_char_in_charset)
 		first_amount += (num_char_in_charset - current_key1[i] - 1)*pow;
 	// If only change first 4 chars --> optimized version
 	if (current_key_lenght1 >= 4 && first_amount > max_number)
 	{
 		// Copy key to nt_buffer
-		for (unsigned int j = 1; j < current_key_lenght1 / 4; j++)
+		for (uint32_t j = 1; j < current_key_lenght1 / 4; j++)
 		{
-			unsigned int val = charset[current_key1[4 * j]];
-			val |= ((unsigned int)charset[current_key1[4 * j + 1]]) << 8;
-			val |= ((unsigned int)charset[current_key1[4 * j + 2]]) << 16;
-			val |= ((unsigned int)charset[current_key1[4 * j + 3]]) << 24;
+			uint32_t val = charset[current_key1[4 * j]];
+			val |= ((uint32_t)charset[current_key1[4 * j + 1]]) << 8;
+			val |= ((uint32_t)charset[current_key1[4 * j + 2]]) << 16;
+			val |= ((uint32_t)charset[current_key1[4 * j + 3]]) << 24;
 
 			//nt_buffer[j*max_number + i] = val;
 			memset_uint(nt_buffer + j*max_number, val, max_number);
 		}
 
-		unsigned int val = 0x80 << (8 * (current_key_lenght1 & 3));
-		for (unsigned int k = 0; k < (current_key_lenght1 & 3); k++)
-			val |= ((unsigned int)charset[current_key1[4 * (current_key_lenght1 / 4) + k]]) << (8 * k);
+		uint32_t val = 0x80 << (8 * (current_key_lenght1 & 3));
+		for (uint32_t k = 0; k < (current_key_lenght1 & 3); k++)
+			val |= ((uint32_t)charset[current_key1[4 * (current_key_lenght1 / 4) + k]]) << (8 * k);
 
 		//nt_buffer[(current_key_lenght1 / 4)*max_number + i] = val;
 		memset_uint(nt_buffer + (current_key_lenght1 / 4)*max_number, val, max_number);
 
 		//nt_buffer[7 * max_number + i] = current_key_lenght1 << 3;
-		memset_uint(nt_buffer + len_index * max_number, current_key_lenght1 << 3, max_number);
+		memset_uint(nt_buffer + 7 * max_number, current_key_lenght1 << 3, max_number);
 
-		for (unsigned int i = 0; i < max_number; i++)
+		for (uint32_t i = 0; i < max_number; i++)
 		{
 			// Copy key to nt_buffer
-			unsigned int val = charset[current_key1[0]];
-			val |= ((unsigned int)charset[current_key1[1]]) << 8;
-			val |= ((unsigned int)charset[current_key1[2]]) << 16;
-			val |= ((unsigned int)charset[current_key1[3]]) << 24;
+			uint32_t val = charset[current_key1[0]];
+			val |= ((uint32_t)charset[current_key1[1]]) << 8;
+			val |= ((uint32_t)charset[current_key1[2]]) << 16;
+			val |= ((uint32_t)charset[current_key1[3]]) << 24;
 			nt_buffer[i] = val;
 
 			// Next key
-			unsigned int j = 0;
+			uint32_t j = 0;
 			while (++current_key1[j] == num_char_in_charset)
 			{
 				current_key1[j] = 0;
@@ -673,30 +671,30 @@ PRIVATE int charset_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int ma
 		}
 	}
 	else
-		for (unsigned int i = 0; i < max_number; i++)
+		for (uint32_t i = 0; i < max_number; i++)
 		{
 			// Copy key to nt_buffer
-			for (unsigned int j = 0; j < current_key_lenght1 / 4; j++)
+			for (uint32_t j = 0; j < current_key_lenght1 / 4; j++)
 			{
-				unsigned int val = charset[current_key1[4 * j]];
-				val |= ((unsigned int)charset[current_key1[4 * j + 1]]) << 8 ;
-				val |= ((unsigned int)charset[current_key1[4 * j + 2]]) << 16;
-				val |= ((unsigned int)charset[current_key1[4 * j + 3]]) << 24;
+				uint32_t val = charset[current_key1[4 * j]];
+				val |= ((uint32_t)charset[current_key1[4 * j + 1]]) << 8 ;
+				val |= ((uint32_t)charset[current_key1[4 * j + 2]]) << 16;
+				val |= ((uint32_t)charset[current_key1[4 * j + 3]]) << 24;
 
 				nt_buffer[j*max_number + i] = val;
 			}
 
-			unsigned int val = 0x80 << (8 * (current_key_lenght1 & 3));
-			for (unsigned int k = 0; k < (current_key_lenght1&3); k++)
-				val |= ((unsigned int)charset[current_key1[4 * (current_key_lenght1 / 4) + k]]) << (8 * k);
+			uint32_t val = 0x80 << (8 * (current_key_lenght1 & 3));
+			for (uint32_t k = 0; k < (current_key_lenght1&3); k++)
+				val |= ((uint32_t)charset[current_key1[4 * (current_key_lenght1 / 4) + k]]) << (8 * k);
 
 			nt_buffer[(current_key_lenght1 / 4)*max_number + i] = val;
-			nt_buffer[len_index * max_number + i] = current_key_lenght1 << 3;
+			nt_buffer[7 * max_number + i] = current_key_lenght1 << 3;
 
 			// Next key
 			if (current_key_lenght1) //if length > 0 
 			{
-				unsigned int j = 0;
+				uint32_t j = 0;
 				while (++current_key1[j] == num_char_in_charset)
 				{
 					current_key1[j] = 0;
@@ -715,9 +713,9 @@ PRIVATE int charset_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int ma
 	return 1;
 }
 // count the number of bits set in v
-PRIVATE unsigned int count_set_bits(unsigned int v)
+PRIVATE uint32_t count_set_bits(uint32_t v)
 {
-	unsigned int c; // c accumulates the total bits set in v
+	uint32_t c; // c accumulates the total bits set in v
 	for (c = 0; v; c++)
 		v &= v - 1; // clear the least significant bit set
 
@@ -751,7 +749,7 @@ PRIVATE void charset_get_description(const char* provider_param, char* descripti
 	}
 	// Count the number of chars
 	uint32_t count_chars = 0;
-	for (unsigned int i = 0; i < 8; i++)
+	for (uint32_t i = 0; i < 8; i++)
 		count_chars += count_set_bits(chars_used_bitmap[i]);
 
 	sprintf(description, " %i-%i [%u %s%s%s%s]", min_lenght, max_lenght, count_chars, is_lower?"L":"", is_upper?"U":"", is_digit?"D":"", is_simbol?"S":"");
@@ -764,16 +762,16 @@ PRIVATE void charset_get_description(const char* provider_param, char* descripti
 void wordlist_resume(int pmin_lenght, int pmax_lenght, char* params, const char* resume_arg, int format_index);
 void wordlist_get_description(const char* provider_param, char* description, int min_lenght, int max_lenght);
 void wordlist_save_resume_arg(char* resume_arg);
-int wordlist_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, int thread_id);
-int wordlist_gen_utf8_lm(unsigned char* keys, unsigned int max_number, int thread_id);
-int wordlist_gen_utf8(unsigned char* keys, unsigned int max_number, int thread_id);
-int wordlist_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int max_number, int thread_id);
+int wordlist_gen_ntlm(uint32_t* nt_buffer, uint32_t max_number, int thread_id);
+int wordlist_gen_utf8_lm(unsigned char* keys, uint32_t max_number, int thread_id);
+int wordlist_gen_utf8(unsigned char* keys, uint32_t max_number, int thread_id);
+int wordlist_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number, int thread_id);
 
 void sentence_resume(int pmin_lenght, int pmax_lenght, char* params, const char* resume_arg, int format_index);
-int sentence_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, int thread_id);
-int sentence_gen_utf8(unsigned char* keys, unsigned int max_number, int thread_id);
-int sentence_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int max_number, int thread_id);
-int sentence_gen_ocl(int* current_sentence1, unsigned int max_number, int thread_id);
+int sentence_gen_ntlm(uint32_t* nt_buffer, uint32_t max_number, int thread_id);
+int sentence_gen_utf8(unsigned char* keys, uint32_t max_number, int thread_id);
+int sentence_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number, int thread_id);
+int sentence_gen_ocl(int* current_sentence1, uint32_t max_number, int thread_id);
 void sentence_save_resume_arg(char* resume_arg);
 void sentence_finish();
 void sentence_get_description(const char* provider_param, char* description, int min_lenght, int max_lenght);
@@ -851,7 +849,7 @@ PRIVATE void fill_keyboard_context()
 }
 PRIVATE void keyboard_resume(int pmin_lenght, int pmax_lenght, char* param, const char* resume_arg, int format_index)
 {
-	unsigned int i;
+	uint32_t i;
 
 	// At least 2 characters
 	current_key_lenght = __max(2, pmin_lenght);
@@ -872,7 +870,7 @@ PRIVATE void keyboard_resume(int pmin_lenght, int pmax_lenght, char* param, cons
 	if(resume_arg && strlen(resume_arg))
 	{
 		int j;
-		current_key_lenght = (unsigned int)strlen(resume_arg);
+		current_key_lenght = (uint32_t)strlen(resume_arg);
 
 		for(i = 0; i < current_key_lenght; i++)
 			for(j = 0; j < LENGHT(keyboard_context); j++)
@@ -905,7 +903,7 @@ PRIVATE void keyboard_resume(int pmin_lenght, int pmax_lenght, char* param, cons
 PRIVATE __forceinline void NEXT_KEY_KEYBOARD()
 {
 	int index = current_key_lenght - 2;
-	unsigned int j;
+	uint32_t j;
 
 	while(++near_key_indexs[index] == keyboard_context[current_key[index]].num_near_keys)
 	{
@@ -928,11 +926,11 @@ PRIVATE __forceinline void NEXT_KEY_KEYBOARD()
 		current_key[j] = keyboard_context[current_key[j-1]].near_keys[near_key_indexs[j-1]];
 }
 
-PRIVATE int keyboard_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+PRIVATE int keyboard_gen_ntlm(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
 	int result = 1;
-	unsigned int* save_key = ((unsigned int*)thread_params) + 8 * thread_id;
-	unsigned int i;
+	uint32_t* save_key = ((uint32_t*)thread_params) + 8 * thread_id;
+	uint32_t i;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 	memcpy(save_key, current_key, current_key_lenght);
@@ -955,11 +953,11 @@ PRIVATE int keyboard_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, 
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
 	return result;								
 }
-PRIVATE int keyboard_gen_utf8_lm(unsigned char* keys, unsigned int max_number, int thread_id)
+PRIVATE int keyboard_gen_utf8_lm(unsigned char* keys, uint32_t max_number, int thread_id)
 {
-	unsigned int i = 0, j;
+	uint32_t i = 0, j;
 	int result = 1;
-	unsigned int* save_key = ((unsigned int*)thread_params) + 8 * thread_id;
+	uint32_t* save_key = ((uint32_t*)thread_params) + 8 * thread_id;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 	memcpy(save_key, current_key, current_key_lenght);
@@ -986,10 +984,10 @@ PRIVATE int keyboard_gen_utf8_lm(unsigned char* keys, unsigned int max_number, i
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
 	return result;
 }
-PRIVATE int keyboard_gen_utf8(unsigned char* keys, unsigned int max_number, int thread_id)
+PRIVATE int keyboard_gen_utf8(unsigned char* keys, uint32_t max_number, int thread_id)
 {
-	unsigned int i = 0, j;
-	unsigned int* save_key = ((unsigned int*)thread_params) + 8 * thread_id;
+	uint32_t i = 0, j;
+	uint32_t* save_key = ((uint32_t*)thread_params) + 8 * thread_id;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 	memcpy(save_key, current_key, current_key_lenght);
@@ -1014,11 +1012,10 @@ PRIVATE int keyboard_gen_utf8(unsigned char* keys, unsigned int max_number, int 
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
 	return i;
 }
-PRIVATE int keyboard_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+PRIVATE int keyboard_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
-	unsigned int i = 0;
-	unsigned int* save_key = ((unsigned int*)thread_params) + 8 * thread_id;
-	unsigned int len_index = (max_lenght > 27) ? 16 : 7;
+	uint32_t i = 0;
+	uint32_t* save_key = ((uint32_t*)thread_params) + 8 * thread_id;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 	memcpy(save_key, current_key, current_key_lenght);
@@ -1031,22 +1028,22 @@ PRIVATE int keyboard_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int m
 			break;
 
 		// Copy key to nt_buffer
-		for (unsigned int j = 0; j < current_key_lenght / 4; j++)
+		for (uint32_t j = 0; j < current_key_lenght / 4; j++)
 		{
-			unsigned int val = charset[current_key[4 * j]];
-			val |= ((unsigned int)charset[current_key[4 * j + 1]]) << 8;
-			val |= ((unsigned int)charset[current_key[4 * j + 2]]) << 16;
-			val |= ((unsigned int)charset[current_key[4 * j + 3]]) << 24;
+			uint32_t val = charset[current_key[4 * j]];
+			val |= ((uint32_t)charset[current_key[4 * j + 1]]) << 8;
+			val |= ((uint32_t)charset[current_key[4 * j + 2]]) << 16;
+			val |= ((uint32_t)charset[current_key[4 * j + 3]]) << 24;
 
 			nt_buffer[j*max_number + i] = val;
 		}
 
-		unsigned int val = 0x80 << (8 * (current_key_lenght & 3));
-		for (unsigned int k = 0; k < (current_key_lenght & 3); k++)
-			val |= ((unsigned int)charset[current_key[4 * (current_key_lenght / 4) + k]]) << (8 * k);
+		uint32_t val = 0x80 << (8 * (current_key_lenght & 3));
+		for (uint32_t k = 0; k < (current_key_lenght & 3); k++)
+			val |= ((uint32_t)charset[current_key[4 * (current_key_lenght / 4) + k]]) << (8 * k);
 
 		nt_buffer[(current_key_lenght / 4)*max_number + i] = val;
-		nt_buffer[len_index * max_number + i] = current_key_lenght << 3;
+		nt_buffer[7 * max_number + i] = current_key_lenght << 3;
 		
 		// Next key
 		NEXT_KEY_KEYBOARD();
@@ -1075,24 +1072,27 @@ PRIVATE int more_rows;
 
 PRIVATE void db_resume(int pmin_lenght, int pmax_lenght, char* param, const char* resume_arg, int format_index)
 {
-	sqlite3_stmt* count_key_space;
 	max_lenght = pmax_lenght;
 	min_lenght = pmin_lenght;
 
-	more_rows = TRUE;
-
 	// Calculate key_space
-	sqlite3_prepare_v2(db, "SELECT count(*) FROM (SELECT UserName FROM Account UNION SELECT ClearText FROM FindHash);", -1, &count_key_space, NULL);
-	sqlite3_step(count_key_space);
-	num_key_space =  sqlite3_column_int(count_key_space, 0);
-	sqlite3_finalize(count_key_space);
+	num_key_space = total_num_users() + total_num_hashes_found();
 
-	sqlite3_prepare_v2(db, "SELECT UserName FROM Account UNION SELECT ClearText FROM FindHash;", -1, &select_info, NULL);
+	if (num_key_space)
+	{
+		more_rows = TRUE;
+		if(total_num_users())
+			sqlite3_prepare_v2(db, "SELECT UserName FROM Account UNION SELECT ClearText FROM FindHash;", -1, &select_info, NULL);
+		else
+			sqlite3_prepare_v2(db, "SELECT ClearText FROM FindHash;", -1, &select_info, NULL);
+	}
+	else
+		more_rows = FALSE;
 }
-PRIVATE int db_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+PRIVATE int db_gen_ntlm(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
 	int result = 1;
-	unsigned int i;
+	uint32_t i;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
@@ -1108,7 +1108,7 @@ PRIVATE int db_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, int th
 			break;
 		}
 		key = sqlite3_column_text(select_info, 0);
-		current_key_lenght = (unsigned int)strlen(key);
+		current_key_lenght = (uint32_t)strlen(key);
 
 		// Skip short or long keys
 		if (current_key_lenght < min_lenght || current_key_lenght > max_lenght)
@@ -1123,9 +1123,9 @@ PRIVATE int db_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, int th
 	HS_LEAVE_MUTEX(&key_provider_mutex);
 	return result;
 }
-PRIVATE int db_gen_utf8_lm(unsigned char* keys, unsigned int max_number, int thread_id)
+PRIVATE int db_gen_utf8_lm(unsigned char* keys, uint32_t max_number, int thread_id)
 {
-	unsigned int i = 0;
+	uint32_t i = 0;
 	int result = 1;
 	unsigned char key[8];
 
@@ -1144,7 +1144,7 @@ PRIVATE int db_gen_utf8_lm(unsigned char* keys, unsigned int max_number, int thr
 		}
 		strncpy(key, sqlite3_column_text(select_info, 0), 7);
 		key[7] = 0;
-		current_key_lenght = (unsigned int)strlen(key);
+		current_key_lenght = (uint32_t)strlen(key);
 
 		strncpy(keys, _strupr(key), max_lenght);
 	}
@@ -1152,9 +1152,9 @@ PRIVATE int db_gen_utf8_lm(unsigned char* keys, unsigned int max_number, int thr
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
 	return result;
 }
-PRIVATE int db_gen_utf8(unsigned char* keys, unsigned int max_number, int thread_id)
+PRIVATE int db_gen_utf8(unsigned char* keys, uint32_t max_number, int thread_id)
 {
-	unsigned int i = 0;
+	uint32_t i = 0;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
@@ -1173,9 +1173,9 @@ PRIVATE int db_gen_utf8(unsigned char* keys, unsigned int max_number, int thread
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
 	return i;
 }
-PRIVATE int db_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+PRIVATE int db_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
-	unsigned int i = 0;
+	uint32_t i = 0;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
@@ -1189,7 +1189,7 @@ PRIVATE int db_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int max_num
 		}
 		strcpy(current_key, sqlite3_column_text(select_info, 0));
 		// Copy key to nt_buffer
-		convert_utf8_2_coalesc(current_key, nt_buffer+i, max_number, (unsigned int)strlen(current_key));
+		convert_utf8_2_coalesc(current_key, nt_buffer+i, max_number, (uint32_t)strlen(current_key));
 	}
 
 	HS_LEAVE_MUTEX(&key_provider_mutex);
@@ -1211,14 +1211,14 @@ PRIVATE void lm2ntlm_resume(int pmin_lenght, int pmax_lenght, char* param, const
 	more_rows = TRUE;
 	need_key_from_db = TRUE;
 
-	sqlite3_prepare_v2(db, "SELECT DISTINCT (FindHash1.ClearText || FindHash2.ClearText) AS ClearText FROM AccountLM INNER JOIN FindHash AS FindHash1 ON FindHash1.ID==AccountLM.LM1 INNER JOIN FindHash AS FindHash2 ON FindHash2.ID==AccountLM.LM2;", -1, &select_lm_keys, NULL);
+	sqlite3_prepare_v2(db, "SELECT DISTINCT (FindHash1.ClearText || FindHash2.ClearText) AS ClearText FROM AccountLM INNER JOIN FindHash AS FindHash1 ON FindHash1.HashID==AccountLM.LM1 INNER JOIN FindHash AS FindHash2 ON FindHash2.HashID==AccountLM.LM2;", -1, &select_lm_keys, NULL);
 
 	num_key_space = KEY_SPACE_UNKNOW;
 }
-PRIVATE int lm2ntlm_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+PRIVATE int lm2ntlm_gen_ntlm(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
 	int result = 1;
-	unsigned int i, index;
+	uint32_t i, index;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
@@ -1238,7 +1238,7 @@ PRIVATE int lm2ntlm_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, i
 			need_key_from_db = FALSE;
 
 			strcpy(current_key, sqlite3_column_text(select_lm_keys, 0));
-			current_key_lenght = (unsigned int)strlen(current_key);
+			current_key_lenght = (uint32_t)strlen(current_key);
 		}
 
 		COPY_GENERATE_KEY_PROTOCOL_NTLM_KEY(nt_buffer, current_key, max_number, i);
@@ -1273,9 +1273,9 @@ PRIVATE int lm2ntlm_gen_ntlm(unsigned int* nt_buffer, unsigned int max_number, i
 	return result;
 }
 
-PRIVATE int lm2ntlm_gen_utf8(unsigned char* keys, unsigned int max_number, int thread_id)
+PRIVATE int lm2ntlm_gen_utf8(unsigned char* keys, uint32_t max_number, int thread_id)
 {												
-	unsigned int i = 0;														
+	uint32_t i = 0;														
 
 	HS_ENTER_MUTEX(&key_provider_mutex);	
 
@@ -1294,14 +1294,14 @@ PRIVATE int lm2ntlm_gen_utf8(unsigned char* keys, unsigned int max_number, int t
 			need_key_from_db = FALSE;
 
 			strcpy(current_key, sqlite3_column_text(select_lm_keys, 0));
-			current_key_lenght = (unsigned int)strlen(current_key);
+			current_key_lenght = (uint32_t)strlen(current_key);
 		}
 
 		strcpy(keys, current_key);
 
 		// New key
 		{
-			unsigned int index = 0;
+			uint32_t index = 0;
 			while(index < current_key_lenght && !isalpha(current_key[index]))
 				index++;
 
@@ -1330,9 +1330,9 @@ PRIVATE int lm2ntlm_gen_utf8(unsigned char* keys, unsigned int max_number, int t
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
 	return i;								
 }
-PRIVATE int lm2ntlm_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int max_number, int thread_id)
+PRIVATE int lm2ntlm_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
-	unsigned int i = 0;
+	uint32_t i = 0;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
@@ -1351,7 +1351,7 @@ PRIVATE int lm2ntlm_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int ma
 			need_key_from_db = FALSE;
 
 			strcpy(current_key, sqlite3_column_text(select_lm_keys, 0));
-			current_key_lenght = (unsigned int)strlen(current_key);
+			current_key_lenght = (uint32_t)strlen(current_key);
 		}
 
 		//strcpy(keys, current_key);
@@ -1359,7 +1359,7 @@ PRIVATE int lm2ntlm_gen_utf8_coalesc_le(unsigned int* nt_buffer, unsigned int ma
 
 		// New key
 		{
-			unsigned int index = 0;
+			uint32_t index = 0;
 			while (index < current_key_lenght && !isalpha(current_key[index]))
 				index++;
 
@@ -1399,7 +1399,7 @@ PRIVATE V128_WORD lm_keys[56];
 PRIVATE int num_iter_first;
 PRIVATE int max_iter_first;
 
-PRIVATE void CONVERT_CHAR_TO_LM_CHAR(unsigned int index)
+PRIVATE void CONVERT_CHAR_TO_LM_CHAR(uint32_t index)
 {
 	unsigned char char_to_convert = charset[current_key[index]];
 	V128_WORD all_bits_set = V128_ALL_ONES;
@@ -1431,11 +1431,11 @@ PRIVATE void next_iter_first()
 	// Next in the last 2 chars
 	memset(lm_keys + 8*(7-current_key_lenght), 0, 2*8*sizeof(V128_WORD));
 
-	for (unsigned int i = 0; i < V128_BIT_LENGHT; i++)
+	for (uint32_t i = 0; i < V128_BIT_LENGHT; i++)
 	{
 		int index = current_key_lenght-2;
 
-		for (unsigned int j = 8u*current_key_lenght-16u; j < 8u*current_key_lenght; j++)
+		for (uint32_t j = 8u*current_key_lenght-16u; j < 8u*current_key_lenght; j++)
 			if ( (charset[current_key[j/8u]] & (128u >> (j % 8u))) )
 				lm_keys[55u - j] = V128_OR(lm_keys[55u - j], _mask);
 
@@ -1453,7 +1453,7 @@ PRIVATE void next_iter_first()
 }
 PRIVATE void fast_lm_resume(int pmin_lenght, int pmax_lenght, char* param, const char* resume_arg, int format_index)
 {
-	unsigned int i;
+	uint32_t i;
 	int64_t pow_num;
 
 	charset_resume(pmin_lenght, pmax_lenght, param, resume_arg, format_index);
@@ -1502,7 +1502,7 @@ PRIVATE void fast_lm_resume(int pmin_lenght, int pmax_lenght, char* param, const
 	for(i = current_key_lenght; i <= max_lenght; i++, pow_num*=num_char_in_charset)
 		num_key_space += pow_num;
 }
-PRIVATE int fast_lm_generate(V128_WORD* keys, unsigned int max_number, int thread_id)
+PRIVATE int fast_lm_generate(V128_WORD* keys, uint32_t max_number, int thread_id)
 {
 	int result = 1;
 	uint32_t num_repeat = max_number / V128_BIT_LENGHT;
@@ -1510,7 +1510,7 @@ PRIVATE int fast_lm_generate(V128_WORD* keys, unsigned int max_number, int threa
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 	memcpy(current_save, current_key, current_key_lenght);
-	((unsigned int*)current_save)[7] = current_key_lenght;
+	((uint32_t*)current_save)[7] = current_key_lenght;
 
 	for(uint32_t i = 0; i < num_repeat; i++)
 	{
@@ -1551,16 +1551,16 @@ end:
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
 	return result;
 }
-PRIVATE int fast_lm_opencl_generate(unsigned int* lm_param, unsigned int max_number, int thread_id)
+PRIVATE int fast_lm_opencl_generate(uint32_t* lm_param, uint32_t max_number, int thread_id)
 {
 	int result = 1;
-	unsigned int i, j, pow, index = 0;
+	uint32_t i, j, pow, index = 0;
 	unsigned char* current_save = ((unsigned char*)thread_params) + 32 * thread_id;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
 	memcpy(current_save, current_key, current_key_lenght);
-	((unsigned int*)current_save)[7] = current_key_lenght;
+	((uint32_t*)current_save)[7] = current_key_lenght;
 
 	if(current_key_lenght > max_lenght)
 		result = 0;
@@ -1595,8 +1595,8 @@ PRIVATE int fast_lm_opencl_generate(unsigned int* lm_param, unsigned int max_num
 				if(num_iter_first > max_iter_first)// Next length
 				{
 					// Calculate how much we exceed
-					unsigned int pow = 1;
-					unsigned int exceed_served = 0;
+					uint32_t pow = 1;
+					uint32_t exceed_served = 0;
 					for(i = 0; i < current_key_lenght-2; i++, pow*=num_char_in_charset)
 						exceed_served += current_key[i]*pow;
 
@@ -1733,7 +1733,7 @@ PUBLIC void register_key_providers(int db_already_initialize)
 
 // Rules support
 void rules_resume(int pmin_lenght, int pmax_lenght, char* param, const char* resume_arg, int format_index);
-int rules_gen_common(unsigned int* nt_buffer, unsigned int max_number, int thread_id);
+int rules_gen_common(uint32_t* nt_buffer, uint32_t max_number, int thread_id);
 void rules_finish();
 void rules_get_description(const char* provider_param, char* description, int min_lenght, int max_lenght);
 
@@ -1756,7 +1756,7 @@ PUBLIC KeyProvider key_providers[] = {
 	{
 		"Phrases" , "Generate phrases combining words from a wordlist.", 4,
 		{{PROTOCOL_NTLM, sentence_gen_ntlm}, {PROTOCOL_PHRASES_OPENCL, sentence_gen_ocl}, {PROTOCOL_UTF8, sentence_gen_utf8}, {PROTOCOL_UTF8, sentence_gen_utf8}, {PROTOCOL_UTF8_COALESC_LE, sentence_gen_utf8_coalesc_le}},
-		sentence_save_resume_arg, sentence_resume, sentence_finish, sentence_get_description, 2, 4, TRUE, FALSE, MAX_KEY_LENGHT_SMALL*sizeof(unsigned int)
+		sentence_save_resume_arg, sentence_resume, sentence_finish, sentence_get_description, 2, 2, TRUE, FALSE, MAX_KEY_LENGHT_SMALL*sizeof(uint32_t)
 	},
 	{
 		"DB Info" , "Tries usernames and passwords found.", 5, 
@@ -1890,23 +1890,25 @@ PUBLIC cl_uint ocl_rule_simple_copy_utf8_le(char* source, char nt_buffer[16][16]
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Charset
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_gen_kernel_charset_2_common(char* source, unsigned int NUM_KEYS_OPENCL)
+PRIVATE void ocl_gen_kernel_charset_2_common(char* source, uint32_t NUM_KEYS_OPENCL)
 {
-	unsigned int i;
+	uint32_t i;
 	DivisionParams div_param = get_div_params(num_char_in_charset);
 
 	sprintf(source+strlen(source),	"#define GLOBAL_SIZE %uu\n"
 									"__constant uchar charset[]={", NUM_KEYS_OPENCL);
 	// Fill charset
 	for(i = 0; i < num_char_in_charset; i++)
-		sprintf(source+strlen(source), "%s%uU", i?",":"", (unsigned int)charset[i%num_char_in_charset]);
+		sprintf(source+strlen(source), "%s%uU", i?",":"", (uint32_t)charset[i%num_char_in_charset]);
 	strcat(source, "};\n");
 
 	// Define the kernel to process the keys from charset into a "fast-to-use" format
-	sprintf(source+strlen(source), "\n__kernel void process_key(__constant uchar* current_key,__global uint* restrict out_keys)"
+	sprintf(source+strlen(source), "\n__kernel void process_key(__constant uchar* current_key,__global uint* restrict out_keys,uint max_idx)"
 									"{"
 										// Global data
 										"uint idx=get_global_id(0);"
+										"if(idx>=max_idx)return;"
+
 										"uint max_number=idx;"
 										"uint key_lenght=current_key[0];"
 										"uint buffer=0;"
@@ -1941,10 +1943,10 @@ PRIVATE void ocl_charset_setup_proccessed_keys_params(OpenCL_Param* param, GPUDe
 	create_opencl_mem(param, GPU_TO_PROCESS_KEY	, CL_MEM_READ_ONLY, MAX_KEY_LENGHT_SMALL, NULL);
 
 	// Set OpenCL kernel params
-	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 0, sizeof(cl_mem), (void*) &param->mems[GPU_TO_PROCESS_KEY]);
-	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 1, sizeof(cl_mem), (void*) &param->mems[GPU_CURRENT_KEY]);
+	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 0, sizeof(cl_mem), &param->mems[GPU_TO_PROCESS_KEY]);
+	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 1, sizeof(cl_mem), &param->mems[GPU_CURRENT_KEY]);
 }
-PRIVATE size_t ocl_charset_process_buffer(unsigned int* buffer, int fill_result, OpenCL_Param* param, int* num_keys_filled)
+PRIVATE size_t ocl_charset_process_buffer(uint32_t* buffer, int fill_result, OpenCL_Param* param, int* num_keys_filled)
 {
 	size_t num_work_items;
 	unsigned char key_param[MAX_KEY_LENGHT_SMALL];
@@ -1959,6 +1961,7 @@ PRIVATE size_t ocl_charset_process_buffer(unsigned int* buffer, int fill_result,
 	// TODO: Check if there is some problem
 	pclEnqueueWriteBuffer(param->queue, param->mems[GPU_TO_PROCESS_KEY], CL_FALSE, 0, key_param[0]+1, key_param, 0, NULL, NULL);
 	// Process key
+	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 2, sizeof(cl_uint), num_keys_filled);
 	while (CL_INVALID_WORK_GROUP_SIZE == pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_PROCESS_KEY_INDEX], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
 	{
 		param->max_work_group_size /= 2;
@@ -1968,10 +1971,10 @@ PRIVATE size_t ocl_charset_process_buffer(unsigned int* buffer, int fill_result,
 
 	return num_work_items;
 }
-PRIVATE void ocl_charset_get_key(unsigned char* buffer, unsigned char* out_key, unsigned int key_index, size_t num_work_items)
+PRIVATE void ocl_charset_get_key(unsigned char* buffer, unsigned char* out_key, uint32_t key_index, size_t num_work_items)
 {
-	unsigned int max_number = key_index, i;
-	unsigned int key_lenght = ((unsigned int*)buffer)[8];
+	uint32_t max_number = key_index, i;
+	uint32_t key_lenght = ((uint32_t*)buffer)[8];
 	// Calculate final current_key with new algorithm
 	for(i = 0; i < key_lenght; i++)
 	{
@@ -1983,7 +1986,7 @@ PRIVATE void ocl_charset_get_key(unsigned char* buffer, unsigned char* out_key, 
 }
 PRIVATE size_t ocl_charset_get_buffer_size(OpenCL_Param* param)
 {
-	return (MAX_KEY_LENGHT_SMALL+2*sizeof(unsigned int));
+	return (MAX_KEY_LENGHT_SMALL+2*sizeof(uint32_t));
 }
 
 PUBLIC void ocl_charset_process_found(OpenCL_Param* param, cl_uint* num_found, int is_consecutive, unsigned char* buffer, cl_uint key_lenght)
@@ -2048,6 +2051,7 @@ PRIVATE size_t ocl_utf8_process_buffer(void* buffer, int fill_result, OpenCL_Par
 	// TODO: Check if there is some problem
 	pclEnqueueWriteBuffer(param->queue, param->mems[GPU_TO_PROCESS_KEY], CL_FALSE, 0, MAX_KEY_LENGHT_SMALL*num_work_items, buffer, 0, NULL, NULL);
 	// Process key
+	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 2, sizeof(cl_uint), num_keys_filled);
 	while (CL_INVALID_WORK_GROUP_SIZE == pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_PROCESS_KEY_INDEX], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
 	{
 		param->max_work_group_size /= 2;
@@ -2066,17 +2070,18 @@ PRIVATE void ocl_gen_kernel_UTF8_2_common(char* source, cl_uint NUM_KEYS_OPENCL)
 									"#define GLOBAL_SIZE %uu\n", NUM_KEYS_OPENCL);
 
 	// Define the kernel to process the keys from UTF8 into a "fast-to-use" format
-	sprintf(source+strlen(source), "\n__kernel void process_key(const __global uint* restrict keys,__global uint* restrict out_keys)"
+	sprintf(source+strlen(source), "\n__kernel void process_key(const __global uint* restrict keys,__global uint* restrict out_keys,uint max_idx)"
 									"{"
 										// Global data
 										"uint idx=get_global_id(0);"
+										"if(idx>=max_idx)return;"
 									
 										// Get first 4-char
-										"uint key_chars=keys[idx*8];"
+										"uint key_chars=keys[idx*8u];"
 										"uint key_index=0;"
 
 										// Cycle until end of string
-										"while(!haszero(key_chars))"
+										"while(!haszero(key_chars) && key_index<6u)"
 										"{"
 											"out_keys[mad_sat(key_index,GLOBAL_SIZE,idx)]=key_chars;"
 											"key_index++;"
@@ -2084,14 +2089,14 @@ PRIVATE void ocl_gen_kernel_UTF8_2_common(char* source, cl_uint NUM_KEYS_OPENCL)
 										"}"
 										// Manage the end of string
 										// TODO: Make this portable to big-endian
-										"uint size_part=0;"
-										"if((key_chars&0x00FF0000)==0)size_part=8;"
-										"if((key_chars&0x0000FF00)==0)size_part=16;"
-										"if((key_chars&0x000000FF)==0)size_part=24;"
+										"uint size_part=0u;"
+										"if((key_chars&0x00FF0000)==0)size_part=8u;"
+										"if((key_chars&0x0000FF00)==0)size_part=16u;"
+										"if((key_chars&0x000000FF)==0)size_part=24u;"
 
 										"out_keys[mad_sat(key_index,GLOBAL_SIZE,idx)]=(key_chars&(0x00FFFFFF>>size_part))+(0x80000000>>size_part);"
 										// Manage the length
-										"out_keys[7u*GLOBAL_SIZE+idx]=(key_index<<6)+(48-(size_part<<1));"
+										"out_keys[7u*GLOBAL_SIZE+idx]=(key_index<<6u)+(48u-(size_part<<1u));"
 									"}\n");
 }
 PRIVATE void ocl_utf8_setup_proccessed_keys_params(OpenCL_Param* param, GPUDevice* gpu)
@@ -2110,46 +2115,38 @@ PRIVATE void ocl_utf8_setup_proccessed_keys_params(OpenCL_Param* param, GPUDevic
 #define GET_WORD_POS(x)		(word_pos[(x)] & WORD_POS_MASK)
 #define GET_WORD_LEN(x)		(word_pos[(x)] >> 27)
 
-extern unsigned int* word_pos;
+extern uint32_t* word_pos;
 extern unsigned char* words;
-extern unsigned int num_words;
+extern uint32_t num_words;
 
 PRIVATE size_t ocl_phrases_get_buffer_size(OpenCL_Param* param)
 {
-	return (MAX_KEY_LENGHT_SMALL+2)*sizeof(unsigned int);
+	return (MAX_KEY_LENGHT_SMALL + 2)*sizeof(uint32_t);
 }
-PRIVATE size_t ocl_phrases_process_buffer(unsigned int* sentence, int fill_result, OpenCL_Param* param, int* num_keys_filled)
+PRIVATE size_t ocl_phrases_process_buffer(uint32_t* sentence, int fill_result, OpenCL_Param* param, int* num_keys_filled)
 {
-	size_t num_work_items;
-
 	*num_keys_filled = sentence[0];
-	num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(num_keys_filled[0], param->max_work_group_size);// Convert to multiple of work_group_size
-	num_work_items /= 2;
+	size_t num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(num_keys_filled[0], param->max_work_group_size);// Convert to multiple of work_group_size
 
 	// TODO: Check if there is some problem
 	pclEnqueueWriteBuffer(param->queue, param->mems[GPU_TO_PROCESS_KEY], CL_FALSE, 0, (sentence[1]+1)*sizeof(cl_uint), sentence+1, 0, NULL, NULL);
 	// Process key
+	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 4, sizeof(cl_uint), num_keys_filled);
 	while (CL_INVALID_WORK_GROUP_SIZE == pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_PROCESS_KEY_INDEX], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL))
 	{
 		param->max_work_group_size /= 2;
 		num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(num_keys_filled[0], param->max_work_group_size);// Convert to multiple of work_group_size
-		num_work_items /= 2;
 	}
 
-	return num_work_items*2;
+	return num_work_items;
 }
-PRIVATE void ocl_phrases_get_key(unsigned int* sentence, unsigned char* out_key, unsigned int key_index, size_t num_work_items)
+PRIVATE void ocl_phrases_get_key(cl_uint* sentence, unsigned char* out_key, cl_uint key_index, size_t num_work_items)
 {
-	unsigned int j, max_number = key_index;
-	unsigned int found_sentence[MAX_KEY_LENGHT_SMALL];
-	int key_lenght = 0, is_space = 0;
-	if(max_number >= num_work_items/2)
-	{
-		is_space = 1;
-		max_number -= (unsigned int)(num_work_items/2);
-	}
+	cl_uint max_number = key_index;
+	cl_uint found_sentence[MAX_KEY_LENGHT_SMALL];
+	int key_lenght = 0;
 	// Calculate final current_sentence with new algorithm
-	for(j = sentence[1] - 1; j < sentence[1]; j--)
+	for (cl_uint j = sentence[1] - 1; j < sentence[1]; j--)
 	{
 		max_number += sentence[2+j];
 		found_sentence[j] = max_number%num_words;
@@ -2157,39 +2154,39 @@ PRIVATE void ocl_phrases_get_key(unsigned int* sentence, unsigned char* out_key,
 	}
 				
 	// Create the sentence
-	for(j = 0; j < sentence[1]; j++)
+	for (cl_uint j = 0; j < sentence[1]; j++)
 	{
-		unsigned int word_pos_j = GET_WORD_POS(found_sentence[j]);
-		unsigned int len =	GET_WORD_LEN(found_sentence[j]);
-		int use_space = j ? is_space : 0;
+		cl_uint word_pos_j = GET_WORD_POS(found_sentence[j]);
+		cl_uint len = GET_WORD_LEN(found_sentence[j]);
 
-		if( (key_lenght+len+use_space) <= 27)
+		if((key_lenght+len) <= 27)
 		{
-			memcpy(out_key + key_lenght, " ", use_space);
-			memcpy(out_key + key_lenght + use_space, words + word_pos_j, len);
-			key_lenght += len + use_space;
+			memcpy(out_key + key_lenght, words + word_pos_j, len);
+			key_lenght += len;
 		}
 	}
 	out_key[key_lenght] = 0;
 }
-PRIVATE void ocl_gen_kernel_phrases_2_common(char* source, unsigned int NUM_KEYS_OPENCL)
+PRIVATE void ocl_gen_kernel_phrases_2_common(char* source, cl_uint NUM_KEYS_OPENCL)
 {
 	sprintf(source+strlen(source),	"#define num_words %uu\n"
 									"#define GLOBAL_SIZE %uu\n", num_words, NUM_KEYS_OPENCL);
 
 	char key_lenght[16];
 	// Define the kernel to process the keys from phrases into a "fast-to-use" format
-	sprintf(source + strlen(source), "\n__kernel void process_key(__constant uint* keys,__global uint* restrict out_keys, const __global uint* restrict words, const __global uint* restrict word_pos)"
+	sprintf(source + strlen(source), "\n__kernel void process_key(__constant uint* keys,__global uint* restrict out_keys, const __global uint* restrict words, const __global uint* restrict word_pos,uint max_idx)"
 									"{"
 									// Global data
 									"uint out_idx=get_global_id(0);"
+									"if(out_idx>=max_idx)return;"
+
 									"uint max_number=out_idx;"
 									"uint current_sentence[%u];"
 									"uint i;", max_lenght);
 
 	if (current_key_lenght == max_lenght)
 	{
-		for (unsigned int i = max_lenght - 1; i < max_lenght; i--)
+		for (cl_uint i = max_lenght - 1; i < max_lenght; i--)
 			sprintf(source + strlen(source),
 									"max_number+=keys[%uu];"
 									"current_sentence[%uu]=word_pos[max_number%%num_words];"
@@ -2213,7 +2210,7 @@ PRIVATE void ocl_gen_kernel_phrases_2_common(char* source, unsigned int NUM_KEYS
 
 	sprintf(source + strlen(source),// First word----------------------------------------
 									"uint word_pos_j=current_sentence[0];"
-									"uint len=word_pos_j>>27;"
+									"uint len=word_pos_j>>27u;"
 									"word_pos_j&=0x07ffffff;"
 
 									"uint total_len=len;"
@@ -2222,148 +2219,76 @@ PRIVATE void ocl_gen_kernel_phrases_2_common(char* source, unsigned int NUM_KEYS
 									// Body part of the string to copy
 									"for(i=0;i<len/4;i++)"
 									"{"
-										"uint qword_copy=words[word_pos_j+i];"
-										"out_keys[out_idx]=qword_copy;"
-										"out_keys[out_idx+get_global_size(0)]=qword_copy;"
+										"out_keys[out_idx]=words[word_pos_j+i];"
 										"out_idx+=GLOBAL_SIZE;"
 									"}"
 									// Last part
-									"len&=3;"
+									"len&=3u;"
 									"if(len)"
 									"{"
 										"buffer=words[word_pos_j+i];"
 										"chars_in_buffer=len;"
 									"}"
 									// end of first word---------------------------------------------------
-									"uint buffer_sp=buffer,total_len_sp=total_len,chars_in_buffer_sp=chars_in_buffer,out_idx_sp=out_idx+get_global_size(0);"
-
 									// Common copy
 									"for(max_number=1;max_number<%s;max_number++)"
 									"{"
 										"word_pos_j=current_sentence[max_number];"
 
-										"len=word_pos_j>>27;"
+										"len=word_pos_j>>27u;"
 										"word_pos_j&=0x07ffffff;"
 
-										"if((total_len_sp+len)<27)"
+										"if((total_len+len)<=27u)"
 										"{"
-											// Put space
-											"total_len_sp++;"
-											"buffer_sp|=' '<<(8*chars_in_buffer_sp);"
-											"chars_in_buffer_sp++;"
-											"if(chars_in_buffer_sp>=4)"
-											"{"
-												"out_keys[out_idx_sp]=buffer_sp;"
-												"out_idx_sp+=GLOBAL_SIZE;"
-												"chars_in_buffer_sp=0;"
-												"buffer_sp=0;"
-											"}"
-
 											// Body part of the string to copy
 											"for(i=0;i<len/4;i++)"
 											"{"
 												"uint qword_copy=words[word_pos_j+i];"
-												"buffer|=qword_copy<<(8*chars_in_buffer);"
-												"buffer_sp|=qword_copy<<(8*chars_in_buffer_sp);"
+												"buffer|=qword_copy<<(8u*chars_in_buffer);"
 												"out_keys[out_idx]=buffer;"
-												"out_keys[out_idx_sp]=buffer_sp;"
 												"out_idx+=GLOBAL_SIZE;"
-												"out_idx_sp+=GLOBAL_SIZE;"
-												"buffer=chars_in_buffer?(qword_copy>>(8*(4-chars_in_buffer))):0;"
-												"buffer_sp=chars_in_buffer_sp?(qword_copy>>(8*(4-chars_in_buffer_sp))):0;"
+												"buffer=chars_in_buffer?(qword_copy>>(8u*(4u-chars_in_buffer))):0;"
 											"}"
 											"total_len+=len;"
-											"total_len_sp+=len;"
 											// Last part of the string to copy
 											"len&=3;"
 											"if(len)"
 											"{"
 												"uint qword_copy=words[word_pos_j+i];"
-												"buffer|=qword_copy<<(8*chars_in_buffer);"
-												"buffer_sp|=qword_copy<<(8*chars_in_buffer_sp);"
+												"buffer|=qword_copy<<(8u*chars_in_buffer);"
 												"chars_in_buffer+=len;"
-												"chars_in_buffer_sp+=len;"
-												"if(chars_in_buffer>=4)"
+												"if(chars_in_buffer>=4u)"
 												"{"
 													"out_keys[out_idx]=buffer;"
 													"out_idx+=GLOBAL_SIZE;"
-													"chars_in_buffer-=4;"
-													"buffer=chars_in_buffer?(qword_copy>>(8*(len-chars_in_buffer))):0;"
-												"}"
-												"if(chars_in_buffer_sp>=4)"
-												"{"
-													"out_keys[out_idx_sp]=buffer_sp;"
-													"out_idx_sp+=GLOBAL_SIZE;"
-													"chars_in_buffer_sp-=4;"
-													"buffer_sp=chars_in_buffer_sp?(qword_copy>>(8*(len-chars_in_buffer_sp))):0;"
+													"chars_in_buffer-=4u;"
+													"buffer=chars_in_buffer?(qword_copy>>(8u*(len-chars_in_buffer))):0;"
 												"}"
 											"}"
-										"}"
-										"else break;"
+										"} else break;"
 									"}"
-									// Here only is the normal (without spaces)
-									"for(;max_number<%s;max_number++)"
-									"{"
-										"if((total_len+len)<=27)"
-										"{"
-											"for(i=0;i<len/4;i++)"
-											"{"
-												"uint qword_copy=words[word_pos_j+i];"
-												"buffer|=qword_copy<<(8*chars_in_buffer);"
-												"out_keys[out_idx]=buffer;"
-												"out_idx+=GLOBAL_SIZE;"
-												"buffer=chars_in_buffer?(qword_copy>>(8*(4-chars_in_buffer))):0;"
-											"}"
-											"total_len+=len;"
-											"len&=3;"
-											"if(len)"
-											"{"
-												"uint qword_copy=words[word_pos_j+i];"
-												"buffer|=qword_copy<<(8*chars_in_buffer);"
-												"chars_in_buffer+=len;"
-												"if(chars_in_buffer>=4)"
-												"{"
-													"out_keys[out_idx]=buffer;"
-													"out_idx+=GLOBAL_SIZE;"
-													"chars_in_buffer-=4;"
-													"buffer=chars_in_buffer?(qword_copy>>(8*(len-chars_in_buffer))):0;"
-												"}"
-											"}"
 
-											"if((max_number+1)<%s)"
-											"{"
-												"word_pos_j=current_sentence[max_number+1];"
-												"len=word_pos_j>>27;"
-												"word_pos_j&=0x07ffffff;"
-											"}"
-										"}"
-										"else break;"
-									"}"
 									// Put padding
-									"buffer|=0x80<<(8*chars_in_buffer);"
-									"buffer_sp|=0x80<<(8*chars_in_buffer_sp);"
+									"buffer|=0x80u<<(8u*chars_in_buffer);"
 									"out_keys[out_idx]=buffer;"
-									"out_keys[out_idx_sp]=buffer_sp;"
 									// Put length
-									"out_idx=get_global_id(0);"
-									"out_keys[7u*GLOBAL_SIZE+out_idx]=total_len<<4;"
-									"out_keys[7u*GLOBAL_SIZE+out_idx+get_global_size(0)]=total_len_sp<<4;"
-								"}\n", key_lenght, key_lenght, key_lenght);
+									"out_keys[7u*GLOBAL_SIZE+get_global_id(0)]=total_len<<4u;"
+								"}\n", key_lenght);
 }
 PRIVATE void ocl_phrases_setup_proccessed_keys_params(OpenCL_Param* param, GPUDevice* gpu)
 {
 	// The size is: (position of last element) + (length of last element) + a plus to ensure correct read by uint
-	unsigned int size_words = GET_WORD_POS(num_words-1) + GET_WORD_LEN(num_words-1) + 4;
+	cl_uint size_words = GET_WORD_POS(num_words - 1) + GET_WORD_LEN(num_words - 1) + 4;
 
 	// Create words aligned to 4 bytes
-	unsigned int size_new_word = size_words + 3 * num_words;
-	unsigned char* new_words   = (unsigned char*)malloc(size_new_word);
-	unsigned int* new_word_pos = (unsigned int*)malloc(num_words*sizeof(cl_uint));
-	unsigned int new_pos = 0;
+	cl_uint size_new_word = size_words + 3 * num_words;
+	unsigned char* new_words = (unsigned char*)malloc(size_new_word);
+	cl_uint* new_word_pos = (cl_uint*)malloc(num_words*sizeof(cl_uint));
+	cl_uint new_pos = 0;
 	memset(new_words, 0, size_new_word);
-	for (unsigned int i = 0; i < num_words; i++)
+	for (cl_uint i = 0; i < num_words; i++)
 	{
-		unsigned int len = GET_WORD_LEN(i);
+		cl_uint len = GET_WORD_LEN(i);
 		memcpy(new_words+new_pos, words + GET_WORD_POS(i), len);
 		new_word_pos[i] = new_pos/4 + (len<<27);
 		new_pos += ((len+3)/4)*4;
@@ -2391,62 +2316,68 @@ PRIVATE void ocl_phrases_setup_proccessed_keys_params(OpenCL_Param* param, GPUDe
 	create_opencl_mem(param, GPU_TO_PROCESS_KEY, CL_MEM_READ_ONLY, (MAX_KEY_LENGHT_SMALL+1)*sizeof(cl_uint), NULL);
 
 	// Set OpenCL kernel params
-	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 0, sizeof(cl_mem), (void*) &param->mems[GPU_TO_PROCESS_KEY]);
-	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 1, sizeof(cl_mem), (void*) &param->mems[GPU_CURRENT_KEY]);
-	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 2, sizeof(cl_mem), (void*) &param->mems[GPU_WORDS]);
-	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 3, sizeof(cl_mem), (void*) &param->mems[GPU_WORDS_POS]);
+	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 0, sizeof(cl_mem), &param->mems[GPU_TO_PROCESS_KEY]);
+	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 1, sizeof(cl_mem), &param->mems[GPU_CURRENT_KEY]);
+	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 2, sizeof(cl_mem), &param->mems[GPU_WORDS]);
+	pclSetKernelArg(param->kernels[KERNEL_PROCESS_KEY_INDEX], 3, sizeof(cl_mem), &param->mems[GPU_WORDS_POS]);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Rules
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PUBLIC void ocl_gen_kernel_common_2_ordered(char* source, unsigned int NUM_KEYS_OPENCL, unsigned int max_key_lenght)
+PUBLIC void ocl_gen_kernel_common_2_ordered(char* source, cl_uint in_NUM_KEYS_OPENCL, cl_uint out_NUM_KEYS_OPENCL, cl_uint max_key_lenght)
 {
-	unsigned int i, gpu_key_buffer_lenght;
+	cl_uint i, gpu_key_buffer_lenght;
 
-	sprintf(source + strlen(source),"#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable\n"
+	sprintf(source + strlen(source),"\n#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable\n"
 									"#pragma OPENCL EXTENSION cl_khr_local_int32_base_atomics : enable\n"
 									"__constant uint pos_by_lenght[]={");
 
 	for (i = 0, gpu_key_buffer_lenght = 32; i <= max_key_lenght; i++)
 	{
 		sprintf(source + strlen(source), "%s%uu", i ? "," : "", gpu_key_buffer_lenght);
-		gpu_key_buffer_lenght += (i + 3) / 4 * NUM_KEYS_OPENCL;
+		gpu_key_buffer_lenght += (i + 3) / 4 * out_NUM_KEYS_OPENCL;
 	}
 	strcat(source, "};\n");
 
 	// Define the kernel to process the keys from common into a format ordered by lenght
-	sprintf(source + strlen(source), "\n__kernel void common2ordered(__global uint* restrict keys,__global uint* restrict out_keys)"
+	sprintf(source + strlen(source), "\n__kernel void common2ordered(__global uint* restrict keys,__global uint* restrict out_keys,uint max_idx)"
 		"{"
 			// Global data
 			"uint idx=get_global_id(0);"
-			"uint lenght=min(27u,(uint)(keys[%uu+idx]>>4u));"
+			"uint len=0,pos_out=0;"
+
+			// Only load len if valid key
+			"if(idx<max_idx)"
+				"len=keys[%uu+idx]>>4u;"
 			// Needed by local atomics
 			"uint lidx=get_local_id(0);"
-			"__local uint lpos_by_lenght[28];"
+			"__local uint lpos_by_lenght[%u];"
 			// Initialize
-			"if(lidx<28)"
+			"if(lidx<%uu)"
 				"lpos_by_lenght[lidx]=0;"
 			"barrier(CLK_LOCAL_MEM_FENCE);"
-			// Increment count
-			"uint pos_out=atomic_inc(lpos_by_lenght+lenght);"
+			// Increment count if valid
+			"if(idx<max_idx && len<%uu)"
+				"pos_out=atomic_inc(lpos_by_lenght+len);"
 			"barrier(CLK_LOCAL_MEM_FENCE);"
 			// Update global memory
-			"if(lidx<28 && lpos_by_lenght[lidx])"
+			"if(lidx<%uu && lpos_by_lenght[lidx])"
 				"lpos_by_lenght[lidx]=atomic_add(out_keys+lidx,lpos_by_lenght[lidx])+pos_by_lenght[lidx];"
 			"barrier(CLK_LOCAL_MEM_FENCE);"
-			// Find position
-			"pos_out+=lpos_by_lenght[lenght];"
+			// Find position if valid
+			"if(idx>=max_idx || len>=%uu)return;"
+			"pos_out+=lpos_by_lenght[len];"
 			// All __local code is to improves performance of below line
-			//"uint pos_out=atomic_inc(out_keys+lenght)+pos_by_lenght[lenght];"
+			//"uint pos_out=atomic_inc(out_keys+len)+pos_by_lenght[len];"
 
 			// Copy
-			"lenght=(lenght+3)/4;"
-			"for(uint pos=0;pos<lenght;pos++)"
+			"len=(len+3u)/4u;"
+			"for(uint pos=0;pos<len;pos++)"
 				"out_keys[mad_sat(pos,%uu,pos_out)]=keys[mad_sat(pos,%uu,idx)];"
-		"}\n", 7u*NUM_KEYS_OPENCL, NUM_KEYS_OPENCL, NUM_KEYS_OPENCL);
+		"}\n", 7u*in_NUM_KEYS_OPENCL, max_key_lenght+1, max_key_lenght+1, max_key_lenght+1, max_key_lenght+1, max_key_lenght+1, out_NUM_KEYS_OPENCL, in_NUM_KEYS_OPENCL);
 }
-PUBLIC void ocl_rules_process_found(OpenCL_Param* param, cl_uint* num_found, cl_uint* gpu_num_keys_by_len, cl_uint* gpu_pos_ordered_by_len)
+PUBLIC void ocl_rules_process_found(OpenCL_Param* param, cl_uint* num_found, cl_uint* gpu_num_keys_by_len, cl_uint* gpu_pos_ordered_by_len, cl_uint NUM_KEYS_OPENCL)
 {
 	// Keys found
 	unsigned char normal_key[MAX_KEY_LENGHT_SMALL];
@@ -2462,11 +2393,11 @@ PUBLIC void ocl_rules_process_found(OpenCL_Param* param, cl_uint* num_found, cl_
 		cl_uint rule_index = param->output[3 * i + 2] >> 22;
 		cl_uint lenght = rule_index >> 5;
 		rule_index &= 0x1F;
-		if (rule_index < (cl_uint)num_rules && hash_id < num_passwords_loaded && !is_found[hash_id] && key_index < gpu_num_keys_by_len[lenght])
+		if (rule_index < (cl_uint)num_rules && hash_id < num_passwords_loaded && !((is_foundBit[hash_id >> 5] >> (hash_id & 31)) & 1) && key_index < gpu_num_keys_by_len[lenght])
 		{
 			// Get the cleartext of the original key
 			for (cl_uint j = 0; j < (lenght + 3) / 4; j++)
-				pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_FALSE, 4 * (gpu_pos_ordered_by_len[lenght] + key_index + j*param->NUM_KEYS_OPENCL), sizeof(cl_uint), normal_key + 4 * j, 0, NULL, NULL);
+				pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_FALSE, 4 * (gpu_pos_ordered_by_len[lenght] + key_index + j*NUM_KEYS_OPENCL), sizeof(cl_uint), normal_key + 4 * j, 0, NULL, NULL);
 
 			pclFinish(param->queue);
 			normal_key[lenght] = 0;
@@ -2486,5 +2417,5 @@ PUBLIC oclKernel2Common kernels2common[] = {
 	{PROTOCOL_PHRASES_OPENCL		, ocl_gen_kernel_phrases_2_common, ocl_phrases_setup_proccessed_keys_params , ocl_phrases_process_buffer, ocl_phrases_get_key, ocl_phrases_get_buffer_size},
 	{PROTOCOL_UTF8					, ocl_gen_kernel_UTF8_2_common	 , ocl_utf8_setup_proccessed_keys_params	, ocl_utf8_process_buffer	, ocl_utf8_get_key	 , ocl_utf8_get_buffer_size}
 };
-PUBLIC unsigned int num_kernels2common = LENGHT(kernels2common);
+PUBLIC uint32_t num_kernels2common = LENGHT(kernels2common);
 #endif

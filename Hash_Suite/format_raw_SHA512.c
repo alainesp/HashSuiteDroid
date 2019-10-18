@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2015-2018 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
@@ -18,13 +18,13 @@
 #define BINARY_SIZE			64
 #define NTLM_MAX_KEY_LENGHT	27
 
-#undef rotate
-#define rotate rotate64
+#undef ROTATE
+#define ROTATE ROTATE64
 
-#define R_E(x) (rotate(x,50) ^ rotate(x,46) ^ rotate(x,23))
-#define R_A(x) (rotate(x,36) ^ rotate(x,30) ^ rotate(x,25))
-#define R0(x)  (rotate(x,63) ^ rotate(x,56) ^ ((x)>>7))
-#define R1(x)  (rotate(x,45) ^ rotate(x,3 ) ^ ((x)>>6))
+#define R_E(x) (ROTATE(x,50) ^ ROTATE(x,46) ^ ROTATE(x,23))
+#define R_A(x) (ROTATE(x,36) ^ ROTATE(x,30) ^ ROTATE(x,25))
+#define R0(x)  (ROTATE(x,63) ^ ROTATE(x,56) ^ ((x)>>7))
+#define R1(x)  (ROTATE(x,45) ^ ROTATE(x,3 ) ^ ((x)>>6))
 
 PRIVATE int is_valid(char* user_name, char* sha512, char* unused, char* unused1)
 {
@@ -39,25 +39,29 @@ PRIVATE int is_valid(char* user_name, char* sha512, char* unused, char* unused1)
 	return FALSE;
 }
 
-PRIVATE void add_hash_from_line(ImportParam* param, char* user_name, char* sha512, char* unused, char* unused1, sqlite3_int64 tag_id)
+PRIVATE sqlite3_int64 add_hash_from_line(ImportParam* param, char* user_name, char* sha512, char* unused, char* unused1)
 {
 	if (user_name)
 	{
 		char* hash = sha512 ? sha512 : user_name;
-		char* user = sha512 ? user_name : "user";
+		char* user = sha512 ? user_name : NULL;
 
 		if (valid_hex_string(hash, BINARY_SIZE*2))
-			insert_hash_account(param, user, _strupr(hash), SHA512_INDEX, tag_id);
+			return insert_hash_account1(param, user, _strupr(hash), SHA512_INDEX);
 
 		if (!memcmp(hash, "$SHA512$", 8) && valid_hex_string(hash+8, BINARY_SIZE*2))
-			insert_hash_account(param, user, _strupr(hash+8), SHA512_INDEX, tag_id);
+			return insert_hash_account1(param, user, _strupr(hash+8), SHA512_INDEX);
 	}
+
+	return -1;
 }
-PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, void* salt)
+#define VALUE_MAP_INDEX0 0
+#define VALUE_MAP_INDEX1 1
+PRIVATE uint32_t get_binary(const unsigned char* ciphertext, void* binary, void* salt)
 {
 	uint64_t* out = (uint64_t*)binary;
 
-	for (unsigned int i = 0; i < 8; i++)
+	for (uint32_t i = 0; i < 8; i++)
 	{
 		uint64_t temp = ((uint64_t)hex_to_num[ciphertext[i * 16 + 0]]) << 60;
 		temp |= ((uint64_t)hex_to_num[ciphertext[i * 16 + 1]]) << 56;
@@ -117,7 +121,41 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	// A += E;
 	out[0] -= out[4];
 
-	return (unsigned int)(out[0] & UINT_MAX);
+	return (uint32_t)(out[0] & UINT_MAX);
+}
+PRIVATE void binary2hex(const void* binary, const void* salt, unsigned char* ciphertext)
+{
+	uint64_t bin[BINARY_SIZE / sizeof(uint64_t)];
+	memcpy(bin, binary, BINARY_SIZE);
+
+	// A += E;
+	bin[0] += bin[4];
+	// F += R_A(G)
+	uint64_t G = bin[6] - bin[2];
+	bin[5] += R_A(G);
+	// H += D;                        E += R_A(F) + ((F & G) | (H & (F | G)));
+	uint64_t H = bin[7] - bin[3]; bin[4] += R_A(bin[5]) + ((bin[5] & G) | (H & (bin[5] | G)));
+	// G += C;                         D += R_A(E) + ((E & F) | (G & (E | F)));
+	bin[3] += R_A(bin[4]) + ((bin[4] & bin[5]) | (G & (bin[4] | bin[5])));
+	// C += R_A(D) + ((D & E) | (F & (D | E)));
+	bin[2] += R_A(bin[3]) + ((bin[3] & bin[4]) | (bin[5] & (bin[3] | bin[4])));
+	//B += R_A(C) + ((C & D) | (E & (C | D)));                                   F += B;            B    +=   R_E(G)    + 0xBEF9A3F7
+	bin[1] += R_E(bin[6]) + 0x5FCB6FAB3AD6FAECULL; bin[5] += bin[1]; bin[1] += R_A(bin[2]) + ((bin[2] & bin[3]) | (bin[4] & (bin[2] | bin[3])));
+	//A += R_A(B) + ((B & C) | (D & (B | C)));										E += A;			A += R_E(F) + (H ^ (F & (G ^ H))) + 0xC67178F2;
+	bin[0] += R_E(bin[5]) + (bin[7] ^ (bin[5] & (bin[6] ^ bin[7]))) + 0x6C44198C4A475817ULL; bin[4] += bin[0]; bin[0] += R_A(bin[1]) + ((bin[1] & bin[2]) | (bin[3] & (bin[1] | bin[2])));
+
+	// Reverse
+	bin[0] = ROTATE(bin[0] + INIT_A, 32);
+	bin[1] = ROTATE(bin[1] + INIT_B, 32);
+	bin[2] = ROTATE(bin[2] + INIT_C, 32);
+	bin[3] = ROTATE(bin[3] + INIT_D, 32);
+	bin[4] = ROTATE(bin[4] + INIT_E, 32);
+	bin[5] = ROTATE(bin[5] + INIT_F, 32);
+	bin[6] = ROTATE(bin[6] + INIT_G, 32);
+	bin[7] = ROTATE(bin[7] + INIT_H, 32);
+
+
+	binary_to_hex((const uint32_t*)bin, ciphertext, BINARY_SIZE / sizeof(uint32_t), FALSE);
 }
 
 #ifdef HS_ARM
@@ -214,25 +252,65 @@ PRIVATE HS_ALIGN(16) uint64_t K64[] = {
 	INIT_B, INIT_B
 };
 
-#ifdef ANDROID
-	typedef void crypt_kernel_asm_sha512_func(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table, void* sha512_consts);
+#ifdef __ANDROID__
+	typedef void crypt_kernel_asm_sha512_func(uint32_t* nt_buffer, void* sha512_consts);
 #else
 	#define crypt_kernel_asm_sha512_func crypt_kernel_asm_func
 #endif
 
-PRIVATE void crypt_utf8_coalesc_protocol_body(CryptParam* param, crypt_kernel_asm_sha512_func* crypt_kernel_asm)
+PRIVATE uint32_t compare_elem(uint32_t i, uint32_t cbg_table_pos, uint64_t* unpacked_W)
 {
-	uint64_t* nt_buffer = (uint64_t*)_aligned_malloc((4+16+6) * sizeof(uint64_t) * NT_NUM_KEYS, 32);
+	if (cbg_table_pos == NO_ELEM) return FALSE;
 
-	uint64_t* unpacked_W  = nt_buffer   + 4  * NT_NUM_KEYS;
-	uint64_t* unpacked_as = unpacked_W  + 4  * NT_NUM_KEYS;
-	uint64_t* unpacked_bs = unpacked_W  + 6  * NT_NUM_KEYS;
-	uint64_t* unpacked_cs = unpacked_W  + 16 * NT_NUM_KEYS;
+	uint64_t* bin = ((uint64_t*)binary_values) + cbg_table_pos * 8;
+
+	uint64_t* unpacked_as = unpacked_W + 4 * NT_NUM_KEYS;
+	uint64_t* unpacked_bs = unpacked_W + 6 * NT_NUM_KEYS;
+	uint64_t* unpacked_cs = unpacked_W + 16 * NT_NUM_KEYS;
 	uint64_t* unpacked_ds = unpacked_cs + NT_NUM_KEYS;
 	uint64_t* unpacked_es = unpacked_ds + NT_NUM_KEYS;
 	uint64_t* unpacked_fs = unpacked_es + NT_NUM_KEYS;
 	uint64_t* unpacked_gs = unpacked_fs + NT_NUM_KEYS;
 	uint64_t* unpacked_hs = unpacked_gs + NT_NUM_KEYS;
+
+	uint64_t aa = unpacked_as[i], bb, cc, dd, ee, ff, gg, hh, W10, W12, W14;
+	uint64_t* W = unpacked_W + i;
+
+	if (aa != bin[0]) return FALSE;
+	// W-> 0,1,2 ,4, 6
+	aa -= W[0  * NT_NUM_KEYS];
+	W10 = W[10 * NT_NUM_KEYS] + R1(W[8 * NT_NUM_KEYS])+ W[3 * NT_NUM_KEYS] + R0(W[11 * NT_NUM_KEYS]);
+	W12 = W[12 * NT_NUM_KEYS] + R1(W10)               + W[5 * NT_NUM_KEYS] + R0(W[13 * NT_NUM_KEYS]);
+	W14 = W[14 * NT_NUM_KEYS] + R1(W12)               + W[7 * NT_NUM_KEYS] + R0(W[15 * NT_NUM_KEYS]);
+
+	bb = unpacked_bs[i];
+	cc = unpacked_cs[i];
+	dd = unpacked_ds[i];
+	ee = unpacked_es[i];
+	ff = unpacked_fs[i];
+	gg = unpacked_gs[i];
+	hh = unpacked_hs[i];
+
+	hh += R_E(ee) + (gg ^ (ee & (ff ^ gg))) + 0x28DB77F523047D84ULL + W[8 * NT_NUM_KEYS]; dd += hh; hh += R_A(aa) + ((aa & bb) | (cc & (aa | bb)));
+	gg += R_E(dd) + (ff ^ (dd & (ee ^ ff))) + 0x32CAAB7B40C72493ULL + W[9 * NT_NUM_KEYS]; cc += gg; gg += R_A(hh) + ((hh & aa) | (bb & (hh | aa)));
+	ff += R_E(cc) + (ee ^ (cc & (dd ^ ee))) + 0x3C9EBE0A15C9BEBCULL + W10               ; bb += ff; ff +=           ((gg & hh) | (aa & (gg | hh)));
+	ee += R_E(bb) + (dd ^ (bb & (cc ^ dd))) + 0x431D67C49C100D4CULL + W[2 * NT_NUM_KEYS]; aa += ee;
+	dd += R_E(aa) + (cc ^ (aa & (bb ^ cc))) + 0x4CC5D4BECB3E42B6ULL + W12               ; hh += dd;
+	cc += R_E(hh) + (bb ^ (hh & (aa ^ bb))) + 0x597F299CFC657E2AULL + W[1 * NT_NUM_KEYS]; gg += cc;
+	bb +=           (aa ^ (gg & (hh ^ aa)))                         + W14 ;
+
+	if (bb != bin[1] || cc != bin[2] || dd != bin[3] || ee != bin[4] || ff != bin[5] || gg != bin[6] || hh != bin[7])
+		return FALSE;
+
+	return TRUE;
+}
+
+PRIVATE void crypt_utf8_coalesc_protocol_body(CryptParam* param, crypt_kernel_asm_sha512_func* crypt_kernel_asm)
+{
+	uint64_t* nt_buffer = (uint64_t*)_aligned_malloc((4+16+6) * sizeof(uint64_t) * NT_NUM_KEYS, 64);
+
+	uint64_t* unpacked_W  = nt_buffer   + 4  * NT_NUM_KEYS;
+	uint64_t* unpacked_as = unpacked_W  + 4  * NT_NUM_KEYS;
 
 	unsigned char key[MAX_KEY_LENGHT_SMALL];
 
@@ -241,59 +319,43 @@ PRIVATE void crypt_utf8_coalesc_protocol_body(CryptParam* param, crypt_kernel_as
 
 	while (continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
 	{
-#ifdef ANDROID
-		crypt_kernel_asm((unsigned int*)nt_buffer, bit_table, size_bit_table, K64);
+#ifdef __ANDROID__
+		crypt_kernel_asm((uint32_t*)nt_buffer, K64);
 #else
-		crypt_kernel_asm((unsigned int*)nt_buffer, bit_table, size_bit_table);
+		crypt_kernel_asm((uint32_t*)nt_buffer);
 #endif
 
 		for (uint32_t i = 0; i < NT_NUM_KEYS; i++)
 		{
-			// Search for a match
-			unsigned int val = unpacked_as[i] & size_bit_table;
-			val = (bit_table[val >> 5] >> (val & 31)) & 1;
+			uint32_t up0 = (uint32_t)(unpacked_as[i]);
+			uint32_t up1 = (uint32_t)(unpacked_as[i] >> 32);
 
-			if (val)
+			uint32_t pos = up0 & cbg_mask;
+			uint_fast16_t data = cbg_filter[pos];
+			if (((data ^ up1) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], unpacked_W))
+				password_was_found(cbg_table[pos], utf8_coalesc2utf8_key((uint32_t*)nt_buffer, key, NT_NUM_KEYS, i));// Total match
+
+			// 2nd pos
+			if (data & 0b110)
 			{
-				uint32_t indx = table[unpacked_as[i] & size_table];
-				// Partial match
-				while (indx != NO_ELEM)
+				pos += data & 0b1 ? -1 : 1;
+				uint_fast16_t hash = cbg_filter[pos];
+				if (((hash ^ up1) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], unpacked_W))
+					password_was_found(cbg_table[pos], utf8_coalesc2utf8_key((uint32_t*)nt_buffer, key, NT_NUM_KEYS, i));// Total match
+
+				// Unluky bucket
+				if (data & 0b10)
 				{
-					uint64_t aa = unpacked_as[i], bb, cc, dd, ee, ff, gg, hh, W10, W12, W14;
-					uint64_t* bin = ((uint64_t*)binary_values) + indx * 8;
-					uint64_t* W = unpacked_W + i;
+					pos = up1 & cbg_mask;
+					data = cbg_filter[pos];
+					if (((data ^ up0) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], unpacked_W))
+						password_was_found(cbg_table[pos], utf8_coalesc2utf8_key((uint32_t*)nt_buffer, key, NT_NUM_KEYS, i));// Total match
 
-					if (aa != bin[0]) goto next_iteration;
-					// W-> 0,1,2 ,4, 6
-					aa -= W[0  * NT_NUM_KEYS];
-					W10 = W[10 * NT_NUM_KEYS] + R1(W[8 * NT_NUM_KEYS])+ W[3 * NT_NUM_KEYS] + R0(W[11 * NT_NUM_KEYS]);
-					W12 = W[12 * NT_NUM_KEYS] + R1(W10)               + W[5 * NT_NUM_KEYS] + R0(W[13 * NT_NUM_KEYS]);
-					W14 = W[14 * NT_NUM_KEYS] + R1(W12)               + W[7 * NT_NUM_KEYS] + R0(W[15 * NT_NUM_KEYS]);
-
-					bb = unpacked_bs[i];
-					cc = unpacked_cs[i];
-					dd = unpacked_ds[i];
-					ee = unpacked_es[i];
-					ff = unpacked_fs[i];
-					gg = unpacked_gs[i];
-					hh = unpacked_hs[i];
-
-					hh += R_E(ee) + (gg ^ (ee & (ff ^ gg))) + 0x28DB77F523047D84ULL + W[8 * NT_NUM_KEYS]; dd += hh; hh += R_A(aa) + ((aa & bb) | (cc & (aa | bb)));
-					gg += R_E(dd) + (ff ^ (dd & (ee ^ ff))) + 0x32CAAB7B40C72493ULL + W[9 * NT_NUM_KEYS]; cc += gg; gg += R_A(hh) + ((hh & aa) | (bb & (hh | aa)));
-					ff += R_E(cc) + (ee ^ (cc & (dd ^ ee))) + 0x3C9EBE0A15C9BEBCULL + W10               ; bb += ff; ff +=           ((gg & hh) | (aa & (gg | hh)));
-					ee += R_E(bb) + (dd ^ (bb & (cc ^ dd))) + 0x431D67C49C100D4CULL + W[2 * NT_NUM_KEYS]; aa += ee;
-					dd += R_E(aa) + (cc ^ (aa & (bb ^ cc))) + 0x4CC5D4BECB3E42B6ULL + W12               ; hh += dd;
-					cc += R_E(hh) + (bb ^ (hh & (aa ^ bb))) + 0x597F299CFC657E2AULL + W[1 * NT_NUM_KEYS]; gg += cc;
-					bb +=           (aa ^ (gg & (hh ^ aa)))                         + W14 ;
-
-					if (bb != bin[1] || cc != bin[2] || dd != bin[3] || ee != bin[4] || ff != bin[5] || gg != bin[6] || hh != bin[7])
-						goto next_iteration;
-
-					// Total match
-					password_was_found(indx, utf8_coalesc2utf8_key((unsigned int*)nt_buffer, key, NT_NUM_KEYS, i));
-
-				next_iteration:
-					indx = same_hash_next[indx];
+					// 2nd pos
+					pos += data & 0b1 ? -1 : 1;
+					hash = cbg_filter[pos];
+					if (((hash ^ up0) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], unpacked_W))
+						password_was_found(cbg_table[pos], utf8_coalesc2utf8_key((uint32_t*)nt_buffer, key, NT_NUM_KEYS, i));// Total match
 				}
 			}
 		}
@@ -309,10 +371,10 @@ PRIVATE void crypt_utf8_coalesc_protocol_body(CryptParam* param, crypt_kernel_as
 // C code
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifndef _M_X64
-#ifdef ANDROID
-PRIVATE void crypt_kernel_c_code(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table, void* sha512_consts)
+#ifdef __ANDROID__
+PRIVATE void crypt_kernel_c_code(uint32_t* nt_buffer, void* sha512_consts)
 #else
-PRIVATE void crypt_kernel_c_code(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table)
+PRIVATE void crypt_kernel_c_code(uint32_t* nt_buffer)
 #endif
 {
 	uint64_t A, B, C, D, E, F, G, H;
@@ -441,7 +503,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_c_code(CryptParam* param)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_ARM
 
-void crypt_sha512_neon_kernel_asm(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table, void* sha512_consts);
+void crypt_sha512_neon_kernel_asm(uint32_t* nt_buffer, void* sha512_consts);
 PRIVATE void crypt_utf8_coalesc_protocol_neon(CryptParam* param)
 {
 	crypt_utf8_coalesc_protocol_body(param, crypt_sha512_neon_kernel_asm);
@@ -466,7 +528,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_neon(CryptParam* param)
 #define R0(x)  SSE2_3XOR(SSE2_ROTATE64(x,63), SSE2_ROTATE64(x,56), SSE2_SR64(x,7))
 #define R1(x)  SSE2_3XOR(SSE2_ROTATE64(x,45), SSE2_ROTATE64(x,3 ), SSE2_SR64(x,6))
 
-PRIVATE void crypt_kernel_sse2(unsigned int* nt_bufferu, unsigned int* bit_table, unsigned int size_bit_table)
+PRIVATE void crypt_kernel_sse2(uint32_t* nt_bufferu)
 {
 	SSE2_WORD* W = (SSE2_WORD*)(nt_bufferu + 8 * NT_NUM_KEYS);
 	SSE2_WORD mask = SSE2_CONST(0x00FF00FF);
@@ -476,8 +538,8 @@ PRIVATE void crypt_kernel_sse2(unsigned int* nt_bufferu, unsigned int* bit_table
 
 	for (int i = 0; i < SHA512_NUM; i++, W++)
 	{
-		unsigned int _2i = 2 * (i & 1);
-		unsigned int _2i1 = _2i + 1;
+		uint32_t _2i = 2 * (i & 1);
+		uint32_t _2i1 = _2i + 1;
 		if (_2i == 0)
 		{
 			SSE2_WORD* nt_buffer = (SSE2_WORD*)nt_bufferu;
@@ -616,7 +678,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_sse2(CryptParam* param)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_X86
 
-void crypt_sha512_avx_kernel_asm(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table);
+void crypt_sha512_avx_kernel_asm(uint32_t* nt_buffer);
 PRIVATE void crypt_utf8_coalesc_protocol_avx(CryptParam* param)
 {
 	crypt_utf8_coalesc_protocol_body(param, crypt_sha512_avx_kernel_asm);
@@ -628,7 +690,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_avx(CryptParam* param)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_X86
 
-void crypt_sha512_avx2_kernel_asm(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table);
+void crypt_sha512_avx2_kernel_asm(uint32_t* nt_buffer);
 PRIVATE void crypt_utf8_coalesc_protocol_avx2(CryptParam* param)
 {
 	crypt_utf8_coalesc_protocol_body(param, crypt_sha512_avx2_kernel_asm);
@@ -651,9 +713,9 @@ PRIVATE void crypt_utf8_coalesc_protocol_avx2(CryptParam* param)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #undef R1
 #undef R0
-#define R0(x)  (rotate(x,63) ^ rotate(x,56) ^ ((x)>>7))
-#define R1(x)  (rotate(x,45) ^ rotate(x,3 ) ^ ((x)>>6))
-PRIVATE void ocl_write_sha512_header_ulong(char* source, GPUDevice* gpu, cl_uint ntlm_size_bit_table)
+#define R0(x)  (ROTATE(x,63) ^ ROTATE(x,56) ^ ((x)>>7))
+#define R1(x)  (ROTATE(x,45) ^ ROTATE(x,3 ) ^ ((x)>>6))
+PRIVATE void ocl_write_sha512_header_ulong(char* source, GPUDevice* gpu, cl_uint ntlm_size_bit_table1)
 {
 	source[0] = 0;
 	// Header definitions
@@ -693,13 +755,8 @@ PRIVATE void ocl_write_sha512_header_ulong(char* source, GPUDevice* gpu, cl_uint
 		"#define R_A(x) (rotate(x,36UL)^rotate(x,30UL)^rotate(x,25UL))\n"
 		"#define R0(x) (rotate(x,63UL)^rotate(x,56UL)^((x)>>7UL))\n"
 		"#define R1(x) (rotate(x,45UL)^rotate(x,3UL)^((x)>>6UL))\n");
-
-	if (num_passwords_loaded > 1)
-		sprintf(source + strlen(source),
-		"#define SIZE_TABLE %uu\n"
-		"#define SIZE_BIT_TABLE %uu\n", size_table, ntlm_size_bit_table);
 }
-PRIVATE void ocl_write_sha512_header_uint2(char* source, GPUDevice* gpu, cl_uint ntlm_size_bit_table)
+PRIVATE void ocl_write_sha512_header_uint2(char* source, GPUDevice* gpu, cl_uint ntlm_size_bit_table1)
 {
 	source[0] = 0;
 	// Header definitions
@@ -741,7 +798,7 @@ PRIVATE void ocl_write_sha512_header_uint2(char* source, GPUDevice* gpu, cl_uint
 	
 	// Definitions
 	sprintf(source + strlen(source),
-#ifdef ANDROID
+#ifdef __ANDROID__
 		"#define SUB(r,a0,a1) t.s1=a0.s0<a1.s0;r=a0-a1;r.s1-=t.s1;\n"//4 32bits op
 		"#define ADD(r,a0,a1) r=a0+a1;r.s1+=r.s0<a1.s0;\n"//4 32bits op
 		"#define ADD_CONST(r,a,const1,const0) r.s0=a.s0+const0;r.s1=a.s1+const1;r.s1+=r.s0<const0;\n"//4 32bits op
@@ -759,33 +816,33 @@ PRIVATE void ocl_write_sha512_header_uint2(char* source, GPUDevice* gpu, cl_uint
 
 	if (gpu->flags & GPU_FLAG_SUPPORT_AMD_OPS)
 		sprintf(source + strlen(source),
-		"#define R_E(r,x) r.s1=amd_bitalign(x.s0,x.s1,14u);"//rotate(x,50UL)
+		"#define R_E(r,x) r.s1=amd_bitalign(x.s0,x.s1,14u);"//ROTATE(x,50UL)
 						 "r.s0=amd_bitalign(x.s1,x.s0,14u);"
-						"t0.s1=amd_bitalign(x.s0,x.s1,18u);"//rotate(x,46UL)
+						"t0.s1=amd_bitalign(x.s0,x.s1,18u);"//ROTATE(x,46UL)
 						"t0.s0=amd_bitalign(x.s1,x.s0,18u);"
 						"r^=t0;"
-						"t0.s0=amd_bitalign(x.s0,x.s1,9u);"//rotate(x,23UL)
+						"t0.s0=amd_bitalign(x.s0,x.s1,9u);"//ROTATE(x,23UL)
 						"t0.s1=amd_bitalign(x.s1,x.s0,9u);"
 						"r^=t0;\n"
-		"#define R_A(r,x) r.s1=amd_bitalign(x.s0,x.s1,28u);"//rotate(x,36UL)
+		"#define R_A(r,x) r.s1=amd_bitalign(x.s0,x.s1,28u);"//ROTATE(x,36UL)
 						 "r.s0=amd_bitalign(x.s1,x.s0,28u);"
-						"t0.s0=amd_bitalign(x.s0,x.s1,2u);"//rotate(x,30UL)
+						"t0.s0=amd_bitalign(x.s0,x.s1,2u);"//ROTATE(x,30UL)
 						"t0.s1=amd_bitalign(x.s1,x.s0,2u);"
 						"r^=t0;"
-						"t0.s0=amd_bitalign(x.s0,x.s1,7u);"//rotate(x,25UL)
+						"t0.s0=amd_bitalign(x.s0,x.s1,7u);"//ROTATE(x,25UL)
 						"t0.s1=amd_bitalign(x.s1,x.s0,7u);"
 						"r^=t0;\n"
-		"#define R0(r,x) r.s1=amd_bitalign(x.s0,x.s1,1u);"//rotate(x,63UL)
+		"#define R0(r,x) r.s1=amd_bitalign(x.s0,x.s1,1u);"//ROTATE(x,63UL)
 					    "r.s0=amd_bitalign(x.s1,x.s0,1u);"
-					   "t0.s1=amd_bytealign(x.s0,x.s1,1u);"//rotate(x,56UL)
+					   "t0.s1=amd_bytealign(x.s0,x.s1,1u);"//ROTATE(x,56UL)
 					   "t0.s0=amd_bytealign(x.s1,x.s0,1u);"
 					   "r^=t0;"
 					   "t0.s0=amd_bitalign(x.s1,x.s0,7u);"//x>>7UL
 					   "t0.s1=(x.s1>>7u);"
 					   "r^=t0;\n"
-		"#define R1(r,x) r.s1=amd_bitalign(x.s0,x.s1,19u);"//rotate(x,45UL)
+		"#define R1(r,x) r.s1=amd_bitalign(x.s0,x.s1,19u);"//ROTATE(x,45UL)
 					    "r.s0=amd_bitalign(x.s1,x.s0,19u);"
-					   "t0.s0=amd_bitalign(x.s0,x.s1,29u);"//rotate(x,3UL)
+					   "t0.s0=amd_bitalign(x.s0,x.s1,29u);"//ROTATE(x,3UL)
 					   "t0.s1=amd_bitalign(x.s1,x.s0,29u);"
 					   "r^=t0;"
 					   "t0.s0=amd_bitalign(x.s1,x.s0,6u);"//x>>6UL
@@ -793,43 +850,38 @@ PRIVATE void ocl_write_sha512_header_uint2(char* source, GPUDevice* gpu, cl_uint
 					   "r^=t0;\n");
 	else
 		sprintf(source + strlen(source),
-		"#define R_E(r,x) r.s1=(x.s0<<18u)|(x.s1>>14u);"//rotate(x,50UL)
+		"#define R_E(r,x) r.s1=(x.s0<<18u)|(x.s1>>14u);"//ROTATE(x,50UL)
 						 "r.s0=(x.s1<<18u)|(x.s0>>14u);"
-						"t0.s1=(x.s0<<14u)|(x.s1>>18u);"//rotate(x,46UL)
+						"t0.s1=(x.s0<<14u)|(x.s1>>18u);"//ROTATE(x,46UL)
 						"t0.s0=(x.s1<<14u)|(x.s0>>18u);"
 						"r^=t0;"
-						"t0.s0=(x.s0<<23u)|(x.s1>>9u);"//rotate(x,23UL)
+						"t0.s0=(x.s0<<23u)|(x.s1>>9u);"//ROTATE(x,23UL)
 						"t0.s1=(x.s1<<23u)|(x.s0>>9u);"
 						"r^=t0;\n"
-		"#define R_A(r,x) r.s1=(x.s0<<4u)|(x.s1>>28u);"//rotate(x,36UL)
+		"#define R_A(r,x) r.s1=(x.s0<<4u)|(x.s1>>28u);"//ROTATE(x,36UL)
 						 "r.s0=(x.s1<<4u)|(x.s0>>28u);"
-						"t0.s0=(x.s0<<30u)|(x.s1>>2u);"//rotate(x,30UL)
+						"t0.s0=(x.s0<<30u)|(x.s1>>2u);"//ROTATE(x,30UL)
 						"t0.s1=(x.s1<<30u)|(x.s0>>2u);"
 						"r^=t0;"
-						"t0.s0=(x.s0<<25u)|(x.s1>>7u);"//rotate(x,25UL)
+						"t0.s0=(x.s0<<25u)|(x.s1>>7u);"//ROTATE(x,25UL)
 						"t0.s1=(x.s1<<25u)|(x.s0>>7u);"
 						"r^=t0;\n"
-		"#define R0(r,x) r.s1=(x.s0<<31u)|(x.s1>>1u);"//rotate(x,63UL)
+		"#define R0(r,x) r.s1=(x.s0<<31u)|(x.s1>>1u);"//ROTATE(x,63UL)
 					    "r.s0=(x.s1<<31u)|(x.s0>>1u);"
-					   "t0.s1=(x.s0<<24u)|(x.s1>>8u);"//rotate(x,56UL)
+					   "t0.s1=(x.s0<<24u)|(x.s1>>8u);"//ROTATE(x,56UL)
 					   "t0.s0=(x.s1<<24u)|(x.s0>>8u);"
 					   "r^=t0;"
 					   "t0.s0=(x.s0>>7u )|(x.s1<<25u);"//x>>7UL
 					   "t0.s1=(x.s1>>7u );"
 					   "r^=t0;\n"
-		"#define R1(r,x) r.s1=(x.s0<<13u)|(x.s1>>19u);"//rotate(x,45UL)
+		"#define R1(r,x) r.s1=(x.s0<<13u)|(x.s1>>19u);"//ROTATE(x,45UL)
 					    "r.s0=(x.s1<<13u)|(x.s0>>19u);"
-					   "t0.s0=(x.s0<<3u)|(x.s1>>29u);"//rotate(x,3UL)
+					   "t0.s0=(x.s0<<3u)|(x.s1>>29u);"//ROTATE(x,3UL)
 					   "t0.s1=(x.s1<<3u)|(x.s0>>29u);"
 					   "r^=t0;"
 					   "t0.s0=(x.s0>>6u)|(x.s1<<26u);"//x>>6UL
 					   "t0.s1=(x.s1>>6u);"
 					   "r^=t0;\n");
-
-	if (num_passwords_loaded > 1)
-		sprintf(source + strlen(source),
-		"#define SIZE_TABLE %uu\n"
-		"#define SIZE_BIT_TABLE %uu\n", size_table, ntlm_size_bit_table);
 }
 
 PRIVATE void ocl_gen_kernel_with_lenght_ulong(char* source, cl_uint key_lenght, cl_uint vector_size, cl_uint ntlm_size_bit_table, cl_uint output_size, DivisionParams div_param, char** str_comp, cl_bool value_map_collission, cl_uint workgroup)
@@ -984,51 +1036,84 @@ PRIVATE void ocl_gen_kernel_with_lenght_ulong(char* source, cl_uint key_lenght, 
 	{
 		uint64_t* bin = (uint64_t*)binary_values;
 		sprintf(source + strlen(source),
-				"if(A==%lluUL)"
+			"if(A==%lluUL)"
+			"{"
+				"A-=W0;"
+				"W10+=R1(W8)+W3+R0(W11);"
+				"W12+=R1(W10)+W5+R0(W13);"
+				"W14+=R1(W12)+W7+R0(W15);"
+
+				"H+=R_E(E)+bs(G,F,E)+0x28DB77F523047D84UL+W8;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+				"G+=R_E(D)+bs(F,E,D)+0x32CAAB7B40C72493UL+W9;C+=G;G+=R_A(H)+MAJ(H,A,B);"
+				"F+=R_E(C)+bs(E,D,C)+0x3C9EBE0A15C9BEBCUL+W10;B+=F;F+=MAJ(G,H,A);"
+				"E+=R_E(B)+bs(D,C,B)+0x431D67C49C100D4CUL+W2;A+=E;"
+				"D+=R_E(A)+bs(C,B,A)+0x4CC5D4BECB3E42B6UL+W12;H+=D;"
+				"C+=R_E(H)+bs(B,A,H)+0x597F299CFC657E2AUL+W1;G+=C;"
+				"B+=bs(A,H,G)+W14;"
+
+				"if(B==%lluUL&&C==%lluUL&&D==%lluUL&&E==%lluUL&&F==%lluUL&&G==%lluUL&&H==%lluUL)"
 				"{"
-					"A-=W0;"
-					"W10+=R1(W8)+W3+R0(W11);"
-					"W12+=R1(W10)+W5+R0(W13);"
-					"W14+=R1(W12)+W7+R0(W15);"
-
-					"H+=R_E(E)+bs(G,F,E)+0x28DB77F523047D84UL+W8;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-					"G+=R_E(D)+bs(F,E,D)+0x32CAAB7B40C72493UL+W9;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-					"F+=R_E(C)+bs(E,D,C)+0x3C9EBE0A15C9BEBCUL+W10;B+=F;F+=MAJ(G,H,A);"
-					"E+=R_E(B)+bs(D,C,B)+0x431D67C49C100D4CUL+W2;A+=E;"
-					"D+=R_E(A)+bs(C,B,A)+0x4CC5D4BECB3E42B6UL+W12;H+=D;"
-					"C+=R_E(H)+bs(B,A,H)+0x597F299CFC657E2AUL+W1;G+=C;"
-					"B+=bs(A,H,G)+W14;"
-
-					"if(B==%lluUL&&C==%lluUL&&D==%lluUL&&E==%lluUL&&F==%lluUL&&G==%lluUL&&H==%lluUL)"
-					"{"
-						"output[0]=1u;"
-						"output[1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
-						"output[2]=0;"
-					"}"
+					"output[0]=1u;"
+					"output[1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
+					"output[2]=0;"
 				"}"
-				, bin[0], bin[1], bin[2], bin[3], bin[4], bin[5], bin[6], bin[7]);
+			"}"
+			, bin[0], bin[1], bin[2], bin[3], bin[4], bin[5], bin[6], bin[7]);
 	}
 	else
 	{
+		// Find match
+		sprintf(source + strlen(source), "uint xx=((uint)A)&%uu;uint fdata;", cbg_mask);
+		
 		sprintf(source + strlen(source),
-			"indx=((uint)A)&SIZE_BIT_TABLE;"
-			"if((bit_table[indx>>5u]>>(indx&31u))&1u)"
-			"{"
-				"indx=table[((uint)A)&SIZE_TABLE];"
+			"fdata=(uint)(cbg_filter[xx]);"
 
-				"while(indx!=0xffffffff)"
-				//"if(indx!=0xffffffff)"
-				"{"
+			"if(((fdata^((uint)(A>>32u)))&0xFFF8)==0){"
+				"indx=cbg_table[xx];"
+				"__global ulong* bin=(__global ulong*)binary_values;"
+				"if(indx!=0xffffffff&&A==bin[indx*8u]){"
+
+					"ulong aa=A-W0;"
+					"W4=W10+R1(W8)+W3+R0(W11);"
+					"W6=W12+R1(W4)+W5+R0(W13);"
+					"ulong ww14=W14+R1(W6)+W7+R0(W15);"
+
+					"ulong bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+					"hh+=R_E(ee)+bs(gg,ff,ee)+0x28DB77F523047D84UL+W8;dd+=hh;hh+=R_A(aa)+MAJ(aa,bb,cc);"
+					"gg+=R_E(dd)+bs(ff,ee,dd)+0x32CAAB7B40C72493UL+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+					"ff+=R_E(cc)+bs(ee,dd,cc)+0x3C9EBE0A15C9BEBCUL+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+					"ee+=R_E(bb)+bs(dd,cc,bb)+0x431D67C49C100D4CUL+W2;aa+=ee;"
+					"dd+=R_E(aa)+bs(cc,bb,aa)+0x4CC5D4BECB3E42B6UL+W6;hh+=dd;"
+					"cc+=R_E(hh)+bs(bb,aa,hh)+0x597F299CFC657E2AUL+W1;gg+=cc;"
+					"bb+=bs(aa,hh,gg)+ww14;"
+
+					"if(bb==bin[indx*8u+1u]&&cc==bin[indx*8u+2u]&&dd==bin[indx*8u+3u]&&"
+					"ee==bin[indx*8u+4u]&&ff==bin[indx*8u+5u]&&gg==bin[indx*8u+6u]&&"
+					"hh==bin[indx*8u+7u]){"
+						"uint found=atomic_inc(output);"
+						"if(found<%uu){"
+							"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
+							"output[2*found+2]=indx;}"
+					"}"
+				"}"
+			"}", output_size);
+				
+		sprintf(source + strlen(source),
+			"if(fdata&4){"// Is second
+				"xx+=fdata&1?-1:1;"
+				"if(((((uint)cbg_filter[xx])^((uint)(A>>32u)))&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
 					"__global ulong* bin=(__global ulong*)binary_values;"
-					"if(A==bin[indx*8u])"
-					"{"
+					"if(indx!=0xffffffff&&A==bin[indx*8u]){"
+
 						"ulong aa=A-W0;"
 						"W4=W10+R1(W8)+W3+R0(W11);"
 						"W6=W12+R1(W4)+W5+R0(W13);"
 						"ulong ww14=W14+R1(W6)+W7+R0(W15);"
-						
+
 						"ulong bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
-						
+
 						"hh+=R_E(ee)+bs(gg,ff,ee)+0x28DB77F523047D84UL+W8;dd+=hh;hh+=R_A(aa)+MAJ(aa,bb,cc);"
 						"gg+=R_E(dd)+bs(ff,ee,dd)+0x32CAAB7B40C72493UL+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
 						"ff+=R_E(cc)+bs(ee,dd,cc)+0x3C9EBE0A15C9BEBCUL+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
@@ -1038,24 +1123,93 @@ PRIVATE void ocl_gen_kernel_with_lenght_ulong(char* source, cl_uint key_lenght, 
 						"bb+=bs(aa,hh,gg)+ww14;"
 
 						"if(bb==bin[indx*8u+1u]&&cc==bin[indx*8u+2u]&&dd==bin[indx*8u+3u]&&"
-						   "ee==bin[indx*8u+4u]&&ff==bin[indx*8u+5u]&&gg==bin[indx*8u+6u]&&"
-						   "hh==bin[indx*8u+7u])"
-						"{"
+						"ee==bin[indx*8u+4u]&&ff==bin[indx*8u+5u]&&gg==bin[indx*8u+6u]&&"
+						"hh==bin[indx*8u+7u]){"
 							"uint found=atomic_inc(output);"
 							"if(found<%uu){"
 								"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
 								"output[2*found+2]=indx;}"
-						"}", output_size);
-
-	strcat(source, "}"
-					"indx=same_hash_next[indx];"
+						"}"
+					"}"
 				"}"
-			"}");
+			"}", output_size);
+
+		sprintf(source + strlen(source),
+			"if(fdata&2){"// Is unlucky
+				"xx=((uint)(A>>32u))&%uu;"
+				"fdata=(uint)(cbg_filter[xx]);"
+				"if(((fdata^((uint)A))&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"__global ulong* bin=(__global ulong*)binary_values;"
+					"if(indx!=0xffffffff&&A==bin[indx*8u]){"
+
+						"ulong aa=A-W0;"
+						"W4=W10+R1(W8)+W3+R0(W11);"
+						"W6=W12+R1(W4)+W5+R0(W13);"
+						"ulong ww14=W14+R1(W6)+W7+R0(W15);"
+
+						"ulong bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+						"hh+=R_E(ee)+bs(gg,ff,ee)+0x28DB77F523047D84UL+W8;dd+=hh;hh+=R_A(aa)+MAJ(aa,bb,cc);"
+						"gg+=R_E(dd)+bs(ff,ee,dd)+0x32CAAB7B40C72493UL+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+						"ff+=R_E(cc)+bs(ee,dd,cc)+0x3C9EBE0A15C9BEBCUL+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+						"ee+=R_E(bb)+bs(dd,cc,bb)+0x431D67C49C100D4CUL+W2;aa+=ee;"
+						"dd+=R_E(aa)+bs(cc,bb,aa)+0x4CC5D4BECB3E42B6UL+W6;hh+=dd;"
+						"cc+=R_E(hh)+bs(bb,aa,hh)+0x597F299CFC657E2AUL+W1;gg+=cc;"
+						"bb+=bs(aa,hh,gg)+ww14;"
+
+						"if(bb==bin[indx*8u+1u]&&cc==bin[indx*8u+2u]&&dd==bin[indx*8u+3u]&&"
+						"ee==bin[indx*8u+4u]&&ff==bin[indx*8u+5u]&&gg==bin[indx*8u+6u]&&"
+						"hh==bin[indx*8u+7u]){"
+							"uint found=atomic_inc(output);"
+							"if(found<%uu){"
+								"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
+								"output[2*found+2]=indx;}"
+						"}"
+					"}"
+				"}"
+			, cbg_mask, output_size);
+
+		sprintf(source + strlen(source),
+				"if(fdata&4){"// Is second
+					"xx+=fdata&1?-1:1;"
+					"if(((((uint)cbg_filter[xx])^((uint)A))&0xFFF8)==0){"
+						"indx=cbg_table[xx];"
+						"__global ulong* bin=(__global ulong*)binary_values;"
+						"if(indx!=0xffffffff&&A==bin[indx*8u]){"
+
+							"ulong aa=A-W0;"
+							"W4=W10+R1(W8)+W3+R0(W11);"
+							"W6=W12+R1(W4)+W5+R0(W13);"
+							"ulong ww14=W14+R1(W6)+W7+R0(W15);"
+
+							"ulong bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+							"hh+=R_E(ee)+bs(gg,ff,ee)+0x28DB77F523047D84UL+W8;dd+=hh;hh+=R_A(aa)+MAJ(aa,bb,cc);"
+							"gg+=R_E(dd)+bs(ff,ee,dd)+0x32CAAB7B40C72493UL+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+							"ff+=R_E(cc)+bs(ee,dd,cc)+0x3C9EBE0A15C9BEBCUL+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+							"ee+=R_E(bb)+bs(dd,cc,bb)+0x431D67C49C100D4CUL+W2;aa+=ee;"
+							"dd+=R_E(aa)+bs(cc,bb,aa)+0x4CC5D4BECB3E42B6UL+W6;hh+=dd;"
+							"cc+=R_E(hh)+bs(bb,aa,hh)+0x597F299CFC657E2AUL+W1;gg+=cc;"
+							"bb+=bs(aa,hh,gg)+ww14;"
+
+							"if(bb==bin[indx*8u+1u]&&cc==bin[indx*8u+2u]&&dd==bin[indx*8u+3u]&&"
+							"ee==bin[indx*8u+4u]&&ff==bin[indx*8u+5u]&&gg==bin[indx*8u+6u]&&"
+							"hh==bin[indx*8u+7u]){"
+								"uint found=atomic_inc(output);"
+								"if(found<%uu){"
+									"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
+									"output[2*found+2]=indx;}"
+							"}"
+						"}"
+					"}"
+				"}"
+			"}", output_size);
 	}
 
 	strcat(source, "}}");
 }
-PRIVATE void ocl_gen_kernel_with_lenght_uint2(char* source, cl_uint key_lenght, cl_uint vector_size, cl_uint ntlm_size_bit_table, cl_uint output_size, DivisionParams div_param, char** str_comp, cl_bool value_map_collission, cl_uint workgroup)
+PRIVATE void ocl_gen_kernel_with_lenght_uint2(char* source, cl_uint key_lenght, cl_uint vector_size, cl_uint ntlm_size_bit_table1, cl_uint output_size, DivisionParams div_param, char** str_comp, cl_bool value_map_collission1, cl_uint workgroup)
 {
 	char* nt_buffer[] = { "+nt_buffer0", "+nt_buffer1", "+nt_buffer2", "+nt_buffer3", "+nt_buffer4", "+nt_buffer5", "+nt_buffer6" };
 
@@ -1094,7 +1248,7 @@ PRIVATE void ocl_gen_kernel_with_lenght_uint2(char* source, cl_uint key_lenght, 
 			"R1(W5_2,W3_2);"
 			"R1(W5_R1,W5_2);"
 			, nt_buffer[1], nt_buffer[1]
-			, (unsigned int)(_r1_w15>>32), (unsigned int)_r1_w15);
+			, (uint32_t)(_r1_w15>>32), (uint32_t)_r1_w15);
 	}
 
 	// Begin cycle changing first character
@@ -1141,7 +1295,7 @@ PRIVATE void ocl_gen_kernel_with_lenght_uint2(char* source, cl_uint key_lenght, 
 		"R_E(t,H);ADD(C,C,t);t=bs(B,A,H);ADD(C,C,t);ADD_CONST(C,C,0x80DEB1FE,0x3B1696B1) ;ADD(G,G,C);R_A(t,D);ADD(C,C,t);t=MAJ(D,E,F);ADD(C,C,t);"
 		"R_E(t,G);ADD(B,B,t);t=bs(A,H,G);ADD(B,B,t);ADD_CONST(B,B,0x9BDC06A7,0x25C71235) ;ADD(F,F,B);R_A(t,C);ADD(B,B,t);t=MAJ(C,D,E);ADD(B,B,t);"
 		"R_E(t,F);ADD(A,A,t);t=bs(H,G,F);ADD(A,A,t);ADD_CONST(A,A,%uu,%uu);ADD(E,E,A);R_A(t,B);ADD(A,A,t);t=MAJ(B,C,D);ADD(A,A,t);"
-		, (unsigned int)(_w15>>32), (unsigned int)_w15);
+		, (uint32_t)(_w15>>32), (uint32_t)_w15);
 
 	_w15 = (uint64_t)(key_lenght << 3);
 	uint64_t _r0_w15 = (uint64_t)(R0(key_lenght << 3));
@@ -1165,9 +1319,9 @@ PRIVATE void ocl_gen_kernel_with_lenght_uint2(char* source, cl_uint key_lenght, 
 	"R1(W13,W11);ADD(W13,W13,W6);"
 	"R1(W14,W12);ADD(W14,W14,W7);ADD_CONST(W14,W14,%uu,%uu);"
 	"R1(W15,W13);ADD(W15,W15,W8);ADD_CONST(W15,W15,%uu,%uu);R0(t,W0);ADD(W15,W15,t);"
-	, (unsigned int)(_w15>>32), (unsigned int)_w15
-	, (unsigned int)(_r0_w15>>32), (unsigned int)_r0_w15
-	, (unsigned int)(_w15>>32), (unsigned int)_w15);
+	, (uint32_t)(_w15>>32), (uint32_t)_w15
+	, (uint32_t)(_r0_w15>>32), (uint32_t)_r0_w15
+	, (uint32_t)(_w15>>32), (uint32_t)_w15);
 
 	/* Round 2 */
 	sprintf(source + strlen(source),
@@ -1271,59 +1425,164 @@ PRIVATE void ocl_gen_kernel_with_lenght_uint2(char* source, cl_uint key_lenght, 
 						"output[2]=0;"
 					"}"
 				"}"
-				, (unsigned int)(bin[0]), (unsigned int)(bin[0]>>32)
-				, (unsigned int)(bin[1]), (unsigned int)(bin[1]>>32)
-				, (unsigned int)(bin[2]), (unsigned int)(bin[2]>>32)
-				, (unsigned int)(bin[3]), (unsigned int)(bin[3]>>32)
-				, (unsigned int)(bin[4]), (unsigned int)(bin[4]>>32)
-				, (unsigned int)(bin[5]), (unsigned int)(bin[5]>>32)
-				, (unsigned int)(bin[6]), (unsigned int)(bin[6]>>32)
-				, (unsigned int)(bin[7]), (unsigned int)(bin[7]>>32));
+				, (uint32_t)(bin[0]), (uint32_t)(bin[0]>>32)
+				, (uint32_t)(bin[1]), (uint32_t)(bin[1]>>32)
+				, (uint32_t)(bin[2]), (uint32_t)(bin[2]>>32)
+				, (uint32_t)(bin[3]), (uint32_t)(bin[3]>>32)
+				, (uint32_t)(bin[4]), (uint32_t)(bin[4]>>32)
+				, (uint32_t)(bin[5]), (uint32_t)(bin[5]>>32)
+				, (uint32_t)(bin[6]), (uint32_t)(bin[6]>>32)
+				, (uint32_t)(bin[7]), (uint32_t)(bin[7]>>32));
 	}
 	else
 	{
+		// Find match
+		sprintf(source + strlen(source), "uint xx=A.s0&%uu;uint fdata;", cbg_mask);
+		
 		sprintf(source + strlen(source),
-			"indx=A.s0&SIZE_BIT_TABLE;"
-			"if((bit_table[indx>>5u]>>(indx&31u))&1u)"
-			"{"
-				"indx=table[A.s0&SIZE_TABLE];"
+			"fdata=(uint)(cbg_filter[xx]);"
 
-				"while(indx!=0xffffffff)"
-				//"if(indx!=0xffffffff)"
-				"{"
-					"if(A.s0==binary_values[indx*16u]&&A.s1==binary_values[indx*16u+1u])"
-					"{"
+			"if(((fdata^A.s1)&0xFFF8)==0){"
+				"indx=cbg_table[xx];"
+				"if(indx!=0xffffffff&&A.s0==binary_values[indx*16u]&&A.s1==binary_values[indx*16u+1u]){"
+
+					"uint2 aa,ww14;"
+					"SUB(aa,A,W0);"
+					"ADD(W4,W10,W3);R1(t,W8);ADD(W4,W4,t);R0(t,W11);ADD(W4,W4,t);"
+					"ADD(W6,W12,W5);R1(t,W4);ADD(W6,W6,t);R0(t,W13);ADD(W6,W6,t);"
+					"ADD(ww14,W14,W7);R1(t,W6);ADD(ww14,ww14,t);R0(t,W15);ADD(ww14,ww14,t);"
+
+					"uint2 bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+					"STEP(hh,ee,gg,ff,0x28DB77F5,0x23047D84,W8,dd,aa,bb,cc);"
+					"STEP(gg,dd,ff,ee,0x32CAAB7B,0x40C72493,W9,cc,hh,aa,bb);"
+					"STEP_1ST(ff,cc,ee,dd,0x3C9EBE0A,0x15C9BEBC,W4,bb);t=MAJ(gg,hh,aa);ADD(ff,ff,t);"
+					"STEP_1ST(ee,bb,dd,cc,0x431D67C4,0x9C100D4C,W2,aa);"
+					"STEP_1ST(dd,aa,cc,bb,0x4CC5D4BE,0xCB3E42B6,W6,hh);"
+					"STEP_1ST(cc,hh,bb,aa,0x597F299C,0xFC657E2A,W1,gg);"
+					"ADD(bb,bb,ww14);t=bs(aa,hh,gg);ADD(bb,bb,t);"
+
+					"if(bb.s0==binary_values[indx*16u+2u]&&bb.s1==binary_values[indx*16u+3u]&&cc.s0==binary_values[indx*16u+4u]&&cc.s1==binary_values[indx*16u+5u]&&"
+					"dd.s0==binary_values[indx*16u+6u]&&dd.s1==binary_values[indx*16u+7u]&&ee.s0==binary_values[indx*16u+8u]&&ee.s1==binary_values[indx*16u+9u]&&"
+					"ff.s0==binary_values[indx*16u+10u]&&ff.s1==binary_values[indx*16u+11u]&&gg.s0==binary_values[indx*16u+12u]&&gg.s1==binary_values[indx*16u+13u]&&"
+					"hh.s0==binary_values[indx*16u+14u]&&hh.s1==binary_values[indx*16u+15u]){"
+						"uint found=atomic_inc(output);"
+						"if(found<%uu){"
+							"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
+							"output[2*found+2]=indx;}"
+					"}"
+				"}"
+			"}", output_size);
+				
+		sprintf(source + strlen(source),
+			"if(fdata&4){"// Is second
+				"xx+=fdata&1?-1:1;"
+				"if(((((uint)cbg_filter[xx])^A.s1)&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"if(indx!=0xffffffff&&A.s0==binary_values[indx*16u]&&A.s1==binary_values[indx*16u+1u]){"
+
 						"uint2 aa,ww14;"
 						"SUB(aa,A,W0);"
 						"ADD(W4,W10,W3);R1(t,W8);ADD(W4,W4,t);R0(t,W11);ADD(W4,W4,t);"
 						"ADD(W6,W12,W5);R1(t,W4);ADD(W6,W6,t);R0(t,W13);ADD(W6,W6,t);"
 						"ADD(ww14,W14,W7);R1(t,W6);ADD(ww14,ww14,t);R0(t,W15);ADD(ww14,ww14,t);"
-						
+
 						"uint2 bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
-						
-						    "STEP(hh,ee,gg,ff,0x28DB77F5,0x23047D84,W8,dd,aa,bb,cc);"
-						    "STEP(gg,dd,ff,ee,0x32CAAB7B,0x40C72493,W9,cc,hh,aa,bb);"
+
+						"STEP(hh,ee,gg,ff,0x28DB77F5,0x23047D84,W8,dd,aa,bb,cc);"
+						"STEP(gg,dd,ff,ee,0x32CAAB7B,0x40C72493,W9,cc,hh,aa,bb);"
 						"STEP_1ST(ff,cc,ee,dd,0x3C9EBE0A,0x15C9BEBC,W4,bb);t=MAJ(gg,hh,aa);ADD(ff,ff,t);"
 						"STEP_1ST(ee,bb,dd,cc,0x431D67C4,0x9C100D4C,W2,aa);"
 						"STEP_1ST(dd,aa,cc,bb,0x4CC5D4BE,0xCB3E42B6,W6,hh);"
 						"STEP_1ST(cc,hh,bb,aa,0x597F299C,0xFC657E2A,W1,gg);"
 						"ADD(bb,bb,ww14);t=bs(aa,hh,gg);ADD(bb,bb,t);"
-						
+
 						"if(bb.s0==binary_values[indx*16u+2u]&&bb.s1==binary_values[indx*16u+3u]&&cc.s0==binary_values[indx*16u+4u]&&cc.s1==binary_values[indx*16u+5u]&&"
-						   "dd.s0==binary_values[indx*16u+6u]&&dd.s1==binary_values[indx*16u+7u]&&ee.s0==binary_values[indx*16u+8u]&&ee.s1==binary_values[indx*16u+9u]&&"
-						   "ff.s0==binary_values[indx*16u+10u]&&ff.s1==binary_values[indx*16u+11u]&&gg.s0==binary_values[indx*16u+12u]&&gg.s1==binary_values[indx*16u+13u]&&"
-						   "hh.s0==binary_values[indx*16u+14u]&&hh.s1==binary_values[indx*16u+15u])"
-						"{"
+						"dd.s0==binary_values[indx*16u+6u]&&dd.s1==binary_values[indx*16u+7u]&&ee.s0==binary_values[indx*16u+8u]&&ee.s1==binary_values[indx*16u+9u]&&"
+						"ff.s0==binary_values[indx*16u+10u]&&ff.s1==binary_values[indx*16u+11u]&&gg.s0==binary_values[indx*16u+12u]&&gg.s1==binary_values[indx*16u+13u]&&"
+						"hh.s0==binary_values[indx*16u+14u]&&hh.s1==binary_values[indx*16u+15u]){"
 							"uint found=atomic_inc(output);"
 							"if(found<%uu){"
 								"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
 								"output[2*found+2]=indx;}"
-						"}", output_size);
-
-	strcat(source, "}"
-					"indx=same_hash_next[indx];"
+						"}"
+					"}"
 				"}"
-			"}");
+			"}", output_size);
+
+		sprintf(source + strlen(source),
+			"if(fdata&2){"// Is unlucky
+				"xx=A.s1&%uu;"
+				"fdata=(uint)(cbg_filter[xx]);"
+				"if(((fdata^A.s0)&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"if(indx!=0xffffffff&&A.s0==binary_values[indx*16u]&&A.s1==binary_values[indx*16u+1u]){"
+
+						"uint2 aa,ww14;"
+						"SUB(aa,A,W0);"
+						"ADD(W4,W10,W3);R1(t,W8);ADD(W4,W4,t);R0(t,W11);ADD(W4,W4,t);"
+						"ADD(W6,W12,W5);R1(t,W4);ADD(W6,W6,t);R0(t,W13);ADD(W6,W6,t);"
+						"ADD(ww14,W14,W7);R1(t,W6);ADD(ww14,ww14,t);R0(t,W15);ADD(ww14,ww14,t);"
+
+						"uint2 bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+						"STEP(hh,ee,gg,ff,0x28DB77F5,0x23047D84,W8,dd,aa,bb,cc);"
+						"STEP(gg,dd,ff,ee,0x32CAAB7B,0x40C72493,W9,cc,hh,aa,bb);"
+						"STEP_1ST(ff,cc,ee,dd,0x3C9EBE0A,0x15C9BEBC,W4,bb);t=MAJ(gg,hh,aa);ADD(ff,ff,t);"
+						"STEP_1ST(ee,bb,dd,cc,0x431D67C4,0x9C100D4C,W2,aa);"
+						"STEP_1ST(dd,aa,cc,bb,0x4CC5D4BE,0xCB3E42B6,W6,hh);"
+						"STEP_1ST(cc,hh,bb,aa,0x597F299C,0xFC657E2A,W1,gg);"
+						"ADD(bb,bb,ww14);t=bs(aa,hh,gg);ADD(bb,bb,t);"
+
+						"if(bb.s0==binary_values[indx*16u+2u]&&bb.s1==binary_values[indx*16u+3u]&&cc.s0==binary_values[indx*16u+4u]&&cc.s1==binary_values[indx*16u+5u]&&"
+						"dd.s0==binary_values[indx*16u+6u]&&dd.s1==binary_values[indx*16u+7u]&&ee.s0==binary_values[indx*16u+8u]&&ee.s1==binary_values[indx*16u+9u]&&"
+						"ff.s0==binary_values[indx*16u+10u]&&ff.s1==binary_values[indx*16u+11u]&&gg.s0==binary_values[indx*16u+12u]&&gg.s1==binary_values[indx*16u+13u]&&"
+						"hh.s0==binary_values[indx*16u+14u]&&hh.s1==binary_values[indx*16u+15u]){"
+							"uint found=atomic_inc(output);"
+							"if(found<%uu){"
+								"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
+								"output[2*found+2]=indx;}"
+						"}"
+					"}"
+				"}"
+			, cbg_mask, output_size);
+
+		sprintf(source + strlen(source),
+				"if(fdata&4){"// Is second
+					"xx+=fdata&1?-1:1;"
+					"if(((((uint)cbg_filter[xx])^A.s0)&0xFFF8)==0){"
+						"indx=cbg_table[xx];"
+						"if(indx!=0xffffffff&&A.s0==binary_values[indx*16u]&&A.s1==binary_values[indx*16u+1u]){"
+
+							"uint2 aa,ww14;"
+							"SUB(aa,A,W0);"
+							"ADD(W4,W10,W3);R1(t,W8);ADD(W4,W4,t);R0(t,W11);ADD(W4,W4,t);"
+							"ADD(W6,W12,W5);R1(t,W4);ADD(W6,W6,t);R0(t,W13);ADD(W6,W6,t);"
+							"ADD(ww14,W14,W7);R1(t,W6);ADD(ww14,ww14,t);R0(t,W15);ADD(ww14,ww14,t);"
+
+							"uint2 bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+							"STEP(hh,ee,gg,ff,0x28DB77F5,0x23047D84,W8,dd,aa,bb,cc);"
+							"STEP(gg,dd,ff,ee,0x32CAAB7B,0x40C72493,W9,cc,hh,aa,bb);"
+							"STEP_1ST(ff,cc,ee,dd,0x3C9EBE0A,0x15C9BEBC,W4,bb);t=MAJ(gg,hh,aa);ADD(ff,ff,t);"
+							"STEP_1ST(ee,bb,dd,cc,0x431D67C4,0x9C100D4C,W2,aa);"
+							"STEP_1ST(dd,aa,cc,bb,0x4CC5D4BE,0xCB3E42B6,W6,hh);"
+							"STEP_1ST(cc,hh,bb,aa,0x597F299C,0xFC657E2A,W1,gg);"
+							"ADD(bb,bb,ww14);t=bs(aa,hh,gg);ADD(bb,bb,t);"
+
+							"if(bb.s0==binary_values[indx*16u+2u]&&bb.s1==binary_values[indx*16u+3u]&&cc.s0==binary_values[indx*16u+4u]&&cc.s1==binary_values[indx*16u+5u]&&"
+							"dd.s0==binary_values[indx*16u+6u]&&dd.s1==binary_values[indx*16u+7u]&&ee.s0==binary_values[indx*16u+8u]&&ee.s1==binary_values[indx*16u+9u]&&"
+							"ff.s0==binary_values[indx*16u+10u]&&ff.s1==binary_values[indx*16u+11u]&&gg.s0==binary_values[indx*16u+12u]&&gg.s1==binary_values[indx*16u+13u]&&"
+							"hh.s0==binary_values[indx*16u+14u]&&hh.s1==binary_values[indx*16u+15u]){"
+								"uint found=atomic_inc(output);"
+								"if(found<%uu){"
+									"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+i;"
+									"output[2*found+2]=indx;}"
+							"}"
+						"}"
+					"}"
+				"}"
+			"}", output_size);
 	}
 
 	strcat(source, "}}");
@@ -1587,7 +1846,7 @@ PRIVATE uint64_t sha512_one_char[8*256]={
 0x13c480bb4e580323ULL, 0x51a0d852cb72e032ULL, 0x70edff071b8ba009ULL, 0x24b5a07378396169ULL, 0xadb441aeafa15404ULL, 0xbc1712885272334fULL, 0x83c59e6c938ed604ULL, 0xf8cb0f8006319774ULL,
 0x8e70949f4e42353bULL, 0xfedd375785b6ddf6ULL, 0x7e6abd2cd9d7d335ULL, 0x7167e8be3514550eULL, 0x36e79a50905b1a54ULL, 0xb7e8a3f18f63e4f5ULL, 0xc70c8b7fc533f56fULL, 0x74e2396fa6b1102aULL
 };
-PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
 	cl_uint keys_opencl_divider = 32 * (num_passwords_loaded == 1 ? 2 : 1);
 	cl_long sha512_empy_hash[] = {0x322522bb14ec2384ULL, 0xb7acc2d476e22b95ULL, 0xa2ed9a8b815acdcdULL, 0x93b412a0bb64a9e2ULL,
@@ -1614,21 +1873,35 @@ PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, g
 		{
 			key[0] = charset[i];
 			// Search for a match
-			unsigned int A = (unsigned int)(sha512_one_char[8 * charset[i] + 0]);
-			unsigned int val = A & size_bit_table;
-			if ((bit_table[val >> 5] >> (val & 31)) & 1)
+			uint32_t up0 = (uint32_t)(sha512_one_char[8 * charset[i] + 0]);
+			uint32_t up1 = (uint32_t)(sha512_one_char[8 * charset[i] + 0] >> 32);
+
+			uint32_t pos = up0 & cbg_mask;
+			uint_fast16_t data = cbg_filter[pos];
+			if (((data ^ up1) & 0xFFF8) == 0 && cbg_table[pos] != NO_ELEM && !memcmp(((uint64_t*)binary_values) + cbg_table[pos]*8, sha512_one_char + 8*charset[i], BINARY_SIZE))
+				password_was_found(cbg_table[pos], key);// Total match
+
+			// 2nd pos
+			if (data & 0b110)
 			{
-				unsigned int indx = table[A & size_table];
-				// Partial match
-				while (indx != NO_ELEM)
+				pos += data & 0b1 ? -1 : 1;
+				uint_fast16_t hash = cbg_filter[pos];
+				if (((hash ^ up1) & 0xFFF8) == 0 && cbg_table[pos] != NO_ELEM && !memcmp(((uint64_t*)binary_values) + cbg_table[pos]*8, sha512_one_char + 8*charset[i], BINARY_SIZE))
+					password_was_found(cbg_table[pos], key);// Total match
+
+				// Unluky bucket
+				if (data & 0b10)
 				{
-					uint64_t* bin = ((uint64_t*)binary_values) + indx * 8;
+					pos = up1 & cbg_mask;
+					data = cbg_filter[pos];
+					if (((data ^ up0) & 0xFFF8) == 0 && cbg_table[pos] != NO_ELEM && !memcmp(((uint64_t*)binary_values) + cbg_table[pos]*8, sha512_one_char + 8*charset[i], BINARY_SIZE))
+						password_was_found(cbg_table[pos], key);// Total match
 
-					if (!memcmp(bin,  sha512_one_char + 8 * charset[i], BINARY_SIZE))
-						// Total match
-						password_was_found(indx, key);
-
-					indx = same_hash_next[indx];
+					// 2nd pos
+					pos += data & 0b1 ? -1 : 1;
+					hash = cbg_filter[pos];
+					if (((hash ^ up0) & 0xFFF8) == 0 && cbg_table[pos] != NO_ELEM && !memcmp(((uint64_t*)binary_values) + cbg_table[pos]*8, sha512_one_char + 8*charset[i], BINARY_SIZE))
+						password_was_found(cbg_table[pos], key);// Total match
 				}
 			}
 		}
@@ -1637,8 +1910,8 @@ PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, g
 		report_keys_processed(num_char_in_charset);
 	}
 
-	/*ocl_charset_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_sha512_header_ulong, ocl_gen_kernel_with_lenght_ulong, sha512_empy_hash, CL_FALSE, keys_opencl_divider);*/
-	ocl_charset_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_sha512_header_uint2, ocl_gen_kernel_with_lenght_uint2, sha512_empy_hash, CL_FALSE, keys_opencl_divider);
+	//return ocl_charset_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha512_header_ulong, ocl_gen_kernel_with_lenght_ulong, sha512_empy_hash, CL_FALSE, keys_opencl_divider);
+	return ocl_charset_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha512_header_uint2, ocl_gen_kernel_with_lenght_uint2, sha512_empy_hash, CL_FALSE, keys_opencl_divider);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Common
@@ -1656,16 +1929,16 @@ PRIVATE void ocl_gen_kernel_sha512_ulong(char* source, char* kernel_name, ocl_be
 	sprintf(source + strlen(source), "\n__kernel void %s(const __global uint* keys,__global uint* restrict output", kernel_name);
 
 	if (num_passwords_loaded > 1)
-		strcat(source, ",const __global uint* restrict table,const __global ulong* restrict binary_values,const __global uint* restrict same_hash_next,const __global uint* restrict bit_table");
+		strcat(source, ",const __global uint* restrict cbg_table,const __global ulong* restrict binary_values,const __global ushort* restrict cbg_filter");
 
 	if (aditional_param)
 	{
 		sprintf(source + strlen(source), ",uint param");
-		*aditional_param = num_passwords_loaded > 1 ? 6 : 2;
+		*aditional_param = num_passwords_loaded > 1 ? 5 : 2;
 	}
 
 	// Begin function code
-	sprintf(source + strlen(source), "){uint indx;");
+	sprintf(source + strlen(source), "){uint indx=get_global_id(0);");
 
 	// Convert the key into a nt_buffer
 	memset(buffer_vector_size, 1, sizeof(buffer_vector_size));
@@ -1841,24 +2114,58 @@ PRIVATE void ocl_gen_kernel_sha512_ulong(char* source, char* kernel_name, ocl_be
 		if (found_param_3)
 			sprintf(output_3, "output[3u*found+3u]=%s;", found_param_3);
 
+		// Find match
+		sprintf(source + strlen(source), "uint xx=((uint)A)&%uu;uint fdata;", cbg_mask);
+		
 		sprintf(source + strlen(source),
-			"indx=((uint)A)&SIZE_BIT_TABLE;"
-			"if((bit_table[indx>>5u]>>(indx&31u))&1u)"
-			"{"
-			"indx=table[((uint)A)& SIZE_TABLE];"
+			"fdata=(uint)(cbg_filter[xx]);"
 
-				"while(indx!=0xffffffff)"
-				//"if(indx!=0xffffffff)"
-				"{"
-					"if(A==binary_values[indx*8u])"
-					"{"
+			"if(((fdata^((uint)(A>>32u)))&0xFFF8)==0){"
+				"indx=cbg_table[xx];"
+				"__global ulong* bin=(__global ulong*)binary_values;"
+				"if(indx!=0xffffffff&&A==bin[indx*8u]){"
+
+					"ulong aa=A-W0;"
+					"W4=W10+R1(W8)+W3+R0(W11);"
+					"W6=W12+R1(W4)+W5+R0(W13);"
+					"ulong ww14=W14+R1(W6)+W7+R0(W15);"
+
+					"ulong bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+					"hh+=R_E(ee)+bs(gg,ff,ee)+0x28DB77F523047D84UL+W8;dd+=hh;hh+=R_A(aa)+MAJ(aa,bb,cc);"
+					"gg+=R_E(dd)+bs(ff,ee,dd)+0x32CAAB7B40C72493UL+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+					"ff+=R_E(cc)+bs(ee,dd,cc)+0x3C9EBE0A15C9BEBCUL+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+					"ee+=R_E(bb)+bs(dd,cc,bb)+0x431D67C49C100D4CUL+W2;aa+=ee;"
+					"dd+=R_E(aa)+bs(cc,bb,aa)+0x4CC5D4BECB3E42B6UL+W6;hh+=dd;"
+					"cc+=R_E(hh)+bs(bb,aa,hh)+0x597F299CFC657E2AUL+W1;gg+=cc;"
+					"bb+=bs(aa,hh,gg)+ww14;"
+
+					"if(bb==bin[indx*8u+1u]&&cc==bin[indx*8u+2u]&&dd==bin[indx*8u+3u]&&"
+					"ee==bin[indx*8u+4u]&&ff==bin[indx*8u+5u]&&gg==bin[indx*8u+6u]&&"
+					"hh==bin[indx*8u+7u]){"
+						"uint found=atomic_inc(output);"
+						"output[%iu*found+1]=get_global_id(0);"
+						"output[%iu*found+2]=indx;"
+						"%s"
+					"}"
+				"}"
+			"}", found_multiplier, found_multiplier, output_3);
+				
+		sprintf(source + strlen(source),
+			"if(fdata&4){"// Is second
+				"xx+=fdata&1?-1:1;"
+				"if(((((uint)cbg_filter[xx])^((uint)(A>>32u)))&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"__global ulong* bin=(__global ulong*)binary_values;"
+					"if(indx!=0xffffffff&&A==bin[indx*8u]){"
+
 						"ulong aa=A-W0;"
 						"W4=W10+R1(W8)+W3+R0(W11);"
 						"W6=W12+R1(W4)+W5+R0(W13);"
 						"ulong ww14=W14+R1(W6)+W7+R0(W15);"
-						
+
 						"ulong bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
-						
+
 						"hh+=R_E(ee)+bs(gg,ff,ee)+0x28DB77F523047D84UL+W8;dd+=hh;hh+=R_A(aa)+MAJ(aa,bb,cc);"
 						"gg+=R_E(dd)+bs(ff,ee,dd)+0x32CAAB7B40C72493UL+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
 						"ff+=R_E(cc)+bs(ee,dd,cc)+0x3C9EBE0A15C9BEBCUL+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
@@ -1867,20 +2174,89 @@ PRIVATE void ocl_gen_kernel_sha512_ulong(char* source, char* kernel_name, ocl_be
 						"cc+=R_E(hh)+bs(bb,aa,hh)+0x597F299CFC657E2AUL+W1;gg+=cc;"
 						"bb+=bs(aa,hh,gg)+ww14;"
 
-						"if(bb==binary_values[indx*8u+1u]&&cc==binary_values[indx*8u+2u]&&dd==binary_values[indx*8u+3u]&&"
-						   "ee==binary_values[indx*8u+4u]&&ff==binary_values[indx*8u+5u]&&gg==binary_values[indx*8u+6u]&&"
-						   "hh==binary_values[indx*8u+7u])"
-					    "{"
+						"if(bb==bin[indx*8u+1u]&&cc==bin[indx*8u+2u]&&dd==bin[indx*8u+3u]&&"
+						"ee==bin[indx*8u+4u]&&ff==bin[indx*8u+5u]&&gg==bin[indx*8u+6u]&&"
+						"hh==bin[indx*8u+7u]){"
 							"uint found=atomic_inc(output);"
 							"output[%iu*found+1]=get_global_id(0);"
 							"output[%iu*found+2]=indx;"
 							"%s"
-						"}", found_multiplier, found_multiplier, output_3);
-
-	strcat(source, "}"
-					"indx=same_hash_next[indx];"
+						"}"
+					"}"
 				"}"
-			"}");
+			"}", found_multiplier, found_multiplier, output_3);
+
+		sprintf(source + strlen(source),
+			"if(fdata&2){"// Is unlucky
+				"xx=((uint)(A>>32u))&%uu;"
+				"fdata=(uint)(cbg_filter[xx]);"
+				"if(((fdata^((uint)A))&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"__global ulong* bin=(__global ulong*)binary_values;"
+					"if(indx!=0xffffffff&&A==bin[indx*8u]){"
+
+						"ulong aa=A-W0;"
+						"W4=W10+R1(W8)+W3+R0(W11);"
+						"W6=W12+R1(W4)+W5+R0(W13);"
+						"ulong ww14=W14+R1(W6)+W7+R0(W15);"
+
+						"ulong bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+						"hh+=R_E(ee)+bs(gg,ff,ee)+0x28DB77F523047D84UL+W8;dd+=hh;hh+=R_A(aa)+MAJ(aa,bb,cc);"
+						"gg+=R_E(dd)+bs(ff,ee,dd)+0x32CAAB7B40C72493UL+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+						"ff+=R_E(cc)+bs(ee,dd,cc)+0x3C9EBE0A15C9BEBCUL+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+						"ee+=R_E(bb)+bs(dd,cc,bb)+0x431D67C49C100D4CUL+W2;aa+=ee;"
+						"dd+=R_E(aa)+bs(cc,bb,aa)+0x4CC5D4BECB3E42B6UL+W6;hh+=dd;"
+						"cc+=R_E(hh)+bs(bb,aa,hh)+0x597F299CFC657E2AUL+W1;gg+=cc;"
+						"bb+=bs(aa,hh,gg)+ww14;"
+
+						"if(bb==bin[indx*8u+1u]&&cc==bin[indx*8u+2u]&&dd==bin[indx*8u+3u]&&"
+						"ee==bin[indx*8u+4u]&&ff==bin[indx*8u+5u]&&gg==bin[indx*8u+6u]&&"
+						"hh==bin[indx*8u+7u]){"
+							"uint found=atomic_inc(output);"
+							"output[%iu*found+1]=get_global_id(0);"
+							"output[%iu*found+2]=indx;"
+							"%s"
+						"}"
+					"}"
+				"}"
+			, cbg_mask, found_multiplier, found_multiplier, output_3);
+
+		sprintf(source + strlen(source),
+				"if(fdata&4){"// Is second
+					"xx+=fdata&1?-1:1;"
+					"if(((((uint)cbg_filter[xx])^((uint)A))&0xFFF8)==0){"
+						"indx=cbg_table[xx];"
+						"__global ulong* bin=(__global ulong*)binary_values;"
+						"if(indx!=0xffffffff&&A==bin[indx*8u]){"
+
+							"ulong aa=A-W0;"
+							"W4=W10+R1(W8)+W3+R0(W11);"
+							"W6=W12+R1(W4)+W5+R0(W13);"
+							"ulong ww14=W14+R1(W6)+W7+R0(W15);"
+
+							"ulong bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+							"hh+=R_E(ee)+bs(gg,ff,ee)+0x28DB77F523047D84UL+W8;dd+=hh;hh+=R_A(aa)+MAJ(aa,bb,cc);"
+							"gg+=R_E(dd)+bs(ff,ee,dd)+0x32CAAB7B40C72493UL+W9;cc+=gg;gg+=R_A(hh)+MAJ(hh,aa,bb);"
+							"ff+=R_E(cc)+bs(ee,dd,cc)+0x3C9EBE0A15C9BEBCUL+W4;bb+=ff;ff+=MAJ(gg,hh,aa);"
+							"ee+=R_E(bb)+bs(dd,cc,bb)+0x431D67C49C100D4CUL+W2;aa+=ee;"
+							"dd+=R_E(aa)+bs(cc,bb,aa)+0x4CC5D4BECB3E42B6UL+W6;hh+=dd;"
+							"cc+=R_E(hh)+bs(bb,aa,hh)+0x597F299CFC657E2AUL+W1;gg+=cc;"
+							"bb+=bs(aa,hh,gg)+ww14;"
+
+							"if(bb==bin[indx*8u+1u]&&cc==bin[indx*8u+2u]&&dd==bin[indx*8u+3u]&&"
+							"ee==bin[indx*8u+4u]&&ff==bin[indx*8u+5u]&&gg==bin[indx*8u+6u]&&"
+							"hh==bin[indx*8u+7u]){"
+								"uint found=atomic_inc(output);"
+								"output[%iu*found+1]=get_global_id(0);"
+								"output[%iu*found+2]=indx;"
+								"%s"
+							"}"
+						"}"
+					"}"
+				"}"
+			"}", found_multiplier, found_multiplier, output_3);
 	}
 
 	if (ocl_end)	ocl_end(source);
@@ -1900,16 +2276,16 @@ PRIVATE void ocl_gen_kernel_sha512_uint2(char* source, char* kernel_name, ocl_be
 	sprintf(source + strlen(source), "\n__kernel void %s(const __global uint* keys,__global uint* restrict output", kernel_name);
 
 	if (num_passwords_loaded > 1)
-		strcat(source, ",const __global uint* restrict table,const __global uint* restrict binary_values,const __global uint* restrict same_hash_next,const __global uint* restrict bit_table");
+		strcat(source, ",const __global uint* restrict cbg_table,const __global uint* restrict binary_values,const __global ushort* restrict cbg_filter");
 
 	if (aditional_param)
 	{
 		sprintf(source + strlen(source), ",uint param");
-		*aditional_param = num_passwords_loaded > 1 ? 6 : 2;
+		*aditional_param = num_passwords_loaded > 1 ? 5 : 2;
 	}
 
 	// Begin function code
-	sprintf(source + strlen(source), "){uint indx;");
+	sprintf(source + strlen(source), "){uint indx=get_global_id(0);");
 
 	// Convert the key into a nt_buffer
 	memset(buffer_vector_size, 1, sizeof(buffer_vector_size));
@@ -2074,62 +2450,167 @@ PRIVATE void ocl_gen_kernel_sha512_uint2(char* source, char* kernel_name, ocl_be
 				"%s"
 			"}"
 		"}"
-		, (unsigned int)(bin[0]), (unsigned int)(bin[0]>>32)
-		, (unsigned int)(bin[1]), (unsigned int)(bin[1]>>32)
-		, (unsigned int)(bin[2]), (unsigned int)(bin[2]>>32)
-		, (unsigned int)(bin[3]), (unsigned int)(bin[3]>>32)
-		, (unsigned int)(bin[4]), (unsigned int)(bin[4]>>32)
-		, (unsigned int)(bin[5]), (unsigned int)(bin[5]>>32)
-		, (unsigned int)(bin[6]), (unsigned int)(bin[6]>>32)
-		, (unsigned int)(bin[7]), (unsigned int)(bin[7]>>32), output_3);
+		, (uint32_t)(bin[0]), (uint32_t)(bin[0]>>32)
+		, (uint32_t)(bin[1]), (uint32_t)(bin[1]>>32)
+		, (uint32_t)(bin[2]), (uint32_t)(bin[2]>>32)
+		, (uint32_t)(bin[3]), (uint32_t)(bin[3]>>32)
+		, (uint32_t)(bin[4]), (uint32_t)(bin[4]>>32)
+		, (uint32_t)(bin[5]), (uint32_t)(bin[5]>>32)
+		, (uint32_t)(bin[6]), (uint32_t)(bin[6]>>32)
+		, (uint32_t)(bin[7]), (uint32_t)(bin[7]>>32), output_3);
 	}
 	else
 	{
 		if (found_param_3)
 			sprintf(output_3, "output[3u*found+3u]=%s;", found_param_3);
 
+		// Find match
+		sprintf(source + strlen(source), "uint xx=A.s0&%uu;uint fdata;", cbg_mask);
+		
 		sprintf(source + strlen(source),
-			"indx=A.s0&SIZE_BIT_TABLE;"
-			"if((bit_table[indx>>5u]>>(indx&31u))&1u)"
-			"{"
-				"indx=table[A.s0&SIZE_TABLE];"
+			"fdata=(uint)(cbg_filter[xx]);"
 
-				"while(indx!=0xffffffff)"
-				//"if(indx!=0xffffffff)"
-				"{"
-					"if(A.s0==binary_values[indx*16u]&&A.s1==binary_values[indx*16u+1u])"
-					"{"
+			"if(((fdata^A.s1)&0xFFF8)==0){"
+				"indx=cbg_table[xx];"
+				"if(indx!=0xffffffff&&A.s0==binary_values[indx*16u]&&A.s1==binary_values[indx*16u+1u]){"
+
+					"uint2 aa,ww14;"
+					"SUB(aa,A,W0);"
+					"ADD(W4,W10,W3);R1(t,W8);ADD(W4,W4,t);R0(t,W11);ADD(W4,W4,t);"
+					"ADD(W6,W12,W5);R1(t,W4);ADD(W6,W6,t);R0(t,W13);ADD(W6,W6,t);"
+					"ADD(ww14,W14,W7);R1(t,W6);ADD(ww14,ww14,t);R0(t,W15);ADD(ww14,ww14,t);"
+
+					"uint2 bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+					"STEP(hh,ee,gg,ff,0x28DB77F5,0x23047D84,W8,dd,aa,bb,cc);"
+					"STEP(gg,dd,ff,ee,0x32CAAB7B,0x40C72493,W9,cc,hh,aa,bb);"
+					"STEP_1ST(ff,cc,ee,dd,0x3C9EBE0A,0x15C9BEBC,W4,bb);t=MAJ(gg,hh,aa);ADD(ff,ff,t);"
+					"STEP_1ST(ee,bb,dd,cc,0x431D67C4,0x9C100D4C,W2,aa);"
+					"STEP_1ST(dd,aa,cc,bb,0x4CC5D4BE,0xCB3E42B6,W6,hh);"
+					"STEP_1ST(cc,hh,bb,aa,0x597F299C,0xFC657E2A,W1,gg);"
+					"ADD(bb,bb,ww14);t=bs(aa,hh,gg);ADD(bb,bb,t);"
+
+					"if(bb.s0==binary_values[indx*16u+2u]&&bb.s1==binary_values[indx*16u+3u]&&cc.s0==binary_values[indx*16u+4u]&&cc.s1==binary_values[indx*16u+5u]&&"
+					"dd.s0==binary_values[indx*16u+6u]&&dd.s1==binary_values[indx*16u+7u]&&ee.s0==binary_values[indx*16u+8u]&&ee.s1==binary_values[indx*16u+9u]&&"
+					"ff.s0==binary_values[indx*16u+10u]&&ff.s1==binary_values[indx*16u+11u]&&gg.s0==binary_values[indx*16u+12u]&&gg.s1==binary_values[indx*16u+13u]&&"
+					"hh.s0==binary_values[indx*16u+14u]&&hh.s1==binary_values[indx*16u+15u]){"
+						"uint found=atomic_inc(output);"
+						"output[%iu*found+1]=get_global_id(0);"
+						"output[%iu*found+2]=indx;"
+						"%s"
+					"}"
+				"}"
+			"}", found_multiplier, found_multiplier, output_3);
+				
+		sprintf(source + strlen(source),
+			"if(fdata&4){"// Is second
+				"xx+=fdata&1?-1:1;"
+				"if(((((uint)cbg_filter[xx])^A.s1)&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"if(indx!=0xffffffff&&A.s0==binary_values[indx*16u]&&A.s1==binary_values[indx*16u+1u]){"
+
 						"uint2 aa,ww14;"
 						"SUB(aa,A,W0);"
 						"ADD(W4,W10,W3);R1(t,W8);ADD(W4,W4,t);R0(t,W11);ADD(W4,W4,t);"
 						"ADD(W6,W12,W5);R1(t,W4);ADD(W6,W6,t);R0(t,W13);ADD(W6,W6,t);"
 						"ADD(ww14,W14,W7);R1(t,W6);ADD(ww14,ww14,t);R0(t,W15);ADD(ww14,ww14,t);"
-						
+
 						"uint2 bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
-						
-						    "STEP(hh,ee,gg,ff,0x28DB77F5,0x23047D84,W8,dd,aa,bb,cc);"
-						    "STEP(gg,dd,ff,ee,0x32CAAB7B,0x40C72493,W9,cc,hh,aa,bb);"
+
+						"STEP(hh,ee,gg,ff,0x28DB77F5,0x23047D84,W8,dd,aa,bb,cc);"
+						"STEP(gg,dd,ff,ee,0x32CAAB7B,0x40C72493,W9,cc,hh,aa,bb);"
 						"STEP_1ST(ff,cc,ee,dd,0x3C9EBE0A,0x15C9BEBC,W4,bb);t=MAJ(gg,hh,aa);ADD(ff,ff,t);"
 						"STEP_1ST(ee,bb,dd,cc,0x431D67C4,0x9C100D4C,W2,aa);"
 						"STEP_1ST(dd,aa,cc,bb,0x4CC5D4BE,0xCB3E42B6,W6,hh);"
 						"STEP_1ST(cc,hh,bb,aa,0x597F299C,0xFC657E2A,W1,gg);"
 						"ADD(bb,bb,ww14);t=bs(aa,hh,gg);ADD(bb,bb,t);"
-						
+
 						"if(bb.s0==binary_values[indx*16u+2u]&&bb.s1==binary_values[indx*16u+3u]&&cc.s0==binary_values[indx*16u+4u]&&cc.s1==binary_values[indx*16u+5u]&&"
-						   "dd.s0==binary_values[indx*16u+6u]&&dd.s1==binary_values[indx*16u+7u]&&ee.s0==binary_values[indx*16u+8u]&&ee.s1==binary_values[indx*16u+9u]&&"
-						   "ff.s0==binary_values[indx*16u+10u]&&ff.s1==binary_values[indx*16u+11u]&&gg.s0==binary_values[indx*16u+12u]&&gg.s1==binary_values[indx*16u+13u]&&"
-						   "hh.s0==binary_values[indx*16u+14u]&&hh.s1==binary_values[indx*16u+15u])"
-					    "{"
+						"dd.s0==binary_values[indx*16u+6u]&&dd.s1==binary_values[indx*16u+7u]&&ee.s0==binary_values[indx*16u+8u]&&ee.s1==binary_values[indx*16u+9u]&&"
+						"ff.s0==binary_values[indx*16u+10u]&&ff.s1==binary_values[indx*16u+11u]&&gg.s0==binary_values[indx*16u+12u]&&gg.s1==binary_values[indx*16u+13u]&&"
+						"hh.s0==binary_values[indx*16u+14u]&&hh.s1==binary_values[indx*16u+15u]){"
 							"uint found=atomic_inc(output);"
 							"output[%iu*found+1]=get_global_id(0);"
 							"output[%iu*found+2]=indx;"
 							"%s"
-						"}", found_multiplier, found_multiplier, output_3);
-
-	strcat(source, "}"
-					"indx=same_hash_next[indx];"
+						"}"
+					"}"
 				"}"
-			"}");
+			"}", found_multiplier, found_multiplier, output_3);
+
+		sprintf(source + strlen(source),
+			"if(fdata&2){"// Is unlucky
+				"xx=A.s1&%uu;"
+				"fdata=(uint)(cbg_filter[xx]);"
+				"if(((fdata^A.s0)&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"if(indx!=0xffffffff&&A.s0==binary_values[indx*16u]&&A.s1==binary_values[indx*16u+1u]){"
+
+						"uint2 aa,ww14;"
+						"SUB(aa,A,W0);"
+						"ADD(W4,W10,W3);R1(t,W8);ADD(W4,W4,t);R0(t,W11);ADD(W4,W4,t);"
+						"ADD(W6,W12,W5);R1(t,W4);ADD(W6,W6,t);R0(t,W13);ADD(W6,W6,t);"
+						"ADD(ww14,W14,W7);R1(t,W6);ADD(ww14,ww14,t);R0(t,W15);ADD(ww14,ww14,t);"
+
+						"uint2 bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+						"STEP(hh,ee,gg,ff,0x28DB77F5,0x23047D84,W8,dd,aa,bb,cc);"
+						"STEP(gg,dd,ff,ee,0x32CAAB7B,0x40C72493,W9,cc,hh,aa,bb);"
+						"STEP_1ST(ff,cc,ee,dd,0x3C9EBE0A,0x15C9BEBC,W4,bb);t=MAJ(gg,hh,aa);ADD(ff,ff,t);"
+						"STEP_1ST(ee,bb,dd,cc,0x431D67C4,0x9C100D4C,W2,aa);"
+						"STEP_1ST(dd,aa,cc,bb,0x4CC5D4BE,0xCB3E42B6,W6,hh);"
+						"STEP_1ST(cc,hh,bb,aa,0x597F299C,0xFC657E2A,W1,gg);"
+						"ADD(bb,bb,ww14);t=bs(aa,hh,gg);ADD(bb,bb,t);"
+
+						"if(bb.s0==binary_values[indx*16u+2u]&&bb.s1==binary_values[indx*16u+3u]&&cc.s0==binary_values[indx*16u+4u]&&cc.s1==binary_values[indx*16u+5u]&&"
+						"dd.s0==binary_values[indx*16u+6u]&&dd.s1==binary_values[indx*16u+7u]&&ee.s0==binary_values[indx*16u+8u]&&ee.s1==binary_values[indx*16u+9u]&&"
+						"ff.s0==binary_values[indx*16u+10u]&&ff.s1==binary_values[indx*16u+11u]&&gg.s0==binary_values[indx*16u+12u]&&gg.s1==binary_values[indx*16u+13u]&&"
+						"hh.s0==binary_values[indx*16u+14u]&&hh.s1==binary_values[indx*16u+15u]){"
+							"uint found=atomic_inc(output);"
+							"output[%iu*found+1]=get_global_id(0);"
+							"output[%iu*found+2]=indx;"
+							"%s"
+						"}"
+					"}"
+				"}"
+			, cbg_mask, found_multiplier, found_multiplier, output_3);
+
+		sprintf(source + strlen(source),
+				"if(fdata&4){"// Is second
+					"xx+=fdata&1?-1:1;"
+					"if(((((uint)cbg_filter[xx])^A.s0)&0xFFF8)==0){"
+						"indx=cbg_table[xx];"
+						"if(indx!=0xffffffff&&A.s0==binary_values[indx*16u]&&A.s1==binary_values[indx*16u+1u]){"
+
+							"uint2 aa,ww14;"
+							"SUB(aa,A,W0);"
+							"ADD(W4,W10,W3);R1(t,W8);ADD(W4,W4,t);R0(t,W11);ADD(W4,W4,t);"
+							"ADD(W6,W12,W5);R1(t,W4);ADD(W6,W6,t);R0(t,W13);ADD(W6,W6,t);"
+							"ADD(ww14,W14,W7);R1(t,W6);ADD(ww14,ww14,t);R0(t,W15);ADD(ww14,ww14,t);"
+
+							"uint2 bb=B,cc=C,dd=D,ee=E,ff=F,gg=G,hh=H;"
+
+							"STEP(hh,ee,gg,ff,0x28DB77F5,0x23047D84,W8,dd,aa,bb,cc);"
+							"STEP(gg,dd,ff,ee,0x32CAAB7B,0x40C72493,W9,cc,hh,aa,bb);"
+							"STEP_1ST(ff,cc,ee,dd,0x3C9EBE0A,0x15C9BEBC,W4,bb);t=MAJ(gg,hh,aa);ADD(ff,ff,t);"
+							"STEP_1ST(ee,bb,dd,cc,0x431D67C4,0x9C100D4C,W2,aa);"
+							"STEP_1ST(dd,aa,cc,bb,0x4CC5D4BE,0xCB3E42B6,W6,hh);"
+							"STEP_1ST(cc,hh,bb,aa,0x597F299C,0xFC657E2A,W1,gg);"
+							"ADD(bb,bb,ww14);t=bs(aa,hh,gg);ADD(bb,bb,t);"
+
+							"if(bb.s0==binary_values[indx*16u+2u]&&bb.s1==binary_values[indx*16u+3u]&&cc.s0==binary_values[indx*16u+4u]&&cc.s1==binary_values[indx*16u+5u]&&"
+							"dd.s0==binary_values[indx*16u+6u]&&dd.s1==binary_values[indx*16u+7u]&&ee.s0==binary_values[indx*16u+8u]&&ee.s1==binary_values[indx*16u+9u]&&"
+							"ff.s0==binary_values[indx*16u+10u]&&ff.s1==binary_values[indx*16u+11u]&&gg.s0==binary_values[indx*16u+12u]&&gg.s1==binary_values[indx*16u+13u]&&"
+							"hh.s0==binary_values[indx*16u+14u]&&hh.s1==binary_values[indx*16u+15u]){"
+								"uint found=atomic_inc(output);"
+								"output[%iu*found+1]=get_global_id(0);"
+								"output[%iu*found+2]=indx;"
+								"%s"
+							"}"
+						"}"
+					"}"
+				"}"
+			"}", found_multiplier, found_multiplier, output_3);
 	}
 
 	if (ocl_end)	ocl_end(source);
@@ -2140,44 +2621,51 @@ PRIVATE void ocl_gen_kernel_sha512_uint2(char* source, char* kernel_name, ocl_be
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UTF8
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
-#ifdef ANDROID
-	ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_sha512_header_uint2, ocl_gen_kernel_sha512_uint2, kernels2common + UTF8_INDEX_IN_KERNELS, 32, ocl_rule_simple_copy_utf8_le);
+#ifdef __ANDROID__
+	return ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha512_header_uint2, ocl_gen_kernel_sha512_uint2, kernels2common + UTF8_INDEX_IN_KERNELS, 32, ocl_rule_simple_copy_utf8_le);
 #else
-	ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_sha512_header_uint2, ocl_gen_kernel_sha512_uint2, kernels2common + UTF8_INDEX_IN_KERNELS, 4/*consider 2 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
+	//return ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha512_header_ulong, ocl_gen_kernel_sha512_ulong, kernels2common + UTF8_INDEX_IN_KERNELS, 4/*consider 2 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
+	return ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha512_header_uint2, ocl_gen_kernel_sha512_uint2, kernels2common + UTF8_INDEX_IN_KERNELS, 4/*consider 2 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
 #endif
 
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Phrases
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
-	ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_sha512_header_uint2, ocl_gen_kernel_sha512_uint2, kernels2common + PHRASES_INDEX_IN_KERNELS, 64/*consider 32 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
+	//return ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha512_header_ulong, ocl_gen_kernel_sha512_ulong, kernels2common + PHRASES_INDEX_IN_KERNELS, 64/*consider 32 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
+	return ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha512_header_uint2, ocl_gen_kernel_sha512_uint2, kernels2common + PHRASES_INDEX_IN_KERNELS, 64/*consider 32 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Rules
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
-	ocl_rules_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 0, ocl_write_sha512_header_uint2, ocl_gen_kernel_sha512_uint2, RULE_UTF8_LE_INDEX, 8);
+	//return ocl_rules_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha512_header_ulong, ocl_gen_kernel_sha512_ulong, RULE_UTF8_LE_INDEX, 8);
+	return ocl_rules_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_sha512_header_uint2, ocl_gen_kernel_sha512_uint2, RULE_UTF8_LE_INDEX, 8);
 }
 #endif
 
-PRIVATE int bench_values[] = { 1, 10, 100, 1000, 10000, 65536, 100000, 1000000 };
 Format raw_sha512_format = {
 	"Raw-SHA512",
 	"Raw SHA2-512 format.",
+	"$SHA512$",
 	NTLM_MAX_KEY_LENGHT,
 	BINARY_SIZE,
 	0,
 	8,
-	bench_values,
-	LENGHT(bench_values),
+	NULL,
+	0,
 	get_binary,
+	binary2hex,
+	VALUE_MAP_INDEX0,
+	VALUE_MAP_INDEX1,
 	is_valid,
 	add_hash_from_line,
+	NULL,
 #ifdef _M_X64
 	{{CPU_CAP_AVX2, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_avx2}, {CPU_CAP_AVX, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_avx}, {CPU_CAP_SSE2, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_sse2}},
 #else

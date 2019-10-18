@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2014-2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2014-2018 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
@@ -20,31 +20,40 @@ PRIVATE int is_valid(char* user_name, char* md5, char* unused, char* unused1)
 		if (md5 && valid_hex_string(md5, 32))
 			return TRUE;
 
-		if (!md5 && !memcmp(user_name, "$dynamic_0$", 11) && valid_hex_string(user_name + 11, 32))
+		if (!memcmp(user_name, "$dynamic_0$", 11) && valid_hex_string(user_name + 11, 32))
+			return TRUE;
+
+		if (valid_hex_string(user_name, 32))
 			return TRUE;
 	}
 
 	return FALSE;
 }
 
-PRIVATE void add_hash_from_line(ImportParam* param, char* user_name, char* md5, char* unused, char* unused1, sqlite3_int64 tag_id)
+PRIVATE sqlite3_int64 add_hash_from_line(ImportParam* param, char* user_name, char* md5, char* unused, char* unused1)
 {
 	if (user_name)
 	{
 		if (md5 && valid_hex_string(md5, 32))
-			insert_hash_account(param, user_name, _strupr(md5), MD5_INDEX, tag_id);
+			return insert_hash_account1(param, user_name, _strupr(md5), MD5_INDEX);
 
-		if (!md5 && !memcmp(user_name, "$dynamic_0$", 11) && valid_hex_string(user_name + 11, 32))
-			insert_hash_account(param, "user", _strupr(user_name + 11), MD5_INDEX, tag_id);
+		if (!memcmp(user_name, "$dynamic_0$", 11) && valid_hex_string(user_name + 11, 32))
+			return insert_hash_account1(param, NULL, _strupr(user_name + 11), MD5_INDEX);
+
+		if (valid_hex_string(user_name, 32))
+			return insert_hash_account1(param, NULL, _strupr(user_name), MD5_INDEX);
 	}
+	return -1;
 }
-PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, void* salt)
+#define VALUE_MAP_INDEX0 2
+#define VALUE_MAP_INDEX1 1
+PRIVATE uint32_t get_binary(const unsigned char* ciphertext, void* binary, void* salt)
 {
-	unsigned int* out = (unsigned int*)binary;
+	uint32_t* out = (uint32_t*)binary;
 
-	for (unsigned int i = 0; i < 4; i++)
+	for (uint32_t i = 0; i < 4; i++)
 	{
-		unsigned int temp = (hex_to_num[ciphertext[i * 8 + 0]]) << 4;
+		uint32_t temp = (hex_to_num[ciphertext[i * 8 + 0]]) << 4;
 		temp |= (hex_to_num[ciphertext[i * 8 + 1]]);
 
 		temp |= (hex_to_num[ciphertext[i * 8 + 2]]) << 12;
@@ -65,18 +74,42 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	out[3] -= INIT_D;
 
 	// b
-	out[1] = rotate(out[1] - out[2], 32 - 21);
+	out[1] = ROTATE(out[1] - out[2], 32 - 21);
 	out[1] -= (out[3] ^ (out[2] | ~out[0])) + 0xeb86d391;
 
 	// c
-	out[2] = rotate(out[2] - out[3], 32 - 15);
+	out[2] = ROTATE(out[2] - out[3], 32 - 15);
 	out[2] -= (out[0] ^ (out[3] | ~out[1])) + 0x2ad7d2bb;
 
 	//d
-	out[3] = rotate(out[3] - out[0], 32 - 10);
+	out[3] = ROTATE(out[3] - out[0], 32 - 10);
 	out[3] -= 0xbd3af235;
 
-	return out[2];
+	return out[VALUE_MAP_INDEX0];
+}
+PRIVATE void binary2hex(const void* binary, const void* salt, unsigned char* ciphertext)
+{
+	uint32_t bin[BINARY_SIZE / sizeof(uint32_t)];
+	memcpy(bin, binary, BINARY_SIZE);
+
+	//d
+	bin[3] += 0xbd3af235;
+	bin[3]  = ROTATE(bin[3], 10) + bin[0];
+	
+	// c
+	bin[2] += (bin[0] ^ (bin[3] | ~bin[1])) + 0x2ad7d2bb;
+	bin[2]  = ROTATE(bin[2], 15) + bin[3];
+	
+	// b
+	bin[1] += (bin[3] ^ (bin[2] | ~bin[0])) + 0xeb86d391;
+	bin[1]  = ROTATE(bin[1], 21) + bin[2];
+	
+	bin[0] += INIT_A;
+	bin[1] += INIT_B;
+	bin[2] += INIT_C;
+	bin[3] += INIT_D;
+
+	binary_to_hex(bin, ciphertext, BINARY_SIZE / sizeof(uint32_t), TRUE);
 }
 
 #ifdef HS_ARM
@@ -87,54 +120,81 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	#define NT_NUM_KEYS		    256
 #endif
 
+PRIVATE uint32_t compare_elem(uint32_t i, uint32_t cbg_table_pos, uint32_t* nt_buffer)
+{
+	if (cbg_table_pos == NO_ELEM) return FALSE;
+
+	uint32_t* bin = ((uint32_t*)binary_values) + cbg_table_pos * 4;
+
+	uint32_t* unpacked_as = (uint32_t*)(nt_buffer + 8 * NT_NUM_KEYS);
+	uint32_t* unpacked_bs = (uint32_t*)(nt_buffer + 8 * NT_NUM_KEYS + 1 * NT_NUM_KEYS);
+	uint32_t* unpacked_cs = (uint32_t*)(nt_buffer + 8 * NT_NUM_KEYS + 2 * NT_NUM_KEYS);
+	uint32_t* unpacked_ds = (uint32_t*)(nt_buffer + 8 * NT_NUM_KEYS + 3 * NT_NUM_KEYS);
+
+	if (unpacked_cs[i] != bin[2] || unpacked_bs[i] != bin[1]) return FALSE;
+	uint32_t cc = unpacked_cs[i] - nt_buffer[2 * NT_NUM_KEYS + i];
+
+	uint32_t aa = unpacked_as[i] + (cc ^ (unpacked_bs[i] | ~unpacked_ds[i])) + nt_buffer[4 * NT_NUM_KEYS + i] +0xf7537e82; aa = ROTATE(aa, 6) + unpacked_bs[i];
+	if (aa != bin[0])  return FALSE;
+
+	uint32_t dd = unpacked_ds[i] + (unpacked_bs[i] ^ (aa | ~cc));
+	if (cc != bin[2])  return FALSE;
+
+	return TRUE;
+}
+
 PRIVATE void crypt_utf8_coalesc_protocol_body(CryptParam* param, crypt_kernel_asm_func* crypt_kernel_asm)
 {
-	unsigned int* nt_buffer = (unsigned int*)_aligned_malloc((8+5) * sizeof(unsigned int) * NT_NUM_KEYS, 32);
+	uint32_t* nt_buffer = (uint32_t*)_aligned_malloc((8 + 4) * sizeof(uint32_t) * NT_NUM_KEYS, 64);
 
-	unsigned int* unpacked_as = (unsigned int*)(nt_buffer + 8 * NT_NUM_KEYS);
-	unsigned int* unpacked_bs = (unsigned int*)(nt_buffer + 8 * NT_NUM_KEYS + 1 * NT_NUM_KEYS);
-	unsigned int* unpacked_cs = (unsigned int*)(nt_buffer + 8 * NT_NUM_KEYS + 2 * NT_NUM_KEYS);
-	unsigned int* unpacked_ds = (unsigned int*)(nt_buffer + 8 * NT_NUM_KEYS + 3 * NT_NUM_KEYS);
-	unsigned int* indexs	  = (unsigned int*)(nt_buffer + 8 * NT_NUM_KEYS + 4 * NT_NUM_KEYS);
+	uint32_t* unpacked_as = (uint32_t*)(nt_buffer + 8 * NT_NUM_KEYS);
+	uint32_t* unpacked_bs = (uint32_t*)(nt_buffer + 8 * NT_NUM_KEYS + 1 * NT_NUM_KEYS);
+	uint32_t* unpacked_cs = (uint32_t*)(nt_buffer + 8 * NT_NUM_KEYS + 2 * NT_NUM_KEYS);
+	uint32_t* unpacked_ds = (uint32_t*)(nt_buffer + 8 * NT_NUM_KEYS + 3 * NT_NUM_KEYS);
 
 	unsigned char key[MAX_KEY_LENGHT_SMALL];
 
-	memset(nt_buffer, 0, 8 * sizeof(unsigned int)* NT_NUM_KEYS);
+	memset(nt_buffer, 0, 8 * sizeof(uint32_t)* NT_NUM_KEYS);
 	memset(key, 0, sizeof(key));
 
 	while (continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
 	{
-		crypt_kernel_asm(nt_buffer, bit_table, size_bit_table);
+		crypt_kernel_asm(nt_buffer);
 
-		for (unsigned int i = 0; i < NT_NUM_KEYS; i++)
-			if (indexs[i])
+		for (uint32_t i = 0; i < NT_NUM_KEYS; i++)
+		{
+			uint32_t up0 = unpacked_cs[i];
+			uint32_t up1 = unpacked_bs[i];
+
+			uint32_t pos = up0 & cbg_mask;
+			uint_fast16_t data = cbg_filter[pos];
+			if (((data ^ up1) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], nt_buffer))
+				password_was_found(cbg_table[pos], utf8_coalesc2utf8_key(nt_buffer, key, NT_NUM_KEYS, i));// Total match
+
+			// 2nd pos
+			if (data & 0b110)
 			{
-				unsigned int indx = table[unpacked_cs[i] & size_table];
-				// Partial match
-				while (indx != NO_ELEM)
+				pos += data & 0b1 ? -1 : 1;
+				uint_fast16_t hash = cbg_filter[pos];
+				if (((hash ^ up1) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], nt_buffer))
+					password_was_found(cbg_table[pos], utf8_coalesc2utf8_key(nt_buffer, key, NT_NUM_KEYS, i));// Total match
+
+				// Unluky bucket
+				if (data & 0b10)
 				{
-					unsigned int aa, bb, cc = unpacked_cs[i], dd;
-					unsigned int* bin = ((unsigned int*)binary_values) + indx * 4;
+					pos = up1 & cbg_mask;
+					data = cbg_filter[pos];
+					if (((data ^ up0) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], nt_buffer))
+						password_was_found(cbg_table[pos], utf8_coalesc2utf8_key(nt_buffer, key, NT_NUM_KEYS, i));// Total match
 
-					if (cc != bin[2]) goto next_iteration;
-
-					cc -= nt_buffer[2 * NT_NUM_KEYS + i];
-					bb = unpacked_bs[i] + (unpacked_ds[i] ^ (cc | ~unpacked_as[i])) + 0x4e0811a1; bb = rotate(bb, 21) + cc;
-					if (bb != bin[1]) goto next_iteration;
-
-					aa = unpacked_as[i] + (cc ^ (bb | ~unpacked_ds[i])) + nt_buffer[4 * NT_NUM_KEYS + i] + 0xf7537e82; aa = rotate(aa, 6) + bb;
-					if (aa != bin[0]) goto next_iteration;
-
-					dd = unpacked_ds[i] + (bb ^ (aa | ~cc));
-					if (dd != bin[3]) goto next_iteration;
-
-					// Total match
-					password_was_found(indx, utf8_coalesc2utf8_key(nt_buffer, key, NT_NUM_KEYS, i));
-
-				next_iteration:
-					indx = same_hash_next[indx];
+					// 2nd pos
+					pos += data & 0b1 ? -1 : 1;
+					hash = cbg_filter[pos];
+					if (((hash ^ up0) & 0xFFF8) == 0 && compare_elem(i, cbg_table[pos], nt_buffer))
+						password_was_found(cbg_table[pos], utf8_coalesc2utf8_key(nt_buffer, key, NT_NUM_KEYS, i));// Total match
 				}
 			}
+		}
 
 		report_keys_processed(NT_NUM_KEYS);
 	}
@@ -147,132 +207,100 @@ PRIVATE void crypt_utf8_coalesc_protocol_body(CryptParam* param, crypt_kernel_as
 // C code
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifndef _M_X64
+PRIVATE void crypt_kernel_c(uint32_t* nt_buffer)
+{
+	for (int i = 0; i < NT_NUM_KEYS; i++)
+	{
+		/* Round 1 */
+		uint32_t a = nt_buffer[0 * NT_NUM_KEYS + i] + 0xd76aa477; a = ROTATE(a, 7) + INIT_B;
+		uint32_t d = (INIT_C ^ (a & 0x77777777)) + nt_buffer[1 * NT_NUM_KEYS + i] + 0xf8fa0bcc; d = ROTATE(d, 12) + a;
+		uint32_t c = (INIT_B ^ (d & (a ^ INIT_B))) + nt_buffer[2 * NT_NUM_KEYS + i] + 0xbcdb4dd9; c = ROTATE(c, 17) + d;
+		uint32_t b = (a ^ (c & (d ^ a))) + nt_buffer[3 * NT_NUM_KEYS + i] + 0xb18b7a77; b = ROTATE(b, 22) + c;
+
+		a += (d ^ (b & (c ^ d))) + nt_buffer[4 * NT_NUM_KEYS + i] + 0xf57c0faf; a = ROTATE(a, 7) + b;
+		d += (c ^ (a & (b ^ c))) + nt_buffer[5 * NT_NUM_KEYS + i] + 0x4787c62a; d = ROTATE(d, 12) + a;
+		c += (b ^ (d & (a ^ b))) + nt_buffer[6 * NT_NUM_KEYS + i] + 0xa8304613; c = ROTATE(c, 17) + d;
+		b += (a ^ (c & (d ^ a))) + 0xfd469501; b = ROTATE(b, 22) + c;
+
+		a += (d ^ (b & (c ^ d))) + 0x698098d8; a = ROTATE(a, 7) + b;
+		d += (c ^ (a & (b ^ c))) + 0x8b44f7af; d = ROTATE(d, 12) + a;
+		c += (b ^ (d & (a ^ b))) + 0xffff5bb1; c = ROTATE(c, 17) + d;
+		b += (a ^ (c & (d ^ a))) + 0x895cd7be; b = ROTATE(b, 22) + c;
+
+		a += (d ^ (b & (c ^ d))) + 0x6b901122; a = ROTATE(a, 7) + b;
+		d += (c ^ (a & (b ^ c))) + 0xfd987193; d = ROTATE(d, 12) + a;
+		c += (b ^ (d & (a ^ b))) + nt_buffer[7 * NT_NUM_KEYS + i] + 0xa679438e; c = ROTATE(c, 17) + d;
+		b += (a ^ (c & (d ^ a))) + 0x49b40821; b = ROTATE(b, 22) + c;
+
+		/* Round 2 */
+		a += (c ^ (d & (b ^ c))) + nt_buffer[1 * NT_NUM_KEYS + i] + 0xf61e2562; a = ROTATE(a, 5) + b;
+		d += (b ^ (c & (a ^ b))) + nt_buffer[6 * NT_NUM_KEYS + i] + 0xc040b340; d = ROTATE(d, 9) + a;
+		c += (a ^ (b & (d ^ a))) + 0x265e5a51; c = ROTATE(c, 14) + d;
+		b += (d ^ (a & (c ^ d))) + nt_buffer[0 * NT_NUM_KEYS + i] + 0xe9b6c7aa; b = ROTATE(b, 20) + c;
+
+		a += (c ^ (d & (b ^ c))) + nt_buffer[5 * NT_NUM_KEYS + i] + 0xd62f105d; a = ROTATE(a, 5) + b;
+		d += (b ^ (c & (a ^ b))) + 0x02441453; d = ROTATE(d, 9) + a;
+		c += (a ^ (b & (d ^ a))) + 0xd8a1e681; c = ROTATE(c, 14) + d;
+		b += (d ^ (a & (c ^ d))) + nt_buffer[4 * NT_NUM_KEYS + i] + 0xe7d3fbc8; b = ROTATE(b, 20) + c;
+
+		a += (c ^ (d & (b ^ c))) + 0x21e1cde6; a = ROTATE(a, 5) + b;
+		d += (b ^ (c & (a ^ b))) + nt_buffer[7 * NT_NUM_KEYS + i] + 0xc33707d6; d = ROTATE(d, 9) + a;
+		c += (a ^ (b & (d ^ a))) + nt_buffer[3 * NT_NUM_KEYS + i] + 0xf4d50d87; c = ROTATE(c, 14) + d;
+		b += (d ^ (a & (c ^ d))) + 0x455a14ed; b = ROTATE(b, 20) + c;
+
+		a += (c ^ (d & (b ^ c))) + 0xa9e3e905; a = ROTATE(a, 5) + b;
+		d += (b ^ (c & (a ^ b))) + nt_buffer[2 * NT_NUM_KEYS + i] + 0xfcefa3f8; d = ROTATE(d, 9) + a;
+		c += (a ^ (b & (d ^ a))) + 0x676f02d9; c = ROTATE(c, 14) + d;
+		b += (d ^ (a & (c ^ d))) + 0x8d2a4c8a; b = ROTATE(b, 20) + c;
+
+		/* Round 3 */
+		a += (b ^ c ^ d) + nt_buffer[5 * NT_NUM_KEYS + i] + 0xfffa3942; a = ROTATE(a, 4) + b;
+		d += (a ^ b ^ c) + 0x8771f681; d = ROTATE(d, 11) + a;
+		c += (d ^ a ^ b) + 0x6d9d6122; c = ROTATE(c, 16) + d;
+		b += (c ^ d ^ a) + nt_buffer[7 * NT_NUM_KEYS + i] + 0xfde5380c; b = ROTATE(b, 23) + c;
+
+		a += (b ^ c ^ d) + nt_buffer[1 * NT_NUM_KEYS + i] + 0xa4beea44; a = ROTATE(a, 4) + b;
+		d += (a ^ b ^ c) + nt_buffer[4 * NT_NUM_KEYS + i] + 0x4bdecfa9; d = ROTATE(d, 11) + a;
+		c += (d ^ a ^ b) + 0xf6bb4b60; c = ROTATE(c, 16) + d;
+		b += (c ^ d ^ a) + 0xbebfbc70; b = ROTATE(b, 23) + c;
+
+		a += (b ^ c ^ d) + 0x289b7ec6; a = ROTATE(a, 4) + b;
+		d += (a ^ b ^ c) + nt_buffer[0 * NT_NUM_KEYS + i] + 0xeaa127fa; d = ROTATE(d, 11) + a;
+		c += (d ^ a ^ b) + nt_buffer[3 * NT_NUM_KEYS + i] + 0xd4ef3085; c = ROTATE(c, 16) + d;
+		b += (c ^ d ^ a) + nt_buffer[6 * NT_NUM_KEYS + i] + 0x04881d05; b = ROTATE(b, 23) + c;
+
+		a += (b ^ c ^ d) + 0xd9d4d039; a = ROTATE(a, 4) + b;
+		d += (a ^ b ^ c) + 0xe6db99e5; d = ROTATE(d, 11) + a;
+		c += (d ^ a ^ b) + 0x1fa27cf8; c = ROTATE(c, 16) + d;
+		b += (c ^ d ^ a) + nt_buffer[2 * NT_NUM_KEYS + i] + 0xc4ac5665; b = ROTATE(b, 23) + c;
+
+		/* Round 4 */
+		a += (c ^ (b | ~d)) + nt_buffer[0 * NT_NUM_KEYS + i] + 0xf4292244; a = ROTATE(a, 6) + b;
+		d += (b ^ (a | ~c)) + 0x432aff97; d = ROTATE(d, 10) + a;
+		c += (a ^ (d | ~b)) + nt_buffer[7 * NT_NUM_KEYS + i] + 0xab9423a7; c = ROTATE(c, 15) + d;
+		b += (d ^ (c | ~a)) + nt_buffer[5 * NT_NUM_KEYS + i] + 0xfc93a039; b = ROTATE(b, 21) + c;
+
+		a += (c ^ (b | ~d)) + 0x655b59c3; a = ROTATE(a, 6) + b;
+		d += (b ^ (a | ~c)) + nt_buffer[3 * NT_NUM_KEYS + i] + 0x8f0ccc92; d = ROTATE(d, 10) + a;
+		c += (a ^ (d | ~b)) + 0xffeff47d; c = ROTATE(c, 15) + d;
+		b += (d ^ (c | ~a)) + nt_buffer[1 * NT_NUM_KEYS + i] + 0x85845dd1; b = ROTATE(b, 21) + c;
+
+		a += (c ^ (b | ~d)) + 0x6fa87e4f; a = ROTATE(a, 6) + b;
+		d += (b ^ (a | ~c)) + 0xfe2ce6e0; d = ROTATE(d, 10) + a;
+		c += (a ^ (d | ~b)) + nt_buffer[6 * NT_NUM_KEYS + i] + 0xa3014314; c = ROTATE(c, 15) + d;
+		b += (d ^ (c | ~a))  + 0x4e0811a1; b = ROTATE(b, 21) + c;
+		c += nt_buffer[2 * NT_NUM_KEYS + i];
+
+		// Save
+		nt_buffer[8 * NT_NUM_KEYS + i] = a;
+		nt_buffer[8 * NT_NUM_KEYS + 1 * NT_NUM_KEYS + i] = b;
+		nt_buffer[8 * NT_NUM_KEYS + 2 * NT_NUM_KEYS + i] = c;
+		nt_buffer[8 * NT_NUM_KEYS + 3 * NT_NUM_KEYS + i] = d;
+	}
+}
 PRIVATE void crypt_utf8_coalesc_protocol_c_code(CryptParam* param)
 {
-	unsigned int nt_buffer[8 * NT_NUM_KEYS];
-	unsigned int a, b, c, d, index;
-
-	unsigned char key[MAX_KEY_LENGHT_SMALL];
-
-	memset(nt_buffer, 0, sizeof(nt_buffer));
-	memset(key, 0, sizeof(key));
-
-	while (continue_attack && param->gen(nt_buffer, NT_NUM_KEYS, param->thread_id))
-	{
-		for (int i = 0; i < NT_NUM_KEYS; i++)
-		{
-			/* Round 1 */
-			a =									nt_buffer[0*NT_NUM_KEYS + i] + 0xd76aa477; a = rotate(a, 7 ) + INIT_B;
-			d = (INIT_C ^ (a & 0x77777777))	  +	nt_buffer[1*NT_NUM_KEYS + i] + 0xf8fa0bcc; d = rotate(d, 12) + a;
-			c = (INIT_B ^ (d & (a ^ INIT_B))) + nt_buffer[2*NT_NUM_KEYS + i] + 0xbcdb4dd9; c = rotate(c, 17) + d;
-			b = (a ^ (c & (d ^ a)))			  + nt_buffer[3*NT_NUM_KEYS + i] + 0xb18b7a77; b = rotate(b, 22) + c;
-					 					  
-			a += (d ^ (b & (c ^ d))) + nt_buffer[4*NT_NUM_KEYS+i] + 0xf57c0faf; a = rotate(a, 7 ) + b;
-			d += (c ^ (a & (b ^ c))) + nt_buffer[5*NT_NUM_KEYS+i] + 0x4787c62a; d = rotate(d, 12) + a;
-			c += (b ^ (d & (a ^ b))) + nt_buffer[6*NT_NUM_KEYS+i] + 0xa8304613; c = rotate(c, 17) + d;
-			b += (a ^ (c & (d ^ a)))							  + 0xfd469501; b = rotate(b, 22) + c;
-					 			 	
-			a += (d ^ (b & (c ^ d)))							  + 0x698098d8; a = rotate(a, 7 ) + b;
-			d += (c ^ (a & (b ^ c)))							  + 0x8b44f7af; d = rotate(d, 12) + a;
-			c += (b ^ (d & (a ^ b)))							  + 0xffff5bb1; c = rotate(c, 17) + d;
-			b += (a ^ (c & (d ^ a)))							  + 0x895cd7be; b = rotate(b, 22) + c;
-					  		    								  
-			a += (d ^ (b & (c ^ d)))							  + 0x6b901122; a = rotate(a, 7 ) + b;
-			d += (c ^ (a & (b ^ c)))							  + 0xfd987193; d = rotate(d, 12) + a;
-			c += (b ^ (d & (a ^ b))) + nt_buffer[7*NT_NUM_KEYS+i] + 0xa679438e; c = rotate(c, 17) + d;
-			b += (a ^ (c & (d ^ a)))							  + 0x49b40821; b = rotate(b, 22) + c;
-
-			/* Round 2 */
-			a += (c ^ (d & (b ^ c))) + nt_buffer[1*NT_NUM_KEYS+i] + 0xf61e2562; a = rotate(a, 5 ) + b;
-			d += (b ^ (c & (a ^ b))) + nt_buffer[6*NT_NUM_KEYS+i] + 0xc040b340; d = rotate(d, 9 ) + a;
-			c += (a ^ (b & (d ^ a)))							  + 0x265e5a51; c = rotate(c, 14) + d;
-			b += (d ^ (a & (c ^ d))) + nt_buffer[0*NT_NUM_KEYS+i] + 0xe9b6c7aa; b = rotate(b, 20) + c;
-							    
-			a += (c ^ (d & (b ^ c))) + nt_buffer[5*NT_NUM_KEYS+i] + 0xd62f105d; a = rotate(a, 5 ) + b;
-			d += (b ^ (c & (a ^ b)))							  + 0x02441453; d = rotate(d, 9 ) + a;
-			c += (a ^ (b & (d ^ a)))							  + 0xd8a1e681; c = rotate(c, 14) + d;
-			b += (d ^ (a & (c ^ d))) + nt_buffer[4*NT_NUM_KEYS+i] + 0xe7d3fbc8; b = rotate(b, 20) + c;
-							    
-			a += (c ^ (d & (b ^ c)))							  + 0x21e1cde6; a = rotate(a, 5 ) + b;
-			d += (b ^ (c & (a ^ b))) + nt_buffer[7*NT_NUM_KEYS+i] + 0xc33707d6; d = rotate(d, 9 ) + a;
-			c += (a ^ (b & (d ^ a))) + nt_buffer[3*NT_NUM_KEYS+i] + 0xf4d50d87; c = rotate(c, 14) + d;
-			b += (d ^ (a & (c ^ d)))							  + 0x455a14ed; b = rotate(b, 20) + c;
-							    
-			a += (c ^ (d & (b ^ c)))							  + 0xa9e3e905; a = rotate(a, 5 ) + b;
-			d += (b ^ (c & (a ^ b))) + nt_buffer[2*NT_NUM_KEYS+i] + 0xfcefa3f8; d = rotate(d, 9 ) + a;
-			c += (a ^ (b & (d ^ a)))							  + 0x676f02d9; c = rotate(c, 14) + d;
-			b += (d ^ (a & (c ^ d)))							  + 0x8d2a4c8a; b = rotate(b, 20) + c;
-
-			/* Round 3 */
-			a += (b ^ c ^ d) + nt_buffer[5*NT_NUM_KEYS+i] + 0xfffa3942; a = rotate(a, 4 ) + b;
-			d += (a ^ b ^ c)							  + 0x8771f681; d = rotate(d, 11) + a;
-			c += (d ^ a ^ b)							  + 0x6d9d6122; c = rotate(c, 16) + d;
-			b += (c ^ d ^ a) + nt_buffer[7*NT_NUM_KEYS+i] + 0xfde5380c; b = rotate(b, 23) + c;
-
-			a += (b ^ c ^ d) + nt_buffer[1*NT_NUM_KEYS+i] + 0xa4beea44; a = rotate(a, 4 ) + b;
-			d += (a ^ b ^ c) + nt_buffer[4*NT_NUM_KEYS+i] + 0x4bdecfa9; d = rotate(d, 11) + a;
-			c += (d ^ a ^ b)							  + 0xf6bb4b60; c = rotate(c, 16) + d;
-			b += (c ^ d ^ a)							  + 0xbebfbc70; b = rotate(b, 23) + c;
-
-			a += (b ^ c ^ d)							  + 0x289b7ec6; a = rotate(a, 4 ) + b;
-			d += (a ^ b ^ c) + nt_buffer[0*NT_NUM_KEYS+i] + 0xeaa127fa; d = rotate(d, 11) + a;
-			c += (d ^ a ^ b) + nt_buffer[3*NT_NUM_KEYS+i] + 0xd4ef3085; c = rotate(c, 16) + d;
-			b += (c ^ d ^ a) + nt_buffer[6*NT_NUM_KEYS+i] + 0x04881d05; b = rotate(b, 23) + c;
-
-			a += (b ^ c ^ d)							  + 0xd9d4d039; a = rotate(a, 4 ) + b;
-			d += (a ^ b ^ c)							  + 0xe6db99e5; d = rotate(d, 11) + a;
-			c += (d ^ a ^ b)							  + 0x1fa27cf8; c = rotate(c, 16) + d;
-			b += (c ^ d ^ a) + nt_buffer[2*NT_NUM_KEYS+i] + 0xc4ac5665; b = rotate(b, 23) + c;
-
-			/* Round 4 */
-			a += (c ^ (b | ~d)) + nt_buffer[0*NT_NUM_KEYS+i] + 0xf4292244; a = rotate(a, 6 ) + b;
-			d += (b ^ (a | ~c))								 + 0x432aff97; d = rotate(d, 10) + a;
-			c += (a ^ (d | ~b)) + nt_buffer[7*NT_NUM_KEYS+i] + 0xab9423a7; c = rotate(c, 15) + d;
-			b += (d ^ (c | ~a)) + nt_buffer[5*NT_NUM_KEYS+i] + 0xfc93a039; b = rotate(b, 21) + c;
-					  
-			a += (c ^ (b | ~d))								 + 0x655b59c3; a = rotate(a, 6 ) + b;
-			d += (b ^ (a | ~c)) + nt_buffer[3*NT_NUM_KEYS+i] + 0x8f0ccc92; d = rotate(d, 10) + a;
-			c += (a ^ (d | ~b))								 + 0xffeff47d; c = rotate(c, 15) + d;
-			b += (d ^ (c | ~a)) + nt_buffer[1*NT_NUM_KEYS+i] + 0x85845dd1; b = rotate(b, 21) + c;
-					  
-			a += (c ^ (b | ~d))								 + 0x6fa87e4f; a = rotate(a, 6 ) + b;
-			d += (b ^ (a | ~c))								 + 0xfe2ce6e0; d = rotate(d, 10) + a;
-			c += (a ^ (d | ~b)) + nt_buffer[6*NT_NUM_KEYS+i] + 0xa3014314; c = rotate(c, 15) + d;
-			c += nt_buffer[2 * NT_NUM_KEYS + i];
-
-			// Search for a match
-			index = table[c & size_table];
-
-			// Partial match
-			while (index != NO_ELEM)
-			{
-				unsigned int aa, bb, cc, dd;
-				unsigned int* bin = ((unsigned int*)binary_values) + index * 4;
-
-				if (c != bin[2]) goto next_iteration;
-
-				cc = c - nt_buffer[2 * NT_NUM_KEYS + i];
-				bb = b + (d ^ (cc | ~a)) + 0x4e0811a1; bb = rotate(bb, 21) + cc;
-				if (bb != bin[1]) goto next_iteration;
-
-				aa = a + (cc ^ (bb | ~d)) + nt_buffer[4 * NT_NUM_KEYS + i] + 0xf7537e82; aa = rotate(aa, 6) + bb;
-				if (aa != bin[0]) goto next_iteration;
-
-				dd = d + (bb ^ (aa | ~cc));
-				if (dd != bin[3]) goto next_iteration;
-				
-				// Total match
-				password_was_found(index, utf8_coalesc2utf8_key(nt_buffer, key, NT_NUM_KEYS, i));
-
-			next_iteration:
-				index = same_hash_next[index];
-			}
-		}
-
-		report_keys_processed(NT_NUM_KEYS);
-	}
-
-	finish_thread();
+	crypt_utf8_coalesc_protocol_body(param, crypt_kernel_c);
 }
 #endif
 
@@ -280,7 +308,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_c_code(CryptParam* param)
 // Neon code
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_ARM
-void crypt_md5_neon_kernel_asm(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table);
+void crypt_md5_neon_kernel_asm(uint32_t* nt_buffer);
 PRIVATE void crypt_utf8_coalesc_protocol_neon(CryptParam* param)
 {
 	crypt_utf8_coalesc_protocol_body(param, crypt_md5_neon_kernel_asm);
@@ -293,7 +321,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_neon(CryptParam* param)
 #ifdef HS_X86
 #include "arch_simd.h"
 
-PRIVATE void crypt_kernel_sse2(SSE2_WORD* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table)
+PRIVATE void crypt_kernel_sse2(SSE2_WORD* nt_buffer)
 {
 	for (int i = 0; i < NT_NUM_KEYS/4; i++)
 	{
@@ -375,6 +403,7 @@ PRIVATE void crypt_kernel_sse2(SSE2_WORD* nt_buffer, unsigned int* bit_table, un
 		a = SSE2_3ADD(a, SSE2_XOR(c, SSE2_OR(b, SSE2_NOT(d)))							   , SSE2_CONST(0x6fa87e4f)); a = SSE2_ADD(SSE2_ROTATE(a, 6 ), b);
 		d = SSE2_3ADD(d, SSE2_XOR(b, SSE2_OR(a, SSE2_NOT(c)))							   , SSE2_CONST(0xfe2ce6e0)); d = SSE2_ADD(SSE2_ROTATE(d, 10), a);
 		c = SSE2_4ADD(c, SSE2_XOR(a, SSE2_OR(d, SSE2_NOT(b))), nt_buffer[6*NT_NUM_KEYS/4+i], SSE2_CONST(0xa3014314)); c = SSE2_ADD(SSE2_ROTATE(c, 15), d);
+		b = SSE2_3ADD(b, SSE2_XOR(d, SSE2_OR(c, SSE2_NOT(a)))                              , SSE2_CONST(0x4e0811a1)); b = SSE2_ADD(SSE2_ROTATE(b, 21), c);
 		c = SSE2_ADD(c, nt_buffer[2 * NT_NUM_KEYS/4 + i]);
 
 		// Save
@@ -382,14 +411,6 @@ PRIVATE void crypt_kernel_sse2(SSE2_WORD* nt_buffer, unsigned int* bit_table, un
 		nt_buffer[8 * NT_NUM_KEYS / 4 + 1 * NT_NUM_KEYS / 4 + i] = b;
 		nt_buffer[8 * NT_NUM_KEYS / 4 + 2 * NT_NUM_KEYS / 4 + i] = c;
 		nt_buffer[8 * NT_NUM_KEYS / 4 + 3 * NT_NUM_KEYS / 4 + i] = d;
-
-		c = SSE2_AND(c, SSE2_CONST(size_bit_table));
-		for (int j = 0; j < 4; j++)
-		{
-			unsigned int val = ((unsigned int*)(&c))[j];
-
-			((unsigned int*)nt_buffer)[8 * NT_NUM_KEYS + 4 * NT_NUM_KEYS + i*4+j] = (bit_table[val >> 5] >> (val & 31)) & 1;
-		}
 	}
 }
 PRIVATE void crypt_utf8_coalesc_protocol_sse2(CryptParam* param)
@@ -403,7 +424,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_sse2(CryptParam* param)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_X86
 
-void crypt_md5_avx_kernel_asm(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table);
+void crypt_md5_avx_kernel_asm(uint32_t* nt_buffer);
 PRIVATE void crypt_utf8_coalesc_protocol_avx(CryptParam* param)
 {
 	crypt_utf8_coalesc_protocol_body(param, crypt_md5_avx_kernel_asm);
@@ -415,7 +436,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_avx(CryptParam* param)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_X86
 
-void crypt_md5_avx2_kernel_asm(unsigned int* nt_buffer, unsigned int* bit_table, unsigned int size_bit_table);
+void crypt_md5_avx2_kernel_asm(uint32_t* nt_buffer);
 PRIVATE void crypt_utf8_coalesc_protocol_avx2(CryptParam* param)
 {
 	crypt_utf8_coalesc_protocol_body(param, crypt_md5_avx2_kernel_asm);
@@ -430,7 +451,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_avx2(CryptParam* param)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Charset
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_write_md5_header(char* source, GPUDevice* gpu, cl_uint ntlm_size_bit_table)
+PRIVATE void ocl_write_md5_header(char* source, GPUDevice* gpu, cl_uint ntlm_size_bit_table1)
 {
 	source[0] = 0;
 	// Header definitions
@@ -444,11 +465,6 @@ PRIVATE void ocl_write_md5_header(char* source, GPUDevice* gpu, cl_uint ntlm_siz
 	sprintf(source + strlen(source),
 		"#define INIT_B 0xefcdab89\n"
 		"#define INIT_C 0x98badcfe\n");
-
-	if (num_passwords_loaded > 1)
-		sprintf(source + strlen(source),
-		"#define SIZE_TABLE %uu\n"
-		"#define SIZE_BIT_TABLE %uu\n", size_table, ntlm_size_bit_table);
 }
 PRIVATE void ocl_gen_kernel_with_lenght_onehash(char* source, cl_uint key_lenght, cl_uint vector_size, char** nt_buffer, char** str_comp)
 {
@@ -473,15 +489,15 @@ PRIVATE void ocl_gen_kernel_with_lenght_onehash(char* source, cl_uint key_lenght
 		if (key_lenght == 8)
 			c -= 0x80;
 		d -= b ^ (a | ~c);
-		a = rotate(a - b, 32 - 6); a -= (c ^ (b | ~d)) + 0xf7537e82;
+		a = ROTATE(a - b, 32 - 6); a -= (c ^ (b | ~d)) + 0xf7537e82;
 
-		b = rotate(b - c, 11u); b -= (d ^ (c | ~a)) + 0x4e0811a1;
-		c = rotate(c - d, 17u); c -= (a ^ (d | ~b)) + 0xa3014314;
-		d = rotate(d - a, 22u); d -= (b ^ (a | ~c)) + 0xfe2ce6e0;
-		a = rotate(a - b, 26u); a -= (c ^ (b | ~d)) + 0x6fa87e4f;
+		b = ROTATE(b - c, 11u); b -= (d ^ (c | ~a)) + 0x4e0811a1;
+		c = ROTATE(c - d, 17u); c -= (a ^ (d | ~b)) + 0xa3014314;
+		d = ROTATE(d - a, 22u); d -= (b ^ (a | ~c)) + 0xfe2ce6e0;
+		a = ROTATE(a - b, 26u); a -= (c ^ (b | ~d)) + 0x6fa87e4f;
 
-		b = rotate(b - c, 11u); b -= (d ^ (c | ~a)) + 0x85845dd1;
-		c = rotate(c - d, 17u); c -= 0xffeff47d;
+		b = ROTATE(b - c, 11u); b -= (d ^ (c | ~a)) + 0x85845dd1;
+		c = ROTATE(c - d, 17u); c -= 0xffeff47d;
 
 		/* Round 4 */
 		sprintf(source + strlen(source),
@@ -501,7 +517,7 @@ PRIVATE void ocl_gen_kernel_with_lenght_onehash(char* source, cl_uint key_lenght
 
 			, b, nt_buffer[1]
 			, c, a, d
-			, rotate(d - a, 22u) - 0x8f0ccc92, a
+			, ROTATE(d - a, 22u) - 0x8f0ccc92, a
 			, a
 			, (key_lenght << 3) + 0xab9423a7);
 	}
@@ -533,7 +549,7 @@ PRIVATE void ocl_gen_kernel_with_lenght_onehash(char* source, cl_uint key_lenght
 			"c1=rotate(c1-d1,16u)-0x1fa27cf8;"
 			, c, nt_buffer[2]
 			, d, b, a
-			, rotate(a - b, 32 - 6) - 0xf7537e82, b, nt_buffer[4]
+			, ROTATE(a - b, 32 - 6) - 0xf7537e82, b, nt_buffer[4]
 			, b
 			, nt_buffer[6], nt_buffer[1], nt_buffer[3], nt_buffer[5], (key_lenght << 3) + 0xab9423a7);
 	}
@@ -681,7 +697,7 @@ PRIVATE void ocl_gen_kernel_with_lenght_onehash(char* source, cl_uint key_lenght
 	strcat(source, "}}");
 }
 
-PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uint vector_size, cl_uint ntlm_size_bit_table, cl_uint output_size, DivisionParams div_param, char** str_comp, cl_bool value_map_collission, cl_uint workgroup)
+PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uint vector_size, cl_uint ntlm_size_bit_table1, cl_uint output_size, DivisionParams div_param, char** str_comp, cl_bool value_map_collission1, cl_uint workgroup)
 {
 	cl_uint i;
 	char* nt_buffer[] = {"+nt_buffer0", "+nt_buffer1", "+nt_buffer2", "+nt_buffer3", "+nt_buffer4", "+nt_buffer5", "+nt_buffer6"};
@@ -854,6 +870,7 @@ PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uin
 	"d+=I(b,a,c)+0x432aff97;d=rotate(d,10u)+a;"
 	"c+=I(a,d,b)+%uu;c=rotate(c,15u)+d;"
 	"b+=I(d,c,a)%s+0xfc93a039;b=rotate(b,21u)+c;"
+	"a+=I(c,b,d)+0x655b59c3;a=rotate(a,6u)+b;"
 	, (key_lenght << 3) + 0xab9423a7, nt_buffer[5]);
 	
 	if (key_lenght <= 8 && (max_lenght <= 7 || (current_key_lenght == 8 && max_lenght == 8)))
@@ -861,238 +878,355 @@ PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uin
 		sprintf(source + strlen(source), "b+=0%s;", nt_buffer[1]);
 
 		// Find match
+		sprintf(source + strlen(source), "xx=b&%uu;uint fdata;", cbg_mask);
+
+		for (cl_uint comp = 0; comp < vector_size; comp++)
 		{
-			//"indx=b & SIZE_BIT_TABLE;"
-			//"if((bit_table[indx>>5]>>(indx&31))&1)"
 			sprintf(source + strlen(source),
-				"xx=b&SIZE_BIT_TABLE;"
-				"uint%s bit_table_val=xx>>5u;"
-				"xx&=31u;", buffer);
+				"fdata=(uint)(cbg_filter[xx%s]);"
 
-			for (unsigned int comp = 0; comp < vector_size; comp++)
-				sprintf(source + strlen(source),
-					"bit_table_val%s=bit_table[bit_table_val%s];", str_comp[comp], str_comp[comp]);
+				"if(((fdata^a%s)&0xFFF8)==0){"
+					"indx=cbg_table[xx%s];"
+					"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&a%s==binary_values[indx*4u]){"
+						
+						"uint bb=b%s-(0%s);"
+						"d%s+=I(bb,a%s,c%s)+0x8f0ccc92;d%s=rotate(d%s,10u)+a%s;"
+						"c%s+=I(a%s,d%s,bb)+0xffeff47d;c%s=rotate(c%s,15u)+d%s;"
 
-			strcat(source, "bit_table_val=(bit_table_val>>xx)&1u;");
+						"if(d%s==binary_values[indx*4u+3u]&&c%s==binary_values[indx*4u+2u]){"
+							"uint found=atomic_inc(output);"
+							"if(found<%uu){"
+								"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+(i+%uu)%%NUM_CHAR_IN_CHARSET;"
+								"output[2*found+2]=indx;}"
+						"}"
+						// TODO: Reverse c,d to their last value for the unlikely case of 2 hashes with same a,b
+						// TODO: if (value_map_collission1) do_smothing
+					"}"
+				"}"
+				, str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
 
-			for (unsigned int comp = 0; comp < vector_size; comp++)
-			{
-				sprintf(source + strlen(source),
-					"if(bit_table_val%s)"
-					"{"
-						"indx=table[(b%s)&SIZE_TABLE];"
+				, str_comp[comp], nt_buffer[1]
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
 
-						"while(indx!=0xffffffff)"
-						//"if(indx!=0xffffffff)"
-						"{"
-							"if(b%s==binary_values[indx*4u+1u])"
-							"{"
-								"b%s-=0%s;"
-								"a%s+=I(c%s,b%s,d%s)+0x655b59c3;a%s=rotate(a%s,6u)+b%s;"
-								"d%s+=I(b%s,a%s,c%s)+0x8f0ccc92;d%s=rotate(d%s,10u)+a%s;"
-								"c%s+=I(a%s,d%s,b%s)+0xffeff47d;c%s=rotate(c%s,15u)+d%s;"	
+				, str_comp[comp], str_comp[comp]
+				, output_size, comp);
+				
+			sprintf(source + strlen(source),
+				"if(fdata&4){"// Is second
+					"xx%s+=fdata&1?-1:1;"
+					"if(((((uint)cbg_filter[xx%s])^a%s)&0xFFF8)==0){"
+						"indx=cbg_table[xx%s];"
+						"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&a%s==binary_values[indx*4u]){"
+							
+							"uint bb=b%s-(0%s);"
+							"d%s+=I(bb,a%s,c%s)+0x8f0ccc92;d%s=rotate(d%s,10u)+a%s;"
+							"c%s+=I(a%s,d%s,bb)+0xffeff47d;c%s=rotate(c%s,15u)+d%s;"
 
-								"if(a%s==binary_values[indx*4u]&&d%s==binary_values[indx*4u+3u]&&c%s==binary_values[indx*4u+2u])"
-								"{"
-									"uint found=atomic_inc(output);"
-									"if(found<%uu){"
+							"if(d%s==binary_values[indx*4u+3u]&&c%s==binary_values[indx*4u+2u]){"
+								"uint found=atomic_inc(output);"
+								"if(found<%uu){"
 									"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+(i+%uu)%%NUM_CHAR_IN_CHARSET;"
 									"output[2*found+2]=indx;}"
-								"}",
-						str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[1],
-						str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp],
-						str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp],
-						str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp],
-						str_comp[comp], str_comp[comp], str_comp[comp]
-						, output_size, comp);
-				// Reverse a,b,c,d to their last value for the unlikely case of 2 hashes with same b
-				if (value_map_collission)
-					sprintf(source + strlen(source), 
-								"c%s=rotate(c%s-d%s,32u-15u);c%s-=I(a%s,d%s,b%s)+0xffeff47d;"
-								"d%s=rotate(d%s-a%s,32u-10u);d%s-=I(b%s,a%s,c%s)+0x8f0ccc92;"
-								"a%s=rotate(a%s-b%s,32u-6u) ;a%s-=I(c%s,b%s,d%s)+0x655b59c3;"
-								"b%s+=0%s;",
-								str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp],
-								str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp],
-								str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp],
-								str_comp[comp], nt_buffer[1]);
-
-			strcat(source, "}"
-							"indx=same_hash_next[indx];"
+							"}"
 						"}"
-					"}");
-			}
+					"}"
+				"}"
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				
+				, str_comp[comp], nt_buffer[1]
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+
+				, str_comp[comp], str_comp[comp]
+				, output_size, comp);
+
+			sprintf(source + strlen(source),
+				"if(fdata&2){"// Is unlucky
+					"xx%s=a%s&%uu;"
+					"fdata=(uint)(cbg_filter[xx%s]);"
+					"if(((fdata^b%s)&0xFFF8)==0){"
+						"indx=cbg_table[xx%s];"
+						"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&a%s==binary_values[indx*4u]){"
+							
+							"uint bb=b%s-(0%s);"
+							"d%s+=I(bb,a%s,c%s)+0x8f0ccc92;d%s=rotate(d%s,10u)+a%s;"
+							"c%s+=I(a%s,d%s,bb)+0xffeff47d;c%s=rotate(c%s,15u)+d%s;"
+
+							"if(d%s==binary_values[indx*4u+3u]&&c%s==binary_values[indx*4u+2u]){"
+								"uint found=atomic_inc(output);"
+								"if(found<%uu){"
+									"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+(i+%uu)%%NUM_CHAR_IN_CHARSET;"
+									"output[2*found+2]=indx;}"
+							"}"
+						"}"
+					"}"
+				, str_comp[comp], str_comp[comp], cbg_mask
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				
+				, str_comp[comp], nt_buffer[1]
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+
+				, str_comp[comp], str_comp[comp]
+				, output_size, comp);
+
+			sprintf(source + strlen(source),
+					"if(fdata&4){"// Is second
+						"xx%s+=fdata&1?-1:1;"
+						"if(((((uint)cbg_filter[xx%s])^b%s)&0xFFF8)==0){"
+							"indx=cbg_table[xx%s];"
+							"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&a%s==binary_values[indx*4u]){"
+								
+								"uint bb=b%s-(0%s);"
+								"d%s+=I(bb,a%s,c%s)+0x8f0ccc92;d%s=rotate(d%s,10u)+a%s;"
+								"c%s+=I(a%s,d%s,bb)+0xffeff47d;c%s=rotate(c%s,15u)+d%s;"
+
+								"if(d%s==binary_values[indx*4u+3u]&&c%s==binary_values[indx*4u+2u]){"
+									"uint found=atomic_inc(output);"
+									"if(found<%uu){"
+										"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+(i+%uu)%%NUM_CHAR_IN_CHARSET;"
+										"output[2*found+2]=indx;}"
+								"}"
+							"}"
+						"}"
+					"}"
+				"}"
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				
+				, str_comp[comp], nt_buffer[1]
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+
+				, str_comp[comp], str_comp[comp]
+				, output_size, comp);
 		}
 	}
 	else
 	{
 		sprintf(source + strlen(source),
-		"a+=I(c,b,d)+0x655b59c3;a=rotate(a,6u)+b;"
 		"d+=I(b,a,c)%s+0x8f0ccc92;d=rotate(d,10u)+a;"
 		"c+=I(a,d,b)+0xffeff47d;c=rotate(c,15u)+d;"
 		"b+=I(d,c,a)%s+0x85845dd1;b=rotate(b,21u)+c;"
 
 		"a+=I(c,b,d)+0x6fa87e4f;a=rotate(a,6u)+b;"
 		"d+=I(b,a,c)+0xfe2ce6e0;d=rotate(d,10u)+a;"
-		"c+=I(a,d,b)%s+0xa3014314;c=rotate(c,15u)+d%s;"
+		"c+=I(a,d,b)%s+0xa3014314;c=rotate(c,15u)+d;"
+		"b+=I(d,c,a)+0x4e0811a1;b=rotate(b,21u)+c;"
+		"c+=0%s;"
 		, nt_buffer[3], nt_buffer[1], nt_buffer[6], nt_buffer[2]);
 
 		// Find match
+		sprintf(source + strlen(source), "xx=c&%uu;uint fdata;", cbg_mask);
+
+		for (cl_uint comp = 0; comp < vector_size; comp++)
 		{
-			//"indx=c & SIZE_BIT_TABLE;"
-			//"if((bit_table[indx>>5]>>(indx&31))&1)"
 			sprintf(source + strlen(source),
-				"xx=c&SIZE_BIT_TABLE;"
-				"uint%s bit_table_val=xx>>5u;"
-				"xx&=31u;", buffer);
+				"fdata=(uint)(cbg_filter[xx%s]);"
 
-			for (unsigned int comp = 0; comp < vector_size; comp++)
-				sprintf(source + strlen(source),
-					"bit_table_val%s=bit_table[bit_table_val%s];", str_comp[comp], str_comp[comp]);
+				"if(((fdata^b%s)&0xFFF8)==0){"
+					"indx=cbg_table[xx%s];"
+					"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&c%s==binary_values[indx*4u+2u]){"
 
-			strcat(source, "bit_table_val=(bit_table_val>>xx)&1u;");
+						"uint cc=c%s-(0%s);"
+						"a%s+=I(cc,b%s,d%s)%s+0xf7537e82;a%s=rotate(a%s,6u)+b%s;"
+						"d%s+=I(b%s,a%s,cc);"
 
-			for (unsigned int comp = 0; comp < vector_size; comp++)
-			{
-				sprintf(source + strlen(source),
-					"if(bit_table_val%s)"
-					"{"
-						"indx=table[(c%s)&SIZE_TABLE];"
+						"if(d%s==binary_values[indx*4u+3u]&&a%s==binary_values[indx*4u]){"
+							"uint found=atomic_inc(output);"
+							"if(found<%uu){"
+								"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+(i+%uu)%%NUM_CHAR_IN_CHARSET;"
+								"output[2*found+2]=indx;}"
+						"}"
+						// TODO: Reverse a,d to their last value for the unlikely case of 2 hashes with same c,b
+						// TODO: if (value_map_collission1) do_smothing
+					"}"
+				"}"
+				, str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
 
-						"while(indx!=0xffffffff)"
-						//"if(indx!=0xffffffff)"
-						"{"
-							"if(c%s==binary_values[indx*4u+2u])"
-							"{"
-								"c%s-=0%s;"
-								"b%s+=I(d%s,c%s,a%s)+0x4e0811a1;b%s=rotate(b%s,21u)+c%s;"
-								"a%s+=I(c%s,b%s,d%s)%s+0xf7537e82;a%s=rotate(a%s,6u)+b%s;"
-								"d%s+=I(b%s,a%s,c%s);"
+				, str_comp[comp], nt_buffer[2]
+				, str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp]
 
-								"if(a%s==binary_values[indx*4u]&&d%s==binary_values[indx*4u+3u]&&b%s==binary_values[indx*4u+1u])"
-								"{"
-									"uint found=atomic_inc(output);"
-									"if(found<%uu){"
+				, str_comp[comp], str_comp[comp]
+				, output_size, comp);
+				
+			sprintf(source + strlen(source),
+				"if(fdata&4){"// Is second
+					"xx%s+=fdata&1?-1:1;"
+					"if(((((uint)cbg_filter[xx%s])^b%s)&0xFFF8)==0){"
+						"indx=cbg_table[xx%s];"
+						"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&c%s==binary_values[indx*4u+2u]){"
+							
+							"uint cc=c%s-(0%s);"
+							"a%s+=I(cc,b%s,d%s)%s+0xf7537e82;a%s=rotate(a%s,6u)+b%s;"
+							"d%s+=I(b%s,a%s,cc);"
+
+							"if(d%s==binary_values[indx*4u+3u]&&a%s==binary_values[indx*4u]){"
+								"uint found=atomic_inc(output);"
+								"if(found<%uu){"
 									"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+(i+%uu)%%NUM_CHAR_IN_CHARSET;"
 									"output[2*found+2]=indx;}"
-								"}",
-						str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[2],
-						str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp],
-						str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4], str_comp[comp], str_comp[comp], str_comp[comp],
-						str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp],
-						str_comp[comp], str_comp[comp], str_comp[comp], output_size, comp);
-				// Reverse a,b,c,d to their last value for the unlikely case of 2 hashes with same c
-				if (value_map_collission)
-					sprintf(source + strlen(source), 
-								"d%s-=I(b%s,a%s,c%s);"
-								"a%s-=b%s;a%s=rotate(a%s,32u-6u);a%s-=I(c%s,b%s,d%s)%s+0xf7537e82;"
-								"b%s-=c%s;b%s=rotate(b%s,32u-21u);b%s-=I(d%s,c%s,a%s)+0x4e0811a1;"
-								"c%s+=0%s;"
-								, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
-								, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4]
-								, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
-								, str_comp[comp], nt_buffer[2]);
-
-			strcat(source, "}"
-							"indx=same_hash_next[indx];"
+							"}"
 						"}"
-					"}");
-			}
+					"}"
+				"}"
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				
+				, str_comp[comp], nt_buffer[2]
+				, str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp]
+
+				, str_comp[comp], str_comp[comp]
+				, output_size, comp);
+
+			sprintf(source + strlen(source),
+				"if(fdata&2){"// Is unlucky
+					"xx%s=b%s&%uu;"
+					"fdata=(uint)(cbg_filter[xx%s]);"
+					"if(((fdata^c%s)&0xFFF8)==0){"
+						"indx=cbg_table[xx%s];"
+						"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&c%s==binary_values[indx*4u+2u]){"
+							
+							"uint cc=c%s-(0%s);"
+							"a%s+=I(cc,b%s,d%s)%s+0xf7537e82;a%s=rotate(a%s,6u)+b%s;"
+							"d%s+=I(b%s,a%s,cc);"
+
+							"if(d%s==binary_values[indx*4u+3u]&&a%s==binary_values[indx*4u]){"
+								"uint found=atomic_inc(output);"
+								"if(found<%uu){"
+									"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+(i+%uu)%%NUM_CHAR_IN_CHARSET;"
+									"output[2*found+2]=indx;}"
+							"}"
+						"}"
+					"}"
+				, str_comp[comp], str_comp[comp], cbg_mask
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				
+				, str_comp[comp], nt_buffer[2]
+				, str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp]
+
+				, str_comp[comp], str_comp[comp]
+				, output_size, comp);
+
+			sprintf(source + strlen(source),
+					"if(fdata&4){"// Is second
+						"xx%s+=fdata&1?-1:1;"
+						"if(((((uint)cbg_filter[xx%s])^c%s)&0xFFF8)==0){"
+							"indx=cbg_table[xx%s];"
+							"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&c%s==binary_values[indx*4u+2u]){"
+								
+								"uint cc=c%s-(0%s);"
+								"a%s+=I(cc,b%s,d%s)%s+0xf7537e82;a%s=rotate(a%s,6u)+b%s;"
+								"d%s+=I(b%s,a%s,cc);"
+
+								"if(d%s==binary_values[indx*4u+3u]&&a%s==binary_values[indx*4u]){"
+									"uint found=atomic_inc(output);"
+									"if(found<%uu){"
+										"output[2*found+1]=get_global_id(0)*NUM_CHAR_IN_CHARSET+(i+%uu)%%NUM_CHAR_IN_CHARSET;"
+										"output[2*found+2]=indx;}"
+								"}"
+							"}"
+						"}"
+					"}"
+				"}"
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				
+				, str_comp[comp], nt_buffer[2]
+				, str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp]
+
+				, str_comp[comp], str_comp[comp]
+				, output_size, comp);
 		}
 	}
 
 	strcat(source, "}}");
 }
 
-PRIVATE void ocl_protocol_charset_init(OpenCL_Param* result, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_charset_init(OpenCL_Param* result, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
+	int r = TRUE;
 	if (num_passwords_loaded > 1 && (max_lenght <= 7 || (current_key_lenght == 8 && max_lenght == 8)))
 	{
-		unsigned int* old_table = table;
-		unsigned int* old_bit_table = bit_table;
-		unsigned int* old_same_hash_next = same_hash_next;
-		void* old_bins = malloc(BINARY_SIZE*num_passwords_loaded);
-
-		table = (unsigned int*)_aligned_malloc(sizeof(unsigned int)* (size_table + 1), 4096);
-		bit_table = (unsigned int*)_aligned_malloc((size_bit_table / 32 + 1) * sizeof(unsigned int), 4096);
-		same_hash_next = (unsigned int*)_aligned_malloc(sizeof(unsigned int)* num_passwords_loaded, 4096);
-
-		// Initialize table map
-		memcpy(old_bins, binary_values, BINARY_SIZE*num_passwords_loaded);
-		memset(bit_table, 0, (size_bit_table / 32 + 1) * sizeof(unsigned int));
-		memset(table, 0xff, sizeof(unsigned int)* (size_table + 1));
-		memset(same_hash_next, 0xff, sizeof(unsigned int)* num_passwords_loaded);
+		uint32_t* old_cbg_table = cbg_table;
+		uint16_t* old_cbg_filter = cbg_filter;
+		uint32_t old_cbg_mask = cbg_mask;
+		uint32_t old_cbg_count_moved = cbg_count_moved;
+		uint32_t old_cbg_count_unlucky = cbg_count_unlucky;
 
 		// Reverse last steps
 		cl_uint* bin = (cl_uint*)binary_values;
-		if (current_key_lenght==8)
-			for (cl_uint current_index = 0; current_index < num_passwords_loaded; current_index++, bin += 4)
+		for (cl_uint current_index = 0; current_index < num_passwords_loaded; current_index++, bin += 4)
+		{
+			if (current_key_lenght == 8)
 				// c += nt_buffer[2 * NT_NUM_KEYS + i];
 				bin[2] -= 0x80;
 
-		bin = (cl_uint*)binary_values;
-		for (cl_uint current_index = 0; current_index < num_passwords_loaded; current_index++, bin += 4)
-		{
 			// d += (b ^ (a | ~c));
 			bin[3] -= bin[1] ^ (bin[0] | ~bin[2]);
-			// a += (c ^ (b | ~d)) + nt_buffer[4 * NT_NUM_KEYS + i] + 0xf7537e82; a = rotate(a, 6) + b;
-			bin[0] = rotate(bin[0] - bin[1], 32 - 6);
+			// a += (c ^ (b | ~d)) + nt_buffer[4 * NT_NUM_KEYS + i] + 0xf7537e82; a = ROTATE(a, 6) + b;
+			bin[0] = ROTATE(bin[0] - bin[1], 32 - 6);
 			bin[0] -= (bin[2] ^ (bin[1] | ~bin[3])) + 0xf7537e82;
 
-			// b += (d ^ (c | ~a)) + 0x4e0811a1; b = rotate(b, 21) + c;
-			bin[1] = rotate(bin[1] - bin[2], 32 - 21);
+			// b += (d ^ (c | ~a)) + 0x4e0811a1; b = ROTATE(b, 21) + c;
+			bin[1] = ROTATE(bin[1] - bin[2], 32 - 21);
 			bin[1] -= (bin[3] ^ (bin[2] | ~bin[0])) + 0x4e0811a1;
-			//c += (a ^ (d | ~b)) + nt_buffer[6*NT_NUM_KEYS+i] + 0xa3014314; c = rotate(c, 15) + d;
-			bin[2] = rotate(bin[2] - bin[3], 32 - 15);
+			//c += (a ^ (d | ~b)) + nt_buffer[6*NT_NUM_KEYS+i] + 0xa3014314; c = ROTATE(c, 15) + d;
+			bin[2] = ROTATE(bin[2] - bin[3], 32 - 15);
 			bin[2] -= (bin[0] ^ (bin[3] | ~bin[1])) + 0xa3014314;
-			//d += (b ^ (a | ~c))								 + 0xfe2ce6e0; d = rotate(d, 10) + a;
-			bin[3] = rotate(bin[3] - bin[0], 32 - 10);
+			//d += (b ^ (a | ~c))								 + 0xfe2ce6e0; d = ROTATE(d, 10) + a;
+			bin[3] = ROTATE(bin[3] - bin[0], 32 - 10);
 			bin[3] -= (bin[1] ^ (bin[0] | ~bin[2])) + 0xfe2ce6e0;
-			//a += (c ^ (b | ~d))								 + 0x6fa87e4f; a = rotate(a, 6 ) + b;
-			bin[0] = rotate(bin[0] - bin[1], 32 - 6);
+			//a += (c ^ (b | ~d))								 + 0x6fa87e4f; a = ROTATE(a, 6 ) + b;
+			bin[0] = ROTATE(bin[0] - bin[1], 32 - 6);
 			bin[0] -= (bin[2] ^ (bin[1] | ~bin[3])) + 0x6fa87e4f;
 
-			//b += (d ^ (c | ~a)) + nt_buffer[1*NT_NUM_KEYS+i] + 0x85845dd1; b = rotate(b, 21) + c;
-			bin[1] = rotate(bin[1] - bin[2], 32 - 21);
+			//b += (d ^ (c | ~a)) + nt_buffer[1*NT_NUM_KEYS+i] + 0x85845dd1; b = ROTATE(b, 21) + c;
+			bin[1] = ROTATE(bin[1] - bin[2], 32 - 21);
 			bin[1] -= (bin[3] ^ (bin[2] | ~bin[0])) + 0x85845dd1;
-
-			// Calculate bit_table, table and other data
-			cl_uint value_map = bin[1];
-			bit_table[(value_map & size_bit_table) >> 5] |= 1 << ((value_map & size_bit_table) & 31);
-			// Put the password in the table map
-			if (table[value_map & size_table] == NO_ELEM)
-			{
-				table[value_map & size_table] = current_index;
-			}
-			else
-			{
-				unsigned int last_index = table[value_map & size_table];
-				while (same_hash_next[last_index] != NO_ELEM)
-					last_index = same_hash_next[last_index];
-
-				same_hash_next[last_index] = current_index;
-			}
 		}
+		// Initialize table map
+		build_cbg_table(NTLM_INDEX, 1, 0);
 
 		cl_bool has_unified_memory = gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY;
 		GPU_SET_FLAG_DISABLE(gpu_devices[gpu_index].flags, GPU_FLAG_HAD_UNIFIED_MEMORY);
 
 		cl_uint md5_empty_hash[] = { 0x5625a114, 0x561e0689, 0x392ad0d0, 0x3450f42b };
-		ocl_charset_init(result, gpu_index, gen, gpu_crypt, BINARY_SIZE, 1, ocl_write_md5_header, ocl_gen_kernel_with_lenght, md5_empty_hash, FALSE, 2);
+		r = ocl_charset_init(result, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_md5_header, ocl_gen_kernel_with_lenght, md5_empty_hash, FALSE, 2);
 
 		// Change values back
 		if (has_unified_memory)
 			gpu_devices[gpu_index].flags |= GPU_FLAG_HAD_UNIFIED_MEMORY;
-		memcpy(binary_values, old_bins, BINARY_SIZE*num_passwords_loaded);
 		
-		_aligned_free(table);
-		_aligned_free(bit_table);
-		_aligned_free(same_hash_next);
-		free(old_bins);
+		bin = (cl_uint*)binary_values;
+		// Reverse binary_values modification
+		for (cl_uint current_index = 0; current_index < num_passwords_loaded; current_index++, bin += 4)
+		{
+			bin[1] += (bin[3] ^ (bin[2] | ~bin[0])) + 0x85845dd1; bin[1] = ROTATE(bin[1], 21) + bin[2];			
+			bin[0] += (bin[2] ^ (bin[1] | ~bin[3])) + 0x6fa87e4f; bin[0] = ROTATE(bin[0],  6) + bin[1];
+			bin[3] += (bin[1] ^ (bin[0] | ~bin[2])) + 0xfe2ce6e0; bin[3] = ROTATE(bin[3], 10) + bin[0];
+			bin[2] += (bin[0] ^ (bin[3] | ~bin[1])) + 0xa3014314; bin[2] = ROTATE(bin[2], 15) + bin[3];
 
-		table = old_table;
-		bit_table = old_bit_table;
-		same_hash_next = old_same_hash_next;
+			bin[1] += (bin[3] ^ (bin[2] | ~bin[0])) + 0x4e0811a1; bin[1] = ROTATE(bin[1], 21) + bin[2];
+			bin[0] += (bin[2] ^ (bin[1] | ~bin[3])) + 0xf7537e82; bin[0] = ROTATE(bin[0],  6) + bin[1];
+
+			bin[3] += bin[1] ^ (bin[0] | ~bin[2]);
+			if (current_key_lenght == 8)
+				bin[2] += 0x80;
+		}
+
+		free(cbg_table);
+		large_page_free(cbg_filter);
+
+		cbg_table = old_cbg_table;
+		cbg_filter = old_cbg_filter;
+		cbg_mask = old_cbg_mask;
+		cbg_count_moved = old_cbg_count_moved;
+		cbg_count_unlucky = old_cbg_count_unlucky;
 	}
 	else
 	{
@@ -1102,11 +1236,13 @@ PRIVATE void ocl_protocol_charset_init(OpenCL_Param* result, cl_uint gpu_index, 
 		if (num_passwords_loaded == 1 && gpu_devices[gpu_index].vector_int_size == 1 && gpu_devices[gpu_index].vendor == OCL_VENDOR_AMD)
 			gpu_devices[gpu_index].vector_int_size = 2;
 
-		ocl_charset_init(result, gpu_index, gen, gpu_crypt, BINARY_SIZE, 2, ocl_write_md5_header, ocl_gen_kernel_with_lenght, md5_empty_hash, FALSE, 2);
+		r = ocl_charset_init(result, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_md5_header, ocl_gen_kernel_with_lenght, md5_empty_hash, FALSE, 2);
 
-		if (num_passwords_loaded == 1 && gpu_devices[gpu_index].vector_int_size == 1 && gpu_devices[gpu_index].vendor == OCL_VENDOR_AMD)
+		if (num_passwords_loaded == 1 && gpu_devices[gpu_index].vector_int_size == 2 && gpu_devices[gpu_index].vendor == OCL_VENDOR_AMD)
 			gpu_devices[gpu_index].vector_int_size = 1;
 	}
+
+	return r;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1121,20 +1257,20 @@ PRIVATE void ocl_gen_kernel_md5(char* source, char* kernel_name, ocl_begin_rule_
 	char output_3[64];
 	output_3[0] = 0;
 
-	// NTLM Function definition
+	// MD% Function definition
 	sprintf(source + strlen(source), "\n__kernel void %s(const __global uint* keys,__global uint* restrict output", kernel_name);
 
 	if (num_passwords_loaded > 1)
-		strcat(source, ",const __global uint* restrict table,const __global uint* restrict binary_values,const __global uint* restrict same_hash_next,const __global uint* restrict bit_table");
+		strcat(source, ",const __global uint* restrict cbg_table,const __global uint* restrict binary_values,const __global ushort* restrict cbg_filter");
 
 	if (aditional_param)
 	{
 		sprintf(source + strlen(source), ",uint param");
-		*aditional_param = num_passwords_loaded > 1 ? 6 : 2;
+		*aditional_param = num_passwords_loaded > 1 ? 5 : 2;
 	}
 
 	// Begin function code
-	sprintf(source + strlen(source), "){uint indx;");
+	sprintf(source + strlen(source), "){uint indx=get_global_id(0);");
 
 	// Convert the key into a nt_buffer
 	memset(buffer_vector_size, 1, sizeof(buffer_vector_size));
@@ -1229,8 +1365,8 @@ PRIVATE void ocl_gen_kernel_md5(char* source, char* kernel_name, ocl_begin_rule_
 
 		"a+=I(c,b,d)+0x6fa87e4f;a=rotate(a,6u)+b;"
 		"d+=I(b,a,c)+0xfe2ce6e0;d=rotate(d,10u)+a;"
-		"c+=I(a,d,b)%s+0xa3014314;c=rotate(c,15u)+d%s;"
-		, nt_buffer[0], nt_buffer[7], nt_buffer[5], nt_buffer[3], nt_buffer[1], nt_buffer[6], nt_buffer[2]);
+		"c+=I(a,d,b)%s+0xa3014314;c=rotate(c,15u)+d;"
+		, nt_buffer[0], nt_buffer[7], nt_buffer[5], nt_buffer[3], nt_buffer[1], nt_buffer[6]);
 
 	// Match
 	char* str_comp[] = { ".s0", ".s1", ".s2", ".s3", ".s4", ".s5", ".s6", ".s7", ".s8", ".s9", ".sa", ".sb", ".sc", ".sd", ".se", ".sf" };
@@ -1238,6 +1374,8 @@ PRIVATE void ocl_gen_kernel_md5(char* source, char* kernel_name, ocl_begin_rule_
 
 	if (num_passwords_loaded == 1)
 	{
+		sprintf(source + strlen(source), "c+=0%s;", nt_buffer[2]);
+
 		for (cl_uint comp = 0; comp < vector_size; comp++)
 		{
 			if (found_param_3)
@@ -1268,18 +1406,12 @@ PRIVATE void ocl_gen_kernel_md5(char* source, char* kernel_name, ocl_begin_rule_
 	}
 	else
 	{
-		//"indx=c & SIZE_BIT_TABLE;"
-		//"if((bit_table[indx>>5]>>(indx&31))&1)"
 		sprintf(source + strlen(source),
-			"xx=c&SIZE_BIT_TABLE;"
-			"uint%s bit_table_val=xx>>5u;"
-			"xx&=31u;", buffer);
+		"b+=I(d,c,a)+0x4e0811a1;b=rotate(b,21u)+c;"
+		"c+=0%s;", nt_buffer[2]);
 
-		for (cl_uint comp = 0; comp < vector_size; comp++)
-			sprintf(source + strlen(source),
-				"bit_table_val%s=bit_table[bit_table_val%s];", str_comp[comp], str_comp[comp]);
-
-		strcat(source, "bit_table_val=(bit_table_val>>xx)&1u;");
+		// Find match
+		sprintf(source + strlen(source), "xx=c&%uu;uint fdata;", cbg_mask);
 
 		for (cl_uint comp = 0; comp < vector_size; comp++)
 		{
@@ -1287,48 +1419,124 @@ PRIVATE void ocl_gen_kernel_md5(char* source, char* kernel_name, ocl_begin_rule_
 				sprintf(output_3, "output[3u*found+3u]=%s+%uu;", found_param_3, comp);
 
 			sprintf(source + strlen(source),
-				"if(bit_table_val%s)"
-				"{"
-					"indx=table[(c%s)&SIZE_TABLE];"
+				"fdata=(uint)(cbg_filter[xx%s]);"
 
-					"while(indx!=0xffffffff)"
-					//"if(indx!=0xffffffff)"
-					"{"
-						"if(c%s==binary_values[indx*4u+2u])"
-						"{"
-							"c%s-=0%s%s;"
-							"b%s+=I(d%s,c%s,a%s)+0x4e0811a1;b%s=rotate(b%s,21u)+c%s;"
-							"a%s+=I(c%s,b%s,d%s)%s%s+0xf7537e82;a%s=rotate(a%s,6u)+b%s;"
-							"d%s+=I(b%s,a%s,c%s);"
+				"if(((fdata^b%s)&0xFFF8)==0){"
+					"indx=cbg_table[xx%s];"
+					"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&c%s==binary_values[indx*4u+2u]){"
 
-							"if(a%s==binary_values[indx*4u]&&d%s==binary_values[indx*4u+3u]&&b%s==binary_values[indx*4u+1u])"
-							"{"
+						"uint cc=c%s-(0%s);"
+						"a%s+=I(cc,b%s,d%s)%s+0xf7537e82;a%s=rotate(a%s,6u)+b%s;"
+						"d%s+=I(b%s,a%s,cc);"
+
+						"if(d%s==binary_values[indx*4u+3u]&&a%s==binary_values[indx*4u]){"
+							"uint found=atomic_inc(output);"
+							"output[%iu*found+1u]=get_global_id(0);"
+							"output[%iu*found+2u]=indx;"
+							"%s"
+						"}"
+						// TODO: Reverse a,d to their last value for the unlikely case of 2 hashes with same c,b
+						// TODO: if (value_map_collission1) do_smothing
+					"}"
+				"}"
+				, str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+
+				, str_comp[comp], nt_buffer[2]
+				, str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp]
+
+				, str_comp[comp], str_comp[comp]
+				, found_multiplier, found_multiplier, output_3);
+				
+			sprintf(source + strlen(source),
+				"if(fdata&4){"// Is second
+					"xx%s+=fdata&1?-1:1;"
+					"if(((((uint)cbg_filter[xx%s])^b%s)&0xFFF8)==0){"
+						"indx=cbg_table[xx%s];"
+						"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&c%s==binary_values[indx*4u+2u]){"
+							
+							"uint cc=c%s-(0%s);"
+							"a%s+=I(cc,b%s,d%s)%s+0xf7537e82;a%s=rotate(a%s,6u)+b%s;"
+							"d%s+=I(b%s,a%s,cc);"
+
+							"if(d%s==binary_values[indx*4u+3u]&&a%s==binary_values[indx*4u]){"
 								"uint found=atomic_inc(output);"
 								"output[%iu*found+1u]=get_global_id(0);"
 								"output[%iu*found+2u]=indx;"
 								"%s"
-							"}",
-					str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[2], buffer_vector_size[2] == 1 ? "" : str_comp[comp],
-					str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp],
-					str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4], buffer_vector_size[4] == 1 ? "" : str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp],
-					str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp],
-					str_comp[comp], str_comp[comp], str_comp[comp], found_multiplier, found_multiplier, output_3);
-			// Reverse a,b,c,d to their last value for the unlikely case of 2 hashes with same c
-			if (value_map_collission)
-				sprintf(source + strlen(source), 
-							"d%s-=I(b%s,a%s,c%s);"
-							"a%s-=b%s;a%s=rotate(a%s,32u-6u);a%s-=I(c%s,b%s,d%s)%s%s+0xf7537e82;"
-							"b%s-=c%s;b%s=rotate(b%s,32u-21u);b%s-=I(d%s,c%s,a%s)+0x4e0811a1;"
-							"c%s+=0%s%s;"
-							, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
-							, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4], buffer_vector_size[4] == 1 ? "" : str_comp[comp]
-							, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
-							, str_comp[comp], nt_buffer[2], buffer_vector_size[2] == 1 ? "" : str_comp[comp]);
-
-		strcat(source, "}"
-						"indx=same_hash_next[indx];"
+							"}"
+						"}"
 					"}"
-				"}");
+				"}"
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				
+				, str_comp[comp], nt_buffer[2]
+				, str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp]
+
+				, str_comp[comp], str_comp[comp]
+				, found_multiplier, found_multiplier, output_3);
+
+			sprintf(source + strlen(source),
+				"if(fdata&2){"// Is unlucky
+					"xx%s=b%s&%uu;"
+					"fdata=(uint)(cbg_filter[xx%s]);"
+					"if(((fdata^c%s)&0xFFF8)==0){"
+						"indx=cbg_table[xx%s];"
+						"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&c%s==binary_values[indx*4u+2u]){"
+							
+							"uint cc=c%s-(0%s);"
+							"a%s+=I(cc,b%s,d%s)%s+0xf7537e82;a%s=rotate(a%s,6u)+b%s;"
+							"d%s+=I(b%s,a%s,cc);"
+
+							"if(d%s==binary_values[indx*4u+3u]&&a%s==binary_values[indx*4u]){"
+								"uint found=atomic_inc(output);"
+								"output[%iu*found+1u]=get_global_id(0);"
+								"output[%iu*found+2u]=indx;"
+								"%s"
+							"}"
+						"}"
+					"}"
+				, str_comp[comp], str_comp[comp], cbg_mask
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				
+				, str_comp[comp], nt_buffer[2]
+				, str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp]
+
+				, str_comp[comp], str_comp[comp]
+				, found_multiplier, found_multiplier, output_3);
+
+			sprintf(source + strlen(source),
+					"if(fdata&4){"// Is second
+						"xx%s+=fdata&1?-1:1;"
+						"if(((((uint)cbg_filter[xx%s])^c%s)&0xFFF8)==0){"
+							"indx=cbg_table[xx%s];"
+							"if(indx!=0xffffffff&&b%s==binary_values[indx*4u+1u]&&c%s==binary_values[indx*4u+2u]){"
+								
+								"uint cc=c%s-(0%s);"
+								"a%s+=I(cc,b%s,d%s)%s+0xf7537e82;a%s=rotate(a%s,6u)+b%s;"
+								"d%s+=I(b%s,a%s,cc);"
+
+								"if(d%s==binary_values[indx*4u+3u]&&a%s==binary_values[indx*4u]){"
+									"uint found=atomic_inc(output);"
+									"output[%iu*found+1u]=get_global_id(0);"
+									"output[%iu*found+2u]=indx;"
+									"%s"
+								"}"
+							"}"
+						"}"
+					"}"
+				"}"
+				, str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp], str_comp[comp]
+				
+				, str_comp[comp], nt_buffer[2]
+				, str_comp[comp], str_comp[comp], str_comp[comp], nt_buffer[4], str_comp[comp], str_comp[comp], str_comp[comp]
+				, str_comp[comp], str_comp[comp], str_comp[comp]
+
+				, str_comp[comp], str_comp[comp]
+				, found_multiplier, found_multiplier, output_3);
 		}
 	}
 
@@ -1340,43 +1548,379 @@ PRIVATE void ocl_gen_kernel_md5(char* source, char* kernel_name, ocl_begin_rule_
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UTF8
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
-#ifdef ANDROID
-	ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 2, ocl_write_md5_header, ocl_gen_kernel_md5, kernels2common + UTF8_INDEX_IN_KERNELS, 32, ocl_rule_simple_copy_utf8_le);
+#ifdef __ANDROID__
+	return ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_md5_header, ocl_gen_kernel_md5, kernels2common + UTF8_INDEX_IN_KERNELS, 32, ocl_rule_simple_copy_utf8_le);
 #else
-	ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 2, ocl_write_md5_header, ocl_gen_kernel_md5, kernels2common + UTF8_INDEX_IN_KERNELS, 4/*consider 2 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
+	return ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_md5_header, ocl_gen_kernel_md5, kernels2common + UTF8_INDEX_IN_KERNELS, 4/*consider 2 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
 #endif
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Phrases
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+extern uint32_t num_words;
+
+PRIVATE void ocl_load_phrase_utf8_le(char* source, cl_uint lenght, cl_uint size_new_word)
 {
-	ocl_common_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 2, ocl_write_md5_header, ocl_gen_kernel_md5, kernels2common + PHRASES_INDEX_IN_KERNELS, 64/*consider 32 for Nvidia*/, ocl_rule_simple_copy_utf8_le);
+	// Define the kernel to process the keys from phrases into a "fast-to-use" format
+	sprintf(source + strlen(source),
+							"uint max_number=get_global_id(0);"
+							"uint i,out_idx=0;");
+
+	for (cl_uint i = 0; i < 7; i++)
+		sprintf(source + strlen(source), "uint buffer%u=0;", i);
+
+	DivisionParams div_param = get_div_params(num_words);
+	for (cl_uint i = lenght - 1; i < lenght; i--)
+	{
+		sprintf(source + strlen(source), "max_number+=keys[%uu];", i + 1);
+		// Perform division
+		if (div_param.magic)sprintf(source + strlen(source), "i=mul_hi(max_number+%iu,%uu)>>%uu;", (int)div_param.sum_one, div_param.magic, div_param.shift);// Normal division
+		else				sprintf(source + strlen(source), "i=max_number>>%uu;", div_param.shift);// Power of two division
+
+		sprintf(source + strlen(source),
+							"uint current_sentence%u=keys[%uu+max_number-i*%uu];"
+							"max_number=i;"
+							, i, MAX_KEY_LENGHT_SMALL + size_new_word/4, num_words);
+	}
+		
+	sprintf(source + strlen(source),
+							// First word----------------------------------------
+							"uint word_pos_j=current_sentence0;"
+							"uint len=word_pos_j>>27u;"
+							"word_pos_j&=0x07ffffff;"
+
+							"uint total_len=len;"
+							"uint buffer=0;"
+							"uint chars_in_buffer=0;"
+							// Body part of the string to copy
+							"for(i=0;i<len/4;i++)"
+							"{"
+								"uint qword_copy=keys[word_pos_j+i];"
+								"REG_ASSIGN(out_idx,qword_copy);"
+								"out_idx++;"
+							"}"
+							// Last part
+							"len&=3u;"
+							"if(len)"
+							"{"
+								"buffer=keys[word_pos_j+i];"
+								"chars_in_buffer=len;"
+							"}");
+							// end of first word---------------------------------------------------
+							// Common copy
+	for (cl_uint i = 1; i < lenght; i++)
+		sprintf(source + strlen(source),
+							"word_pos_j=current_sentence%u;"
+							"len=word_pos_j>>27u;"
+							"word_pos_j&=0x07ffffff;"
+
+							"if((total_len+len)<=27u)"
+							"{"
+								// Body part of the string to copy
+								"for(i=0;i<len/4;i++)"
+								"{"
+									"uint qword_copy=keys[word_pos_j+i];"
+									"buffer|=qword_copy<<(8u*chars_in_buffer);"
+									"REG_ASSIGN(out_idx,buffer);"
+									"out_idx++;"
+									"buffer=chars_in_buffer?(qword_copy>>(8u*(4u-chars_in_buffer))):0;"
+								"}"
+								"total_len+=len;"
+								// Last part of the string to copy
+								"len&=3;"
+								"if(len)"
+								"{"
+									"uint qword_copy=keys[word_pos_j+i];"
+									"buffer|=qword_copy<<(8u*chars_in_buffer);"
+									"chars_in_buffer+=len;"
+									"if(chars_in_buffer>=4u)"
+									"{"
+										"REG_ASSIGN(out_idx,buffer);"
+										"out_idx++;"
+										"chars_in_buffer-=4u;"
+										"buffer=chars_in_buffer?(qword_copy>>(8u*(len-chars_in_buffer))):0;"
+									"}"
+								"}"
+							"}", i);
+
+	sprintf(source + strlen(source),
+						// Put padding
+						"buffer|=0x80u<<(8u*chars_in_buffer);"
+						"REG_ASSIGN(out_idx,buffer);"
+
+						// Put length
+						"total_len<<=3u;");
+}
+PRIVATE char* ocl_gen_kernel_phrases(char* kernel_name, cl_uint value_map_collission, GPUDevice* gpu, cl_uint ntlm_size_bit_table, cl_uint size_new_word)
+{
+	char* source = (char*)malloc(1024 * 16);
+
+	ocl_write_md5_header(source, gpu, ntlm_size_bit_table);
+
+	sprintf(source + strlen(source),
+		"#define REG_ASSIGN(index,val) "
+
+		"switch(index)"
+		"{"
+			"case 0: buffer0=val; break;"
+			"case 1: buffer1=val; break;"
+			"case 2: buffer2=val; break;"
+			"case 3: buffer3=val; break;"
+			"case 4: buffer4=val; break;"
+			"case 5: buffer5=val; break;"
+			"case 6: buffer6=val; break;"
+		"}\n");
+
+	// NTLM Function definition
+	sprintf(source + strlen(source), "\n__kernel void %s(const __global uint* restrict keys,__global uint* restrict output", kernel_name);
+
+	if (num_passwords_loaded > 1)
+		strcat(source, ",const __global uint* restrict cbg_table,const __global uint* restrict binary_values,const __global ushort* restrict cbg_filter");
+
+	// Begin function code
+	sprintf(source + strlen(source), "){");
+
+	// Convert the key into a nt_buffer
+	ocl_load_phrase_utf8_le(source, max_lenght, size_new_word);
+
+	sprintf(source + strlen(source), "uint a,b,c,d,xx;");
+
+	/* Round 1 */
+	sprintf(source + strlen(source),
+		"a=0xd76aa477+buffer0;a=rotate(a,7u)+INIT_B;"
+		"d=(INIT_C^(a&0x77777777))+buffer1+0xf8fa0bcc;d=rotate(d,12u)+a;"
+		"c=bs(INIT_B,a,d)+buffer2+0xbcdb4dd9;c=rotate(c,17u)+d;"
+		"b=bs(a,d,c)+buffer3+0xb18b7a77;b=rotate(b,22u)+c;"
+
+		"a+=bs(d,c,b)+buffer4+0xf57c0faf;a=rotate(a,7u)+b;"
+		"d+=bs(c,b,a)+buffer5+0x4787c62a;d=rotate(d,12u)+a;"
+		"c+=bs(b,a,d)+buffer6+0xa8304613;c=rotate(c,17u)+d;"
+		"b+=bs(a,d,c)+0xfd469501;b=rotate(b,22u)+c;"
+
+		"a+=bs(d,c,b)+0x698098d8;a=rotate(a,7u)+b;"
+		"d+=bs(c,b,a)+0x8b44f7af;d=rotate(d,12u)+a;"
+		"c+=bs(b,a,d)+0xffff5bb1;c=rotate(c,17u)+d;"
+		"b+=bs(a,d,c)+0x895cd7be;b=rotate(b,22u)+c;"
+
+		"a+=bs(d,c,b)+0x6b901122;a=rotate(a,7u)+b;"
+		"d+=bs(c,b,a)+0xfd987193;d=rotate(d,12u)+a;"
+		"c+=bs(b,a,d)+total_len+0xa679438e;c=rotate(c,17u)+d;"
+		"b+=bs(a,d,c)+0x49b40821;b=rotate(b,22u)+c;");
+
+	/* Round 2 */
+	sprintf(source + strlen(source),
+		"a+=bs(c,b,d)+buffer1+0xf61e2562;a=rotate(a,5u)+b;"
+		"d+=bs(b,a,c)+buffer6+0xc040b340;d=rotate(d,9u)+a;"
+		"c+=bs(a,d,b)+0x265e5a51;c=rotate(c,14u)+d;"
+		"b+=bs(d,c,a)+buffer0+0xe9b6c7aa;b=rotate(b,20u)+c;"
+
+		"a+=bs(c,b,d)+buffer5+0xd62f105d;a=rotate(a,5u)+b;"
+		"d+=bs(b,a,c)+0x02441453;d=rotate(d,9u)+a;"
+		"c+=bs(a,d,b)+0xd8a1e681;c=rotate(c,14u)+d;"
+		"b+=bs(d,c,a)+buffer4+0xe7d3fbc8;b=rotate(b,20u)+c;"
+
+		"a+=bs(c,b,d)+0x21e1cde6;a=rotate(a,5u)+b;"
+		"d+=bs(b,a,c)+total_len+0xc33707d6;d=rotate(d,9u)+a;"
+		"c+=bs(a,d,b)+buffer3+0xf4d50d87;c=rotate(c,14u)+d;"
+		"b+=bs(d,c,a)+0x455a14ed;b=rotate(b,20u)+c;"
+
+		"a+=bs(c,b,d)+0xa9e3e905;a=rotate(a,5u)+b;"
+		"d+=bs(b,a,c)+buffer2+0xfcefa3f8;d=rotate(d,9u)+a;"
+		"c+=bs(a,d,b)+0x676f02d9;c=rotate(c,14u)+d;"
+		"b+=bs(d,c,a)+0x8d2a4c8a;b=rotate(b,20u)+c;");
+
+	/* Round 3 */
+	sprintf(source + strlen(source),
+		"xx=b^c;"
+		"a+=(xx^d)+buffer5+0xfffa3942;a=rotate(a,4u)+b;"
+		"d+=(a^xx)+0x8771f681;d=rotate(d,11u)+a;xx=d^a;"
+		"c+=(xx^b)+0x6d9d6122;c=rotate(c,16u)+d;"
+		"b+=(c^xx)+total_len+0xfde5380c;b=rotate(b,23u)+c;xx=b^c;"
+
+		"a+=(xx^d)+buffer1+0xa4beea44;a=rotate(a,4u)+b;"
+		"d+=(a^xx)+buffer4+0x4bdecfa9;d=rotate(d,11u)+a;xx=d^a;"
+		"c+=(xx^b)+0xf6bb4b60;c=rotate(c,16u)+d;"
+		"b+=(c^xx)+0xbebfbc70;b=rotate(b,23u)+c;xx=b^c;"
+
+		"a+=(xx^d)+0x289b7ec6;a=rotate(a,4u)+b;"
+		"d+=(a^xx)+buffer0+0xeaa127fa;d=rotate(d,11u)+a;xx=d^a;"
+		"c+=(xx^b)+buffer3+0xd4ef3085;c=rotate(c,16u)+d;"
+		"b+=(c^xx)+buffer6+0x04881d05;b=rotate(b,23u)+c;xx=b^c;"
+
+		"a+=(xx^d)+0xd9d4d039;a=rotate(a,4u)+b;"
+		"d+=(a^xx)+0xe6db99e5;d=rotate(d,11u)+a;xx=d^a;"
+		"c+=(xx^b)+0x1fa27cf8;c=rotate(c,16u)+d;"
+		"b+=(c^xx)+buffer2+0xc4ac5665;b=rotate(b,23u)+c;");
+
+	/* Round 4 */
+	sprintf(source + strlen(source),
+		"a+=I(c,b,d)+buffer0+0xf4292244;a=rotate(a,6u)+b;"
+		"d+=I(b,a,c)+0x432aff97;d=rotate(d,10u)+a;"
+		"c+=I(a,d,b)+total_len+0xab9423a7;c=rotate(c,15u)+d;"
+		"b+=I(d,c,a)+buffer5+0xfc93a039;b=rotate(b,21u)+c;"
+
+		"a+=I(c,b,d)+0x655b59c3;a=rotate(a,6u)+b;"
+		"d+=I(b,a,c)+buffer3+0x8f0ccc92;d=rotate(d,10u)+a;"
+		"c+=I(a,d,b)+0xffeff47d;c=rotate(c,15u)+d;"
+		"b+=I(d,c,a)+buffer1+0x85845dd1;b=rotate(b,21u)+c;"
+
+		"a+=I(c,b,d)+0x6fa87e4f;a=rotate(a,6u)+b;"
+		"d+=I(b,a,c)+0xfe2ce6e0;d=rotate(d,10u)+a;"
+		"c+=I(a,d,b)+buffer6+0xa3014314;c=rotate(c,15u)+d;");
+
+	// Match
+	if (num_passwords_loaded == 1)
+	{
+		sprintf(source + strlen(source),
+			"c+=buffer2;"
+
+			"if(c==%uu)"
+			"{"
+				"c-=buffer2;"
+				"b+=I(d,c,a)+0x4e0811a1;b=rotate(b,21u)+c;"
+				"a+=I(c,b,d)+buffer4+0xf7537e82;a=rotate(a,6u)+b;"
+				"d+=I(b,a,c);"
+				"if(a==%uu&&b==%uu&&d==%uu)"
+				"{"
+					"output[0]=1;"
+					"output[1]=get_global_id(0);"
+					"output[2]=0;"
+				"}"
+			"}", ((cl_uint*)binary_values)[2], ((cl_uint*)binary_values)[0], ((cl_uint*)binary_values)[1], ((cl_uint*)binary_values)[3]);
+	}
+	else
+	{
+		sprintf(source + strlen(source),
+			"b+=I(d,c,a)+0x4e0811a1;b=rotate(b,21u)+c;"
+			"c+=buffer2;");
+
+		// Find match
+		sprintf(source + strlen(source), "xx=c&%uu;uint fdata, indx;", cbg_mask);
+
+		sprintf(source + strlen(source),
+			"fdata=(uint)(cbg_filter[xx]);"
+
+			"if(((fdata^b)&0xFFF8)==0){"
+				"indx=cbg_table[xx];"
+				"if(indx!=0xffffffff&&b==binary_values[indx*4u+1u]&&c==binary_values[indx*4u+2u]){"
+
+					"uint cc=c-buffer2;"
+					"a+=I(cc,b,d)+buffer4+0xf7537e82;a=rotate(a,6u)+b;"
+					"d+=I(b,a,cc);"
+
+					"if(d==binary_values[indx*4u+3u]&&a==binary_values[indx*4u]){"
+						"uint found=atomic_inc(output);"
+						"output[2*found+1u]=get_global_id(0);"
+						"output[2*found+2u]=indx;"
+					"}"
+					// TODO: Reverse a,d to their last value for the unlikely case of 2 hashes with same c,b
+					// TODO: if (value_map_collission1) do_smothing
+				"}"
+			"}");
+				
+		sprintf(source + strlen(source),
+			"if(fdata&4){"// Is second
+				"xx+=fdata&1?-1:1;"
+				"if(((((uint)cbg_filter[xx])^b)&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"if(indx!=0xffffffff&&b==binary_values[indx*4u+1u]&&c==binary_values[indx*4u+2u]){"
+							
+						"uint cc=c-buffer2;"
+						"a+=I(cc,b,d)+buffer4+0xf7537e82;a=rotate(a,6u)+b;"
+						"d+=I(b,a,cc);"
+
+						"if(d==binary_values[indx*4u+3u]&&a==binary_values[indx*4u]){"
+							"uint found=atomic_inc(output);"
+							"output[2*found+1u]=get_global_id(0);"
+							"output[2*found+2u]=indx;"
+						"}"
+					"}"
+				"}"
+			"}");
+
+		sprintf(source + strlen(source),
+			"if(fdata&2){"// Is unlucky
+				"xx=b&%uu;"
+				"fdata=(uint)(cbg_filter[xx]);"
+				"if(((fdata^c)&0xFFF8)==0){"
+					"indx=cbg_table[xx];"
+					"if(indx!=0xffffffff&&b==binary_values[indx*4u+1u]&&c==binary_values[indx*4u+2u]){"
+							
+						"uint cc=c-buffer2;"
+						"a+=I(cc,b,d)+buffer4+0xf7537e82;a=rotate(a,6u)+b;"
+						"d+=I(b,a,cc);"
+
+						"if(d==binary_values[indx*4u+3u]&&a==binary_values[indx*4u]){"
+							"uint found=atomic_inc(output);"
+							"output[2*found+1u]=get_global_id(0);"
+							"output[2*found+2u]=indx;"
+						"}"
+					"}"
+				"}", cbg_mask);
+
+		sprintf(source + strlen(source),
+				"if(fdata&4){"// Is second
+					"xx+=fdata&1?-1:1;"
+					"if(((((uint)cbg_filter[xx])^c)&0xFFF8)==0){"
+						"indx=cbg_table[xx];"
+						"if(indx!=0xffffffff&&b==binary_values[indx*4u+1u]&&c==binary_values[indx*4u+2u]){"
+								
+							"uint cc=c-buffer2;"
+							"a+=I(cc,b,d)+buffer4+0xf7537e82;a=rotate(a,6u)+b;"
+							"d+=I(b,a,cc);"
+
+							"if(d==binary_values[indx*4u+3u]&&a==binary_values[indx*4u]){"
+								"uint found=atomic_inc(output);"
+								"output[2*found+1u]=get_global_id(0);"
+								"output[2*found+2u]=indx;"
+							"}"
+						"}"
+					"}"
+				"}"
+			"}");
+	}
+
+	// End of kernel
+	strcat(source, "}");
+
+	return source;
+}
+
+PRIVATE int ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+{
+	// Teoretical: 6.99G	Nvidia Geforce 970
+	// Baseline  : 2.36G
+	// Now------>: 3.33G
+	return ocl_phrases_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_gen_kernel_phrases, 128);
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Rules
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
+PRIVATE int ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
-	ocl_rules_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, 2, ocl_write_md5_header, ocl_gen_kernel_md5, RULE_UTF8_LE_INDEX, 1);
+	return ocl_rules_init(param, gpu_index, gen, gpu_crypt, BINARY_SIZE, ocl_write_md5_header, ocl_gen_kernel_md5, RULE_UTF8_LE_INDEX, 1);
 }
 #endif
 
-PRIVATE int bench_values[] = { 1, 10, 100, 1000, 10000, 65536, 100000, 1000000 };
 Format raw_md5_format = {
 	"Raw-MD5",
 	"Raw MD5 format.",
+	"$dynamic_0$",
 	NTLM_MAX_KEY_LENGHT,
 	BINARY_SIZE,
 	0,
 	5,
-	bench_values,
-	LENGHT(bench_values),
+	NULL,
+	0,
 	get_binary,
+	binary2hex,
+	VALUE_MAP_INDEX0,
+	VALUE_MAP_INDEX1,
 	is_valid,
 	add_hash_from_line,
+	NULL,
 #ifdef _M_X64
 	{{CPU_CAP_AVX2, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_avx2}, {CPU_CAP_AVX, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_avx}, {CPU_CAP_SSE2, PROTOCOL_UTF8_COALESC_LE, crypt_utf8_coalesc_protocol_sse2}},
 #else

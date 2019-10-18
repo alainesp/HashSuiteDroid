@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2018 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
@@ -26,29 +26,29 @@ PUBLIC int dcc_line_is_valid(char* user_name, char* dcc, char* unused, char* unu
 	return FALSE;
 }
 
-PUBLIC void dcc_add_hash_from_line(ImportParam* param, char* user_name, char* dcc, sqlite3_int64 tag_id, int db_index)
+PUBLIC sqlite3_int64 dcc_add_hash_from_line(ImportParam* param, char* user_name, char* dcc, int db_index)
 {
 	if (user_name && dcc && valid_hex_string(dcc, 32) && strlen(user_name) <= 19)
 	{
 		char cipher_text[19 + 1 + 32 + 1];
 		sprintf(cipher_text, "%s:%s", _strlwr(user_name), _strupr(dcc));
 		// Insert hash and account
-		insert_hash_account(param, user_name, cipher_text, db_index, tag_id);
+		return insert_hash_account1(param, user_name, cipher_text, db_index);
 	}
-
+	return -1;
 }
-PRIVATE void add_hash_from_line(ImportParam* param, char* user_name, char* dcc, char* unused, char* unused1, sqlite3_int64 tag_id)
+PRIVATE sqlite3_int64 add_hash_from_line(ImportParam* param, char* user_name, char* dcc, char* unused, char* unused1)
 {
-	dcc_add_hash_from_line(param, user_name, dcc, tag_id, DCC_INDEX);
+	return dcc_add_hash_from_line(param, user_name, dcc, DCC_INDEX);
 }
 
-PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, void* salt_void)
+PRIVATE uint32_t get_binary(const unsigned char* ciphertext, void* binary, void* salt_void)
 {
-	unsigned int* out = (unsigned int*)binary;
-	unsigned int* salt = (unsigned int*)salt_void;
-	unsigned int i = 0;
-	unsigned int temp;
-	unsigned int salt_lenght = 0;
+	uint32_t* out = (uint32_t*)binary;
+	uint32_t* salt = (uint32_t*)salt_void;
+	uint32_t i = 0;
+	uint32_t temp;
+	uint32_t salt_lenght = 0;
 	char ciphertext_buffer[64];
 
 	//length=11 to save memory
@@ -59,9 +59,9 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	for(; ciphertext[salt_lenght] != ':'; salt_lenght++);
 	// Convert salt-----------------------------------------------------
 	for(; i < salt_lenght/2; i++)
-		salt[i] = ((unsigned int)ciphertext[2*i]) | ((unsigned int)ciphertext[2*i+1]) << 16;
+		salt[i] = ((uint32_t)ciphertext[2*i]) | ((uint32_t)ciphertext[2*i+1]) << 16;
 
-	salt[i] = (salt_lenght%2) ? ((unsigned int)ciphertext[2*i]) | 0x800000 : 0x80;
+	salt[i] = (salt_lenght%2) ? ((uint32_t)ciphertext[2*i]) | 0x800000 : 0x80;
 	salt[10] = (8 + salt_lenght) << 4;
 
 	ciphertext += salt_lenght + 1;
@@ -93,69 +93,106 @@ PRIVATE unsigned int get_binary(const unsigned char* ciphertext, void* binary, v
 	out[1]  = (out[1] >> 15) | (out[1] << 17);
 	out[1] -= SQRT_3 + (out[2] ^ out[3] ^ out[0]);
 	// Reversed	c += (d ^ a ^ b) + salt_buffer[3]  +  SQRT_3; c = (c << 11) | (c >> 21);
-	out[2] = (out[2] << 21) | (out[2] >> 11);
-	out[2]-= SQRT_3 + (out[3] ^ out[0] ^ out[1]) + salt[3];
+	out[2]  = (out[2] << 21) | (out[2] >> 11);
+	out[2] -= SQRT_3 + (out[3] ^ out[0] ^ out[1]) + salt[3];
 	// Reversed	d += (a ^ b ^ c) + salt_buffer[7]  +  SQRT_3; d = (d << 9 ) | (d >> 23);
 	out[3]  = (out[3] << 23) | (out[3] >> 9);
 	out[3] -= SQRT_3 + (out[0] ^ out[1] ^ out[2]) + salt[7];
 	//+ SQRT_3; d = (d << 9 ) | (d >> 23);
-	out[3]=(out[3] << 23 ) | (out[3] >> 9);
-	out[3]-=SQRT_3;
+	out[3]  = (out[3] << 23 ) | (out[3] >> 9);
+	out[3] -= SQRT_3;
 	
-	return out[3];
+	return out[0];
+}
+PRIVATE void binary2hex(const void* binary, const uint32_t* salt, unsigned char* ciphertext)
+{
+	uint32_t bin[BINARY_SIZE / sizeof(uint32_t)];
+	memcpy(bin, binary, BINARY_SIZE);
+
+	uint32_t salt_lenght = (salt[10] >> 4) - 8;
+	// Convert to username
+	for (uint32_t i = 0; i < salt_lenght / 2; i++)
+	{
+		ciphertext[2 * i + 0] =  salt[i] & 0xFF;
+		ciphertext[2 * i + 1] = (salt[i]>>16) & 0xFF;
+	}
+	if (salt_lenght % 2)
+		ciphertext[2 * (salt_lenght / 2)] = salt[salt_lenght / 2] & 0xFF;
+
+	ciphertext[salt_lenght] = ':';
+
+	//+ SQRT_3; d = (d << 9 ) | (d >> 23);
+	bin[3] += SQRT_3;
+	bin[3]  = (bin[3] << 9) | (bin[3] >> 23);
+	// Reversed	d += (a ^ b ^ c) + salt_buffer[7]  +  SQRT_3; d = (d << 9 ) | (d >> 23);
+	bin[3] += SQRT_3 + (bin[0] ^ bin[1] ^ bin[2]) + salt[7];
+	bin[3]  = (bin[3] << 9) | (bin[3] >> 23);
+	// Reversed	c += (d ^ a ^ b) + salt_buffer[3]  +  SQRT_3; c = (c << 11) | (c >> 21);
+	bin[2] += SQRT_3 + (bin[3] ^ bin[0] ^ bin[1]) + salt[3];
+	bin[2]  = (bin[2] << 11) | (bin[2] >> 21);
+	// Reversed	b += (c ^ d ^ a) + salt_buffer[11] +  SQRT_3; b = (b << 15) | (b >> 17);
+	bin[1] += SQRT_3 + (bin[2] ^ bin[3] ^ bin[0]);
+	bin[1]  = (bin[1] >> 17) | (bin[1] << 15);
+
+	bin[0] += INIT_A;
+	bin[1] += INIT_B;
+	bin[2] += INIT_C;
+	bin[3] += INIT_D;
+
+	binary_to_hex(bin, ciphertext + salt_lenght + 1, BINARY_SIZE / sizeof(uint32_t), TRUE);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Common Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-typedef void dcc_ntlm_part_func(void* nt_buffer, unsigned int* crypt_result);
-typedef void dcc_salt_part_func(void* salt_buffer, unsigned int* crypt_result);
-PRIVATE void crypt_ntlm_protocol_body(CryptParam* param, int NUM_KEYS, unsigned int uint_in_parallel, dcc_ntlm_part_func* dcc_ntlm_part, dcc_salt_part_func** dcc_salt_part)
+typedef void dcc_ntlm_part_func(void* nt_buffer, uint32_t* crypt_result);
+typedef void dcc_salt_part_func(void* salt_buffer, uint32_t* crypt_result);
+PRIVATE void crypt_ntlm_protocol_body(CryptParam* param, int NUM_KEYS, uint32_t uint_in_parallel, dcc_ntlm_part_func* dcc_ntlm_part, dcc_salt_part_func** dcc_salt_part)
 {
-	unsigned int* nt_buffer = (unsigned int*)_aligned_malloc(16 * sizeof(unsigned int)* NUM_KEYS, 32);
-	unsigned int* crypt_result = (unsigned int*)_aligned_malloc(uint_in_parallel*sizeof(unsigned int)* 12, 32);
+	uint32_t* nt_buffer = (uint32_t*)_aligned_malloc(16 * sizeof(uint32_t)* NUM_KEYS, 32);
+	uint32_t* crypt_result = (uint32_t*)_aligned_malloc(uint_in_parallel*sizeof(uint32_t)* 12, 32);
 
 	unsigned char* key = (unsigned char*)calloc(MAX_KEY_LENGHT_SMALL, sizeof(unsigned char));
 
-	memset(nt_buffer, 0, 16 * sizeof(unsigned int)* NUM_KEYS);
+	memset(nt_buffer, 0, 16 * sizeof(uint32_t)* NUM_KEYS);
 
 	while (continue_attack && param->gen(nt_buffer, NUM_KEYS, param->thread_id))
 	{
-		for (unsigned int i = 0; i < NUM_KEYS / uint_in_parallel; i++)
+		for (uint32_t i = 0; i < NUM_KEYS / uint_in_parallel; i++)
 		{
-			unsigned int* salt_buffer = (unsigned int*)salts_values;
+			uint32_t* salt_buffer = (uint32_t*)salts_values;
 			dcc_ntlm_part(nt_buffer + uint_in_parallel*i, crypt_result);
 
 			//Another MD4_crypt for the salt
 			// For all salts
-			for(unsigned int j = 0; j < num_diff_salts; j++, salt_buffer += 11)
+			for(uint32_t j = 0; j < num_diff_salts; j++, salt_buffer += 11)
 			{
 				dcc_salt_part[salt_buffer[10] >> 4](salt_buffer, crypt_result);
 
 				// All salts differents
 				if (num_passwords_loaded == num_diff_salts)
 				{
-					unsigned int* bin = ((unsigned int*)binary_values) + j * 4;
+					uint32_t* bin = ((uint32_t*)binary_values) + j * 4;
 
-					for (unsigned int k = 0; k < uint_in_parallel; k++)
+					for (uint32_t k = 0; k < uint_in_parallel; k++)
 					{
 						// Search for a match
-						unsigned int a, b, c, d = crypt_result[(8 + 3)*uint_in_parallel + k];
+						uint32_t a, b, c, d = crypt_result[(8 + 3)*uint_in_parallel + k];
 
 						if (d != bin[3]) continue;
-						d = rotate(d + SQRT_3, 9);
+						d = ROTATE(d + SQRT_3, 9);
 
 						c = crypt_result[(8 + 2)*uint_in_parallel + k];
 						b = crypt_result[(8 + 1)*uint_in_parallel + k];
 						a = crypt_result[(8 + 0)*uint_in_parallel + k];
 
-						c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = rotate(c, 11);
+						c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = ROTATE(c, 11);
 						if (c != bin[2]) continue;
 
-						b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = rotate(b, 15);
+						b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = ROTATE(b, 15);
 						if (b != bin[1]) continue;
 
-						a += (b ^ c ^ d) + crypt_result[3 * uint_in_parallel + k] + SQRT_3; a = rotate(a, 3);
+						a += (b ^ c ^ d) + crypt_result[3 * uint_in_parallel + k] + SQRT_3; a = ROTATE(a, 3);
 						if (a != bin[0]) continue;
 
 						// Total match
@@ -163,31 +200,31 @@ PRIVATE void crypt_ntlm_protocol_body(CryptParam* param, int NUM_KEYS, unsigned 
 					}
 				}
 				else
-					for (unsigned int k = 0; k < uint_in_parallel; k++)
+					for (uint32_t k = 0; k < uint_in_parallel; k++)
 					{
 						// Search for a match
-						unsigned int index = salt_index[j];
+						uint32_t index = salt_index[j];
 
 						// Partial match
 						while(index != NO_ELEM)
 						{
-							unsigned int a, b, c, d = crypt_result[(8 + 3)*uint_in_parallel + k];
-							unsigned int* bin = ((unsigned int*)binary_values) + index * 4;
+							uint32_t a, b, c, d = crypt_result[(8 + 3)*uint_in_parallel + k];
+							uint32_t* bin = ((uint32_t*)binary_values) + index * 4;
 
 							if(d != bin[3]) goto next_iteration;
-							d = rotate(d + SQRT_3, 9);
+							d = ROTATE(d + SQRT_3, 9);
 
 							c = crypt_result[(8+2)*uint_in_parallel+k];
 							b = crypt_result[(8+1)*uint_in_parallel+k];
 							a = crypt_result[(8+0)*uint_in_parallel+k];
 
-							c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = rotate(c, 11);
+							c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = ROTATE(c, 11);
 							if(c != bin[2]) goto next_iteration;
 
-							b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = rotate(b, 15);
+							b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = ROTATE(b, 15);
 							if(b != bin[1]) goto next_iteration;
 
-							a += (b ^ c ^ d) + crypt_result[3 * uint_in_parallel + k] + SQRT_3; a = rotate(a, 3);
+							a += (b ^ c ^ d) + crypt_result[3 * uint_in_parallel + k] + SQRT_3; a = ROTATE(a, 3);
 							if(a != bin[0]) goto next_iteration;
 
 							// Total match
@@ -216,17 +253,17 @@ PRIVATE void crypt_ntlm_protocol_body(CryptParam* param, int NUM_KEYS, unsigned 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_ARM
 
-void dcc_ntlm_part_neon(void* nt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon4(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon5(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon6(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon7(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon8(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon9(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon10(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon11(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon12(void* salt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_neon13(void* salt_buffer, unsigned int* crypt_result);
+void dcc_ntlm_part_neon(void* nt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_neon4(void* salt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_neon5(void* salt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_neon6(void* salt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_neon7(void* salt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_neon8(void* salt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_neon9(void* salt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_neon10(void* salt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_neon11(void* salt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_neon12(void* salt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_neon13(void* salt_buffer, uint32_t* crypt_result);
 #define NT_NUM_KEYS_NEON 64
 
 PRIVATE void crypt_ntlm_protocol_neon(CryptParam* param)
@@ -249,63 +286,63 @@ PRIVATE void crypt_ntlm_protocol_neon(CryptParam* param)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // C Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PUBLIC void dcc_salt_part_c_code(unsigned int* salt_buffer, unsigned int* crypt_result)
+PUBLIC void dcc_salt_part_c_code(uint32_t* salt_buffer, uint32_t* crypt_result)
 {
-	unsigned int a,b,c,d;
+	uint32_t a,b,c,d;
 	/* Round 1 */
 	a = crypt_result[4+0];
 	b = crypt_result[4+1];
 	c = crypt_result[4+2];
 	d = crypt_result[4+3];
 
-	a += (d ^ (b & (c ^ d))) + salt_buffer[0] ; a = rotate(a, 3);
-	d += (c ^ (a & (b ^ c))) + salt_buffer[1] ; d = rotate(d, 7);
-	c += (b ^ (d & (a ^ b))) + salt_buffer[2] ; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + salt_buffer[3] ; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + salt_buffer[0] ; a = ROTATE(a, 3);
+	d += (c ^ (a & (b ^ c))) + salt_buffer[1] ; d = ROTATE(d, 7);
+	c += (b ^ (d & (a ^ b))) + salt_buffer[2] ; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + salt_buffer[3] ; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + salt_buffer[4] ; a = rotate(a, 3);
-	d += (c ^ (a & (b ^ c))) + salt_buffer[5] ; d = rotate(d, 7);
-	c += (b ^ (d & (a ^ b))) + salt_buffer[6] ; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + salt_buffer[7] ; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + salt_buffer[4] ; a = ROTATE(a, 3);
+	d += (c ^ (a & (b ^ c))) + salt_buffer[5] ; d = ROTATE(d, 7);
+	c += (b ^ (d & (a ^ b))) + salt_buffer[6] ; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + salt_buffer[7] ; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + salt_buffer[8] ; a = rotate(a, 3);
-	d += (c ^ (a & (b ^ c))) + salt_buffer[9] ; d = rotate(d, 7);
-	c += (b ^ (d & (a ^ b))) + salt_buffer[10]; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a)))				  ; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + salt_buffer[8] ; a = ROTATE(a, 3);
+	d += (c ^ (a & (b ^ c))) + salt_buffer[9] ; d = ROTATE(d, 7);
+	c += (b ^ (d & (a ^ b))) + salt_buffer[10]; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a)))				  ; b = ROTATE(b, 19);
 
 	/* Round 2 */
-	a += ((b & (c | d)) | (c & d)) + crypt_result[0]  + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) +  salt_buffer[0]  + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) +  salt_buffer[4]  + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a)) +  salt_buffer[8]  + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + crypt_result[0]  + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) +  salt_buffer[0]  + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) +  salt_buffer[4]  + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a)) +  salt_buffer[8]  + SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + crypt_result[1]  + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) +  salt_buffer[1]  + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) +  salt_buffer[5]  + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a)) +  salt_buffer[9]  + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + crypt_result[1]  + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) +  salt_buffer[1]  + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) +  salt_buffer[5]  + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a)) +  salt_buffer[9]  + SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + crypt_result[2]  + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) +  salt_buffer[2]  + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) +  salt_buffer[6]  + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a)) +  salt_buffer[10] + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + crypt_result[2]  + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) +  salt_buffer[2]  + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) +  salt_buffer[6]  + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a)) +  salt_buffer[10] + SQRT_2; b = ROTATE(b, 13);
 
-	a += ((b & (c | d)) | (c & d)) + crypt_result[3]  + SQRT_2; a = rotate(a, 3);
-	d += ((a & (b | c)) | (b & c)) +  salt_buffer[3]  + SQRT_2; d = rotate(d, 5);
-	c += ((d & (a | b)) | (a & b)) +  salt_buffer[7]  + SQRT_2; c = rotate(c, 9);
-	b += ((c & (d | a)) | (d & a))					  + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + crypt_result[3]  + SQRT_2; a = ROTATE(a, 3);
+	d += ((a & (b | c)) | (b & c)) +  salt_buffer[3]  + SQRT_2; d = ROTATE(d, 5);
+	c += ((d & (a | b)) | (a & b)) +  salt_buffer[7]  + SQRT_2; c = ROTATE(c, 9);
+	b += ((c & (d | a)) | (d & a))					  + SQRT_2; b = ROTATE(b, 13);
 
 	/* Round 3 */
-	a += (b ^ c ^ d) +crypt_result[0]  + SQRT_3; a = rotate(a, 3);
-	d += (a ^ b ^ c) + salt_buffer[4]  + SQRT_3; d = rotate(d, 9);
-	c += (d ^ a ^ b) + salt_buffer[0]  + SQRT_3; c = rotate(c, 11);
-	b += (c ^ d ^ a) + salt_buffer[8]  + SQRT_3; b = rotate(b, 15);
+	a += (b ^ c ^ d) +crypt_result[0]  + SQRT_3; a = ROTATE(a, 3);
+	d += (a ^ b ^ c) + salt_buffer[4]  + SQRT_3; d = ROTATE(d, 9);
+	c += (d ^ a ^ b) + salt_buffer[0]  + SQRT_3; c = ROTATE(c, 11);
+	b += (c ^ d ^ a) + salt_buffer[8]  + SQRT_3; b = ROTATE(b, 15);
 
-	a += (b ^ c ^ d) +crypt_result[2]  + SQRT_3; a = rotate(a, 3);
-	d += (a ^ b ^ c) + salt_buffer[6]  + SQRT_3; d = rotate(d, 9);
-	c += (d ^ a ^ b) + salt_buffer[2]  + SQRT_3; c = rotate(c, 11);
-	b += (c ^ d ^ a) + salt_buffer[10] + SQRT_3; b = rotate(b, 15);
+	a += (b ^ c ^ d) +crypt_result[2]  + SQRT_3; a = ROTATE(a, 3);
+	d += (a ^ b ^ c) + salt_buffer[6]  + SQRT_3; d = ROTATE(d, 9);
+	c += (d ^ a ^ b) + salt_buffer[2]  + SQRT_3; c = ROTATE(c, 11);
+	b += (c ^ d ^ a) + salt_buffer[10] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (b ^ c ^ d) +crypt_result[1]  + SQRT_3; a = rotate(a, 3);
+	a += (b ^ c ^ d) +crypt_result[1]  + SQRT_3; a = ROTATE(a, 3);
 	d += (a ^ b ^ c) + salt_buffer[5];
 
 	crypt_result[8+0] = a;
@@ -314,72 +351,72 @@ PUBLIC void dcc_salt_part_c_code(unsigned int* salt_buffer, unsigned int* crypt_
 	crypt_result[8+3] = d;
 }
 #if !defined(_M_X64) || defined(HS_TESTING)
-PUBLIC void dcc_ntlm_part_c_code(unsigned int* nt_buffer, unsigned int* crypt_result)
+PUBLIC void dcc_ntlm_part_c_code(uint32_t* nt_buffer, uint32_t* crypt_result)
 {
-	unsigned int a,b,c,d;
+	uint32_t a,b,c,d;
 
 	/* Round 1 */
-	a = 		0xFFFFFFFF					 + nt_buffer[0*NT_NUM_KEYS]; a = rotate(a, 3);
-	d = INIT_D+(INIT_C ^ (a & 0x77777777))   + nt_buffer[1*NT_NUM_KEYS]; d = rotate(d, 7);
-	c = INIT_C+(INIT_B ^ (d & (a ^ INIT_B))) + nt_buffer[2*NT_NUM_KEYS]; c = rotate(c, 11);
-	b = INIT_B + (a ^ (c & (d ^ a)))		 + nt_buffer[3*NT_NUM_KEYS]; b = rotate(b, 19);
+	a = 		0xFFFFFFFF					 + nt_buffer[0*NT_NUM_KEYS]; a = ROTATE(a, 3);
+	d = INIT_D+(INIT_C ^ (a & 0x77777777))   + nt_buffer[1*NT_NUM_KEYS]; d = ROTATE(d, 7);
+	c = INIT_C+(INIT_B ^ (d & (a ^ INIT_B))) + nt_buffer[2*NT_NUM_KEYS]; c = ROTATE(c, 11);
+	b = INIT_B + (a ^ (c & (d ^ a)))		 + nt_buffer[3*NT_NUM_KEYS]; b = ROTATE(b, 19);
 
-	a += (d ^ (b & (c ^ d))) + nt_buffer[4*NT_NUM_KEYS] ; a = rotate(a, 3 );
-	d += (c ^ (a & (b ^ c))) + nt_buffer[5*NT_NUM_KEYS] ; d = rotate(d, 7 );
-	c += (b ^ (d & (a ^ b))) + nt_buffer[6*NT_NUM_KEYS] ; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + nt_buffer[7*NT_NUM_KEYS] ; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + nt_buffer[4*NT_NUM_KEYS] ; a = ROTATE(a, 3 );
+	d += (c ^ (a & (b ^ c))) + nt_buffer[5*NT_NUM_KEYS] ; d = ROTATE(d, 7 );
+	c += (b ^ (d & (a ^ b))) + nt_buffer[6*NT_NUM_KEYS] ; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + nt_buffer[7*NT_NUM_KEYS] ; b = ROTATE(b, 19);
 									 
-	a += (d ^ (b & (c ^ d))) + nt_buffer[8*NT_NUM_KEYS] ; a = rotate(a, 3 );
-	d += (c ^ (a & (b ^ c))) + nt_buffer[9*NT_NUM_KEYS] ; d = rotate(d, 7 );
-	c += (b ^ (d & (a ^ b))) + nt_buffer[10*NT_NUM_KEYS]; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) + nt_buffer[11*NT_NUM_KEYS]; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + nt_buffer[8*NT_NUM_KEYS] ; a = ROTATE(a, 3 );
+	d += (c ^ (a & (b ^ c))) + nt_buffer[9*NT_NUM_KEYS] ; d = ROTATE(d, 7 );
+	c += (b ^ (d & (a ^ b))) + nt_buffer[10*NT_NUM_KEYS]; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) + nt_buffer[11*NT_NUM_KEYS]; b = ROTATE(b, 19);
 									 
-	a += (d ^ (b & (c ^ d))) + nt_buffer[12*NT_NUM_KEYS]; a = rotate(a, 3 );
-	d += (c ^ (a & (b ^ c))) + nt_buffer[13*NT_NUM_KEYS]; d = rotate(d, 7 );
-	c += (b ^ (d & (a ^ b))) + nt_buffer[14*NT_NUM_KEYS]; c = rotate(c, 11);
-	b += (a ^ (c & (d ^ a))) 							; b = rotate(b, 19);
+	a += (d ^ (b & (c ^ d))) + nt_buffer[12*NT_NUM_KEYS]; a = ROTATE(a, 3 );
+	d += (c ^ (a & (b ^ c))) + nt_buffer[13*NT_NUM_KEYS]; d = ROTATE(d, 7 );
+	c += (b ^ (d & (a ^ b))) + nt_buffer[14*NT_NUM_KEYS]; c = ROTATE(c, 11);
+	b += (a ^ (c & (d ^ a))) 							; b = ROTATE(b, 19);
 			
 	/* Round 2 */
-	a += ((b & (c | d)) | (c & d)) + nt_buffer[0*NT_NUM_KEYS] + SQRT_2; a = rotate(a, 3 );
-	d += ((a & (b | c)) | (b & c)) + nt_buffer[4*NT_NUM_KEYS] + SQRT_2; d = rotate(d, 5 );
-	c += ((d & (a | b)) | (a & b)) + nt_buffer[8*NT_NUM_KEYS] + SQRT_2; c = rotate(c, 9 );
-	b += ((c & (d | a)) | (d & a)) + nt_buffer[12*NT_NUM_KEYS]+ SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + nt_buffer[0*NT_NUM_KEYS] + SQRT_2; a = ROTATE(a, 3 );
+	d += ((a & (b | c)) | (b & c)) + nt_buffer[4*NT_NUM_KEYS] + SQRT_2; d = ROTATE(d, 5 );
+	c += ((d & (a | b)) | (a & b)) + nt_buffer[8*NT_NUM_KEYS] + SQRT_2; c = ROTATE(c, 9 );
+	b += ((c & (d | a)) | (d & a)) + nt_buffer[12*NT_NUM_KEYS]+ SQRT_2; b = ROTATE(b, 13);
 			
-	a += ((b & (c | d)) | (c & d)) + nt_buffer[1*NT_NUM_KEYS] + SQRT_2; a = rotate(a, 3 );
-	d += ((a & (b | c)) | (b & c)) + nt_buffer[5*NT_NUM_KEYS] + SQRT_2; d = rotate(d, 5 );
-	c += ((d & (a | b)) | (a & b)) + nt_buffer[9*NT_NUM_KEYS] + SQRT_2; c = rotate(c, 9 );
-	b += ((c & (d | a)) | (d & a)) + nt_buffer[13*NT_NUM_KEYS]+ SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + nt_buffer[1*NT_NUM_KEYS] + SQRT_2; a = ROTATE(a, 3 );
+	d += ((a & (b | c)) | (b & c)) + nt_buffer[5*NT_NUM_KEYS] + SQRT_2; d = ROTATE(d, 5 );
+	c += ((d & (a | b)) | (a & b)) + nt_buffer[9*NT_NUM_KEYS] + SQRT_2; c = ROTATE(c, 9 );
+	b += ((c & (d | a)) | (d & a)) + nt_buffer[13*NT_NUM_KEYS]+ SQRT_2; b = ROTATE(b, 13);
 			
-	a += ((b & (c | d)) | (c & d)) + nt_buffer[2*NT_NUM_KEYS] + SQRT_2; a = rotate(a, 3 );
-	d += ((a & (b | c)) | (b & c)) + nt_buffer[6*NT_NUM_KEYS] + SQRT_2; d = rotate(d, 5 );
-	c += ((d & (a | b)) | (a & b)) + nt_buffer[10*NT_NUM_KEYS]+ SQRT_2; c = rotate(c, 9 );
-	b += ((c & (d | a)) | (d & a)) + nt_buffer[14*NT_NUM_KEYS]+ SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + nt_buffer[2*NT_NUM_KEYS] + SQRT_2; a = ROTATE(a, 3 );
+	d += ((a & (b | c)) | (b & c)) + nt_buffer[6*NT_NUM_KEYS] + SQRT_2; d = ROTATE(d, 5 );
+	c += ((d & (a | b)) | (a & b)) + nt_buffer[10*NT_NUM_KEYS]+ SQRT_2; c = ROTATE(c, 9 );
+	b += ((c & (d | a)) | (d & a)) + nt_buffer[14*NT_NUM_KEYS]+ SQRT_2; b = ROTATE(b, 13);
 			
-	a += ((b & (c | d)) | (c & d)) + nt_buffer[3*NT_NUM_KEYS] + SQRT_2; a = rotate(a, 3 );
-	d += ((a & (b | c)) | (b & c)) + nt_buffer[7*NT_NUM_KEYS] + SQRT_2; d = rotate(d, 5 );
-	c += ((d & (a | b)) | (a & b)) + nt_buffer[11*NT_NUM_KEYS]+ SQRT_2; c = rotate(c, 9 );
-	b += ((c & (d | a)) | (d & a))							  + SQRT_2; b = rotate(b, 13);
+	a += ((b & (c | d)) | (c & d)) + nt_buffer[3*NT_NUM_KEYS] + SQRT_2; a = ROTATE(a, 3 );
+	d += ((a & (b | c)) | (b & c)) + nt_buffer[7*NT_NUM_KEYS] + SQRT_2; d = ROTATE(d, 5 );
+	c += ((d & (a | b)) | (a & b)) + nt_buffer[11*NT_NUM_KEYS]+ SQRT_2; c = ROTATE(c, 9 );
+	b += ((c & (d | a)) | (d & a))							  + SQRT_2; b = ROTATE(b, 13);
 			
 	/* Round 3 */
-	a += (d ^ c ^ b) + nt_buffer[0*NT_NUM_KEYS]  + SQRT_3; a = rotate(a, 3 );
-	d += (c ^ b ^ a) + nt_buffer[8*NT_NUM_KEYS]  + SQRT_3; d = rotate(d, 9 );
-	c += (b ^ a ^ d) + nt_buffer[4*NT_NUM_KEYS]  + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c) + nt_buffer[12*NT_NUM_KEYS] + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + nt_buffer[0*NT_NUM_KEYS]  + SQRT_3; a = ROTATE(a, 3 );
+	d += (c ^ b ^ a) + nt_buffer[8*NT_NUM_KEYS]  + SQRT_3; d = ROTATE(d, 9 );
+	c += (b ^ a ^ d) + nt_buffer[4*NT_NUM_KEYS]  + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c) + nt_buffer[12*NT_NUM_KEYS] + SQRT_3; b = ROTATE(b, 15);
 			
-	a += (d ^ c ^ b) + nt_buffer[2*NT_NUM_KEYS]  + SQRT_3; a = rotate(a, 3 );
-	d += (c ^ b ^ a) + nt_buffer[10*NT_NUM_KEYS] + SQRT_3; d = rotate(d, 9 );
-	c += (b ^ a ^ d) + nt_buffer[6*NT_NUM_KEYS]  + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c) + nt_buffer[14*NT_NUM_KEYS] + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + nt_buffer[2*NT_NUM_KEYS]  + SQRT_3; a = ROTATE(a, 3 );
+	d += (c ^ b ^ a) + nt_buffer[10*NT_NUM_KEYS] + SQRT_3; d = ROTATE(d, 9 );
+	c += (b ^ a ^ d) + nt_buffer[6*NT_NUM_KEYS]  + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c) + nt_buffer[14*NT_NUM_KEYS] + SQRT_3; b = ROTATE(b, 15);
 			
-	a += (d ^ c ^ b) + nt_buffer[1*NT_NUM_KEYS]  + SQRT_3; a = rotate(a, 3 );
-	d += (c ^ b ^ a) + nt_buffer[9*NT_NUM_KEYS]  + SQRT_3; d = rotate(d, 9 );
-	c += (b ^ a ^ d) + nt_buffer[5*NT_NUM_KEYS]  + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c) + nt_buffer[13*NT_NUM_KEYS] + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + nt_buffer[1*NT_NUM_KEYS]  + SQRT_3; a = ROTATE(a, 3 );
+	d += (c ^ b ^ a) + nt_buffer[9*NT_NUM_KEYS]  + SQRT_3; d = ROTATE(d, 9 );
+	c += (b ^ a ^ d) + nt_buffer[5*NT_NUM_KEYS]  + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c) + nt_buffer[13*NT_NUM_KEYS] + SQRT_3; b = ROTATE(b, 15);
 
-	a += (d ^ c ^ b) + nt_buffer[3*NT_NUM_KEYS]  + SQRT_3; a = rotate(a, 3 );
-	d += (c ^ b ^ a) + nt_buffer[11*NT_NUM_KEYS] + SQRT_3; d = rotate(d, 9 );
-	c += (b ^ a ^ d) + nt_buffer[7*NT_NUM_KEYS]  + SQRT_3; c = rotate(c, 11);
-	b += (a ^ d ^ c)							 + SQRT_3; b = rotate(b, 15);
+	a += (d ^ c ^ b) + nt_buffer[3*NT_NUM_KEYS]  + SQRT_3; a = ROTATE(a, 3 );
+	d += (c ^ b ^ a) + nt_buffer[11*NT_NUM_KEYS] + SQRT_3; d = ROTATE(d, 9 );
+	c += (b ^ a ^ d) + nt_buffer[7*NT_NUM_KEYS]  + SQRT_3; c = ROTATE(c, 11);
+	b += (a ^ d ^ c)							 + SQRT_3; b = ROTATE(b, 15);
 
 	crypt_result[0] = a + INIT_A;
 	crypt_result[1] = b + INIT_B;
@@ -388,10 +425,10 @@ PUBLIC void dcc_ntlm_part_c_code(unsigned int* nt_buffer, unsigned int* crypt_re
 
 	//Another MD4_crypt for the salt
 	/* Round 1 */
-	a = 				0xFFFFFFFF 	              + crypt_result[0]; a = rotate(a, 3);
-	d = INIT_D + ( INIT_C ^ ( a & 0x77777777))    + crypt_result[1]; d = rotate(d, 7);
-	c = INIT_C + ( INIT_B ^ ( d & ( a ^ INIT_B))) + crypt_result[2]; c = rotate(c, 11);
-	b = INIT_B + (    a   ^ ( c & ( d ^    a  ))) + crypt_result[3]; b = rotate(b, 19);
+	a = 				0xFFFFFFFF 	              + crypt_result[0]; a = ROTATE(a, 3);
+	d = INIT_D + ( INIT_C ^ ( a & 0x77777777))    + crypt_result[1]; d = ROTATE(d, 7);
+	c = INIT_C + ( INIT_B ^ ( d & ( a ^ INIT_B))) + crypt_result[2]; c = ROTATE(c, 11);
+	b = INIT_B + (    a   ^ ( c & ( d ^    a  ))) + crypt_result[3]; b = ROTATE(b, 19);
 			
 	crypt_result[4+0] = a;
 	crypt_result[4+1] = b;
@@ -414,8 +451,8 @@ PRIVATE void crypt_ntlm_protocol_c_code(CryptParam* param)
 // AVX Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_X86
-void dcc_ntlm_part_avx(void* nt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_avx(void* salt_buffer, unsigned int* crypt_result);
+void dcc_ntlm_part_avx(void* nt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_avx(void* salt_buffer, uint32_t* crypt_result);
 #define NT_NUM_KEYS_AVX 256
 PRIVATE void crypt_ntlm_protocol_avx(CryptParam* param)
 {
@@ -432,8 +469,8 @@ PRIVATE void crypt_ntlm_protocol_avx(CryptParam* param)
 // AVX2 Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_X86
-void dcc_ntlm_part_avx2(void* nt_buffer, unsigned int* crypt_result);
-void dcc_salt_part_avx2(void* salt_buffer, unsigned int* crypt_result);
+void dcc_ntlm_part_avx2(void* nt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_avx2(void* salt_buffer, uint32_t* crypt_result);
 PRIVATE void crypt_ntlm_protocol_avx2(CryptParam* param)
 {
 	dcc_salt_part_func* dcc_salt_parts[28];
@@ -579,7 +616,7 @@ PUBLIC void dcc_ntlm_part_sse2(__m128i* nt_buffer, __m128i* crypt_result)
 	crypt_result[4+2] = c;
 	crypt_result[4+3] = d;
 }
-PUBLIC void dcc_salt_part_sse2(unsigned int* salt_buffer, __m128i* crypt_result)
+PUBLIC void dcc_salt_part_sse2(uint32_t* salt_buffer, __m128i* crypt_result)
 {
 	__m128i a, b, c, d;
 
@@ -766,64 +803,64 @@ PUBLIC cl_uint* ocl_dcc_shrink_salts_size(char salt_values_str[11][20], cl_uint*
 }
 PRIVATE void ocl_mscash_test_empty()
 {
-	unsigned int i;
-	unsigned int* salt_buffer = (unsigned int*)salts_values;
-	unsigned int a,b,c,d;
-	unsigned int index;
+	uint32_t i;
+	uint32_t* salt_buffer = (uint32_t*)salts_values;
+	uint32_t a,b,c,d;
+	uint32_t index;
 
 	for(i = 0; i < num_diff_salts; i++, salt_buffer += 11)
 	{
 		/* Round 1 */
 		a = 0x067eb187;   b = 0x66ce2570;   c = 0x9e29f7ff;   d = 0x7456a070;
 
-		a += (d ^ (b & (c ^ d))) + salt_buffer[0] ; a = rotate(a, 3);
-		d += (c ^ (a & (b ^ c))) + salt_buffer[1] ; d = rotate(d, 7);
-		c += (b ^ (d & (a ^ b))) + salt_buffer[2] ; c = rotate(c, 11);
-		b += (a ^ (c & (d ^ a))) + salt_buffer[3] ; b = rotate(b, 19);
+		a += (d ^ (b & (c ^ d))) + salt_buffer[0] ; a = ROTATE(a, 3);
+		d += (c ^ (a & (b ^ c))) + salt_buffer[1] ; d = ROTATE(d, 7);
+		c += (b ^ (d & (a ^ b))) + salt_buffer[2] ; c = ROTATE(c, 11);
+		b += (a ^ (c & (d ^ a))) + salt_buffer[3] ; b = ROTATE(b, 19);
 
-		a += (d ^ (b & (c ^ d))) + salt_buffer[4] ; a = rotate(a, 3);
-		d += (c ^ (a & (b ^ c))) + salt_buffer[5] ; d = rotate(d, 7);
-		c += (b ^ (d & (a ^ b))) + salt_buffer[6] ; c = rotate(c, 11);
-		b += (a ^ (c & (d ^ a))) + salt_buffer[7] ; b = rotate(b, 19);
+		a += (d ^ (b & (c ^ d))) + salt_buffer[4] ; a = ROTATE(a, 3);
+		d += (c ^ (a & (b ^ c))) + salt_buffer[5] ; d = ROTATE(d, 7);
+		c += (b ^ (d & (a ^ b))) + salt_buffer[6] ; c = ROTATE(c, 11);
+		b += (a ^ (c & (d ^ a))) + salt_buffer[7] ; b = ROTATE(b, 19);
 
-		a += (d ^ (b & (c ^ d))) + salt_buffer[8] ; a = rotate(a, 3);
-		d += (c ^ (a & (b ^ c))) + salt_buffer[9] ; d = rotate(d, 7);
-		c += (b ^ (d & (a ^ b))) + salt_buffer[10]; c = rotate(c, 11);
-		b += (a ^ (c & (d ^ a)))				  ; b = rotate(b, 19);
+		a += (d ^ (b & (c ^ d))) + salt_buffer[8] ; a = ROTATE(a, 3);
+		d += (c ^ (a & (b ^ c))) + salt_buffer[9] ; d = ROTATE(d, 7);
+		c += (b ^ (d & (a ^ b))) + salt_buffer[10]; c = ROTATE(c, 11);
+		b += (a ^ (c & (d ^ a)))				  ; b = ROTATE(b, 19);
 
 		/* Round 2 */
-		a += ((b & (c | d)) | (c & d)) +    0xe0cfd631   + SQRT_2; a = rotate(a, 3);
-		d += ((a & (b | c)) | (b & c)) + salt_buffer[0]  + SQRT_2; d = rotate(d, 5);
-		c += ((d & (a | b)) | (a & b)) + salt_buffer[4]  + SQRT_2; c = rotate(c, 9);
-		b += ((c & (d | a)) | (d & a)) + salt_buffer[8]  + SQRT_2; b = rotate(b, 13);
+		a += ((b & (c | d)) | (c & d)) +    0xe0cfd631   + SQRT_2; a = ROTATE(a, 3);
+		d += ((a & (b | c)) | (b & c)) + salt_buffer[0]  + SQRT_2; d = ROTATE(d, 5);
+		c += ((d & (a | b)) | (a & b)) + salt_buffer[4]  + SQRT_2; c = ROTATE(c, 9);
+		b += ((c & (d | a)) | (d & a)) + salt_buffer[8]  + SQRT_2; b = ROTATE(b, 13);
 
-		a += ((b & (c | d)) | (c & d)) +    0x31e96ad1   + SQRT_2; a = rotate(a, 3);
-		d += ((a & (b | c)) | (b & c)) + salt_buffer[1]  + SQRT_2; d = rotate(d, 5);
-		c += ((d & (a | b)) | (a & b)) + salt_buffer[5]  + SQRT_2; c = rotate(c, 9);
-		b += ((c & (d | a)) | (d & a)) + salt_buffer[9]  + SQRT_2; b = rotate(b, 13);
+		a += ((b & (c | d)) | (c & d)) +    0x31e96ad1   + SQRT_2; a = ROTATE(a, 3);
+		d += ((a & (b | c)) | (b & c)) + salt_buffer[1]  + SQRT_2; d = ROTATE(d, 5);
+		c += ((d & (a | b)) | (a & b)) + salt_buffer[5]  + SQRT_2; c = ROTATE(c, 9);
+		b += ((c & (d | a)) | (d & a)) + salt_buffer[9]  + SQRT_2; b = ROTATE(b, 13);
 
-		a += ((b & (c | d)) | (c & d)) +    0xd7593cb7   + SQRT_2; a = rotate(a, 3);
-		d += ((a & (b | c)) | (b & c)) + salt_buffer[2]  + SQRT_2; d = rotate(d, 5);
-		c += ((d & (a | b)) | (a & b)) + salt_buffer[6]  + SQRT_2; c = rotate(c, 9);
-		b += ((c & (d | a)) | (d & a)) + salt_buffer[10] + SQRT_2; b = rotate(b, 13);
+		a += ((b & (c | d)) | (c & d)) +    0xd7593cb7   + SQRT_2; a = ROTATE(a, 3);
+		d += ((a & (b | c)) | (b & c)) + salt_buffer[2]  + SQRT_2; d = ROTATE(d, 5);
+		c += ((d & (a | b)) | (a & b)) + salt_buffer[6]  + SQRT_2; c = ROTATE(c, 9);
+		b += ((c & (d | a)) | (d & a)) + salt_buffer[10] + SQRT_2; b = ROTATE(b, 13);
 
-		a += ((b & (c | d)) | (c & d)) +    0xc089c0e0   + SQRT_2; a = rotate(a, 3);
-		d += ((a & (b | c)) | (b & c)) + salt_buffer[3]  + SQRT_2; d = rotate(d, 5);
-		c += ((d & (a | b)) | (a & b)) + salt_buffer[7]  + SQRT_2; c = rotate(c, 9);
-		b += ((c & (d | a)) | (d & a))					 + SQRT_2; b = rotate(b, 13);
+		a += ((b & (c | d)) | (c & d)) +    0xc089c0e0   + SQRT_2; a = ROTATE(a, 3);
+		d += ((a & (b | c)) | (b & c)) + salt_buffer[3]  + SQRT_2; d = ROTATE(d, 5);
+		c += ((d & (a | b)) | (a & b)) + salt_buffer[7]  + SQRT_2; c = ROTATE(c, 9);
+		b += ((c & (d | a)) | (d & a))					 + SQRT_2; b = ROTATE(b, 13);
 
 		/* Round 3 */
-		a += (b ^ c ^ d) +    0xe0cfd631   + SQRT_3; a = rotate(a, 3);
-		d += (a ^ b ^ c) + salt_buffer[4]  + SQRT_3; d = rotate(d, 9);
-		c += (d ^ a ^ b) + salt_buffer[0]  + SQRT_3; c = rotate(c, 11);
-		b += (c ^ d ^ a) + salt_buffer[8]  + SQRT_3; b = rotate(b, 15);
+		a += (b ^ c ^ d) +    0xe0cfd631   + SQRT_3; a = ROTATE(a, 3);
+		d += (a ^ b ^ c) + salt_buffer[4]  + SQRT_3; d = ROTATE(d, 9);
+		c += (d ^ a ^ b) + salt_buffer[0]  + SQRT_3; c = ROTATE(c, 11);
+		b += (c ^ d ^ a) + salt_buffer[8]  + SQRT_3; b = ROTATE(b, 15);
 
-		a += (b ^ c ^ d) +    0xd7593cb7   + SQRT_3; a = rotate(a, 3);
-		d += (a ^ b ^ c) + salt_buffer[6]  + SQRT_3; d = rotate(d, 9);
-		c += (d ^ a ^ b) + salt_buffer[2]  + SQRT_3; c = rotate(c, 11);
-		b += (c ^ d ^ a) + salt_buffer[10] + SQRT_3; b = rotate(b, 15);
+		a += (b ^ c ^ d) +    0xd7593cb7   + SQRT_3; a = ROTATE(a, 3);
+		d += (a ^ b ^ c) + salt_buffer[6]  + SQRT_3; d = ROTATE(d, 9);
+		c += (d ^ a ^ b) + salt_buffer[2]  + SQRT_3; c = ROTATE(c, 11);
+		b += (c ^ d ^ a) + salt_buffer[10] + SQRT_3; b = ROTATE(b, 15);
 
-		a += (b ^ c ^ d) +    0x31e96ad1   + SQRT_3; a = rotate(a, 3);
+		a += (b ^ c ^ d) +    0x31e96ad1   + SQRT_3; a = ROTATE(a, 3);
 		d += (a ^ b ^ c) + salt_buffer[5];
 
 		// Search for a match
@@ -832,19 +869,19 @@ PRIVATE void ocl_mscash_test_empty()
 		// Partial match
 		while(index != NO_ELEM)
 		{
-			unsigned int aa, bb, cc, dd;
-			unsigned int* bin = ((unsigned int*)binary_values) + index*4;
+			uint32_t aa, bb, cc, dd;
+			uint32_t* bin = ((uint32_t*)binary_values) + index*4;
 
 			if(d != bin[3]) goto next_iteration;
-			dd = d + SQRT_3; dd = rotate(dd, 9);
+			dd = d + SQRT_3; dd = ROTATE(dd, 9);
 
-			cc = c + (dd ^ a ^ b) + salt_buffer[1] + SQRT_3; cc = rotate(cc, 11);
+			cc = c + (dd ^ a ^ b) + salt_buffer[1] + SQRT_3; cc = ROTATE(cc, 11);
 			if(cc != bin[2]) goto next_iteration;
 
-			bb = b + (cc ^ dd ^ a) + salt_buffer[9]+ SQRT_3; bb = rotate(bb, 15);
+			bb = b + (cc ^ dd ^ a) + salt_buffer[9]+ SQRT_3; bb = ROTATE(bb, 15);
 			if(bb != bin[1]) goto next_iteration;
 
-			aa = a + (bb ^ cc ^ dd) +   0xc089c0e0 + SQRT_3; aa = rotate(aa, 3);
+			aa = a + (bb ^ cc ^ dd) +   0xc089c0e0 + SQRT_3; aa = ROTATE(aa, 3);
 			if(aa != bin[0]) goto next_iteration;
 
 			// Total match
@@ -1155,12 +1192,12 @@ if (num_diff_salts <= MAX_SALTS_UNROLL)
 			cl_uint b = ((cl_uint*)binary_values)[4 * hash_index + 1];
 			cl_uint c = ((cl_uint*)binary_values)[4 * hash_index + 2];
 			cl_uint d = ((cl_uint*)binary_values)[4 * hash_index + 3];
-			cl_uint d_more = rotate(d + SQRT_3, 9);
+			cl_uint d_more = ROTATE(d + SQRT_3, 9);
 			cl_uint c_d = c^d_more;
 
-			a = rotate(a, 32 - 3) - SQRT_3 - (b^c^d_more);
-			b = rotate(b, 32 - 15) - SQRT_3 - salts[11*i+9];
-			c = rotate(c, 32 - 11) - SQRT_3 - salts[11*i+1];
+			a = ROTATE(a, 32 - 3) - SQRT_3 - (b^c^d_more);
+			b = ROTATE(b, 32 - 15) - SQRT_3 - salts[11*i+9];
+			c = ROTATE(c, 32 - 11) - SQRT_3 - salts[11*i+1];
 			d -= salts[11 * i + 5];
 
 			char found_str[64];
@@ -1471,8 +1508,12 @@ PRIVATE void ocl_protocol_charset_work(OpenCL_Param* param)
 		pclEnqueueReadBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 0, 4, &num_found, 0, NULL, NULL);
 
 		// GPU found some passwords
-		if(num_found)
+		if (num_found)
+		{
+			if (num_found > (cl_uint)param->param0)
+				num_found = param->param0;
 			ocl_charset_process_found(param, &num_found, is_consecutive, buffer, key_lenght);
+		}
 
 		if (continue_attack)
 		{
@@ -1487,7 +1528,7 @@ PRIVATE void ocl_protocol_charset_work(OpenCL_Param* param)
 	release_opencl_param(param);
 	finish_thread();
 }
-PRIVATE void ocl_protocol_charset_init_common(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_mscash_crypt)
+PRIVATE int ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc_crypt)
 {
 	// Optimize salts
 	cl_uint num_salt_diff_parts = 0;
@@ -1497,7 +1538,7 @@ PRIVATE void ocl_protocol_charset_init_common(OpenCL_Param* param, cl_uint gpu_i
 	create_opencl_param(param, gpu_index, gen, output_size, FALSE);
 
 	// Do not allow blank in GPU
-	if(current_key_lenght == 0)
+	if (current_key_lenght == 0)
 	{
 		ocl_mscash_test_empty();
 		current_key_lenght = 1;
@@ -1505,10 +1546,10 @@ PRIVATE void ocl_protocol_charset_init_common(OpenCL_Param* param, cl_uint gpu_i
 	}
 
 	// Set appropriate number of candidates
-	param->NUM_KEYS_OPENCL *= 2 * __max(1, 120/num_char_in_charset);
-	if(num_diff_salts >= 4)
+	param->NUM_KEYS_OPENCL *= 2 * __max(1, 120 / num_char_in_charset);
+	if (num_diff_salts >= 4)
 		param->NUM_KEYS_OPENCL /= 2;
-	if(num_diff_salts >= 16)
+	if (num_diff_salts >= 16)
 		param->NUM_KEYS_OPENCL /= 2;
 
 	// The output size take into consideration the possible found keys
@@ -1524,11 +1565,11 @@ PRIVATE void ocl_protocol_charset_init_common(OpenCL_Param* param, cl_uint gpu_i
 
 	// Create memory objects
 #ifndef HS_OCL_CURRENT_KEY_AS_REGISTERS
-	create_opencl_mem(param, GPU_CURRENT_KEY, CL_MEM_READ_ONLY , MAX_KEY_LENGHT, NULL);
+	create_opencl_mem(param, GPU_CURRENT_KEY, CL_MEM_READ_ONLY, MAX_KEY_LENGHT, NULL);
 #endif
-	create_opencl_mem(param, GPU_OUTPUT, CL_MEM_READ_WRITE, sizeof(cl_uint)+output_size, NULL);
-	
-	if(num_diff_salts > MAX_SALTS_UNROLL)
+	create_opencl_mem(param, GPU_OUTPUT, CL_MEM_READ_WRITE, sizeof(cl_uint) + output_size, NULL);
+
+	if (num_diff_salts > MAX_SALTS_UNROLL)
 	{
 		create_opencl_mem(param, GPU_BINARY_VALUES, CL_MEM_READ_ONLY, BINARY_SIZE*num_passwords_loaded, NULL);
 		create_opencl_mem(param, GPU_SALT_VALUES, CL_MEM_READ_ONLY, sizeof(cl_uint)*num_salt_diff_parts*num_diff_salts, NULL);
@@ -1581,6 +1622,7 @@ PRIVATE void ocl_protocol_charset_init_common(OpenCL_Param* param, cl_uint gpu_i
 	}
 
 	// Generate code
+	param->param0 = output_size / 2 / sizeof(cl_uint);
 	char* source = ocl_gen_charset_code(&gpu_devices[gpu_index], num_salt_diff_parts, salt_values_str, output_size / 2 / sizeof(cl_uint));// Generate opencl code
 
 	//size_t len = strlen(source);
@@ -1594,7 +1636,7 @@ PRIVATE void ocl_protocol_charset_init_common(OpenCL_Param* param, cl_uint gpu_i
 	if (!build_opencl_program(param, source, gpu_devices[gpu_index].compiler_options))
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	// Crypt by length
@@ -1606,7 +1648,7 @@ PRIVATE void ocl_protocol_charset_init_common(OpenCL_Param* param, cl_uint gpu_i
 		if (code != CL_SUCCESS)
 		{
 			release_opencl_param(param);
-			return;
+			return FALSE;
 		}
 
 		// Set OpenCL kernel params
@@ -1623,13 +1665,13 @@ PRIVATE void ocl_protocol_charset_init_common(OpenCL_Param* param, cl_uint gpu_i
 
 		if (num_diff_salts > MAX_SALTS_UNROLL)
 		{
-			pclSetKernelArg(param->kernels[i], num_param_regs+1, sizeof(cl_mem), (void*)&param->mems[GPU_BINARY_VALUES]);
-			pclSetKernelArg(param->kernels[i], num_param_regs+2, sizeof(cl_mem), (void*)&param->mems[GPU_SALT_VALUES]);
+			pclSetKernelArg(param->kernels[i], num_param_regs + 1, sizeof(cl_mem), (void*)&param->mems[GPU_BINARY_VALUES]);
+			pclSetKernelArg(param->kernels[i], num_param_regs + 2, sizeof(cl_mem), (void*)&param->mems[GPU_SALT_VALUES]);
 
 			if (num_diff_salts < num_passwords_loaded)
 			{
-				pclSetKernelArg(param->kernels[i], num_param_regs+3, sizeof(cl_mem), (void*)&param->mems[GPU_SALT_INDEX]);
-				pclSetKernelArg(param->kernels[i], num_param_regs+4, sizeof(cl_mem), (void*)&param->mems[GPU_SAME_SALT_NEXT]);
+				pclSetKernelArg(param->kernels[i], num_param_regs + 3, sizeof(cl_mem), (void*)&param->mems[GPU_SALT_INDEX]);
+				pclSetKernelArg(param->kernels[i], num_param_regs + 4, sizeof(cl_mem), (void*)&param->mems[GPU_SAME_SALT_NEXT]);
 			}
 		}
 	}
@@ -1647,13 +1689,9 @@ PRIVATE void ocl_protocol_charset_init_common(OpenCL_Param* param, cl_uint gpu_i
 
 	free(source);
 	free(small_salts_values);
-	
-	*gpu_mscash_crypt = ocl_protocol_charset_work;
-}
 
-PRIVATE void ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_mscash_crypt)
-{
-	ocl_protocol_charset_init_common(param, gpu_index, gen, gpu_mscash_crypt);
+	*gpu_dcc_crypt = ocl_protocol_charset_work;
+	return TRUE;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Common
@@ -1687,7 +1725,7 @@ PRIVATE void ocl_gen_kernel_dcc(char* source, char* kernel_name, ocl_begin_rule_
 	}
 
 	// Begin function code
-	sprintf(source+strlen(source), "){uint indx;");
+	sprintf(source+strlen(source), "){uint indx=get_global_id(0);");
 
 	// Convert the key into a nt_buffer
 	memset(buffer_vector_size, 1, sizeof(buffer_vector_size));
@@ -1937,7 +1975,7 @@ strcat(source, "}");
 			cl_uint b = ((cl_uint*)binary_values)[4*i+1];
 			cl_uint c = ((cl_uint*)binary_values)[4*i+2];
 			cl_uint d = ((cl_uint*)binary_values)[4*i+3];
-			cl_uint d_more = rotate(d+SQRT_3, 9);
+			cl_uint d_more = ROTATE(d+SQRT_3, 9);
 			cl_uint c_d = c^d_more;
 
 			char output_index[12];
@@ -1945,9 +1983,9 @@ strcat(source, "}");
 			if (num_passwords_loaded > 1)
 				sprintf(output_index, "%i*found+", found_multiplier);
 
-			a = rotate(a, 32 - 3 ) - SQRT_3 - (b^c^d_more);
-			b = rotate(b, 32 - 15) - SQRT_3 - ((cl_uint*)salts_values)[9];
-			c = rotate(c, 32 - 11) - SQRT_3 - ((cl_uint*)salts_values)[1];
+			a = ROTATE(a, 32 - 3 ) - SQRT_3 - (b^c^d_more);
+			b = ROTATE(b, 32 - 15) - SQRT_3 - ((cl_uint*)salts_values)[9];
+			c = ROTATE(c, 32 - 11) - SQRT_3 - ((cl_uint*)salts_values)[1];
 			d -= ((cl_uint*)salts_values)[5];
 
 			for (cl_uint comp = 0; comp < vector_size; comp++)
@@ -2053,7 +2091,7 @@ PRIVATE void ocl_work(OpenCL_Param* param)
 
 	finish_thread();
 }
-PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc_crypt, ocl_gen_processed_key* gen_processed_key, ocl_setup_proccessed_keys_params* setup_proccessed_keys_params, cl_uint keys_multipler)
+PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc_crypt, ocl_gen_processed_key* gen_processed_key, ocl_setup_proccessed_keys_params* setup_proccessed_keys_params, cl_uint keys_multipler)
 {
 	// Optimize salts
 	cl_uint num_salt_diff_parts = 0;
@@ -2099,7 +2137,7 @@ PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, ge
 	if(!build_opencl_program(param, source, gpu_devices[gpu_index].compiler_options))
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	// Kernels
@@ -2107,7 +2145,7 @@ PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, ge
 	if (code != CL_SUCCESS)
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	// Generate kernels by lenght
@@ -2115,7 +2153,7 @@ PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, ge
 	if (code != CL_SUCCESS)
 	{
 		release_opencl_param(param);
-		return;
+		return FALSE;
 	}
 
 	// Create memory objects
@@ -2207,45 +2245,52 @@ PRIVATE void ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, ge
 	pclFinish(param->queue);
 	
 	*gpu_dcc_crypt = ocl_work;
+	return TRUE;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UTF8
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_ntlm_crypt)
+PRIVATE int ocl_protocol_utf8_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_ntlm_crypt)
 {
-	ocl_protocol_common_init(param, gpu_index, gen, gpu_ntlm_crypt, kernels2common[UTF8_INDEX_IN_KERNELS].gen_kernel, kernels2common[UTF8_INDEX_IN_KERNELS].setup_params, 4);
+	int r = ocl_protocol_common_init(param, gpu_index, gen, gpu_ntlm_crypt, kernels2common[UTF8_INDEX_IN_KERNELS].gen_kernel, kernels2common[UTF8_INDEX_IN_KERNELS].setup_params, 4);
 	param->additional_param = kernels2common + UTF8_INDEX_IN_KERNELS;
+	return r;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Phrases
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_ntlm_crypt)
+PRIVATE int ocl_protocol_phrases_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_ntlm_crypt)
 {
-	ocl_protocol_common_init(param, gpu_index, gen, gpu_ntlm_crypt, kernels2common[PHRASES_INDEX_IN_KERNELS].gen_kernel, kernels2common[PHRASES_INDEX_IN_KERNELS].setup_params, 16);
+	int r = ocl_protocol_common_init(param, gpu_index, gen, gpu_ntlm_crypt, kernels2common[PHRASES_INDEX_IN_KERNELS].gen_kernel, kernels2common[PHRASES_INDEX_IN_KERNELS].setup_params, 16);
 	param->additional_param = kernels2common + PHRASES_INDEX_IN_KERNELS;
+	return r;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Rules
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc_crypt)
+PRIVATE int ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_dcc_crypt)
 {
-	ocl_rules_init(param, gpu_index, gen, gpu_dcc_crypt, BINARY_SIZE, 0, ocl_write_dcc_header, ocl_gen_kernel_dcc, RULE_UNICODE_INDEX, 1);
+	return ocl_rules_init(param, gpu_index, gen, gpu_dcc_crypt, BINARY_SIZE, ocl_write_dcc_header, ocl_gen_kernel_dcc, RULE_UNICODE_INDEX, 1);
 }
 #endif
 
-PRIVATE int bench_values[] = {1,4,16,64};
 Format dcc_format = {
 	"DCC"/*"MSCASH"*/,
 	"Domain Cache Credentials (also know as MSCASH).",
+	"",
 	DCC_MAX_KEY_LENGHT,
 	BINARY_SIZE,
 	SALT_SIZE,
 	3,
-	bench_values,
-	LENGHT(bench_values),
+	NULL,
+	0,
 	get_binary,
+	binary2hex,
+	DEFAULT_VALUE_MAP_INDEX,
+	DEFAULT_VALUE_MAP_INDEX,
 	dcc_line_is_valid,
 	add_hash_from_line,
+	NULL,
 #ifdef _M_X64
 	{{CPU_CAP_AVX2, PROTOCOL_NTLM, crypt_ntlm_protocol_avx2}, {CPU_CAP_AVX, PROTOCOL_NTLM, crypt_ntlm_protocol_avx}, {CPU_CAP_SSE2, PROTOCOL_NTLM, crypt_ntlm_protocol_sse2}},
 #else

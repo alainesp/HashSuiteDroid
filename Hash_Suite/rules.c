@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2014 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2014,2016 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include <ctype.h>
@@ -30,39 +30,39 @@
 ////////////////////////////////////////////////////////////////////////////////////
 // Specific rules
 ////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void rule_copy(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer, unsigned int max)
+PRIVATE void rule_copy(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer, uint32_t max)
 {
-	unsigned int MAX_COPY = max*NUM_KEYS;
-	unsigned int num_to_copy = __min(NUM_KEYS - rules_nt_buffer_index, NUM_KEYS - nt_buffer_index);
-	unsigned int* rules_nt_buffer_ptr = rules_nt_buffer + rules_nt_buffer_index;
+	uint32_t MAX_COPY = max*NUM_KEYS;
+	uint32_t num_to_copy = __min(NUM_KEYS - rules_nt_buffer_index, NUM_KEYS - nt_buffer_index);
+	uint32_t* rules_nt_buffer_ptr = rules_nt_buffer + rules_nt_buffer_index;
 	nt_buffer += nt_buffer_index;
 
-	for (unsigned int i = 0; i < MAX_COPY; i += NUM_KEYS)
-		memcpy(nt_buffer + i, rules_nt_buffer_ptr + i, sizeof(unsigned int)*num_to_copy);
+	for (uint32_t i = 0; i < MAX_COPY; i += NUM_KEYS)
+		memcpy(nt_buffer + i, rules_nt_buffer_ptr + i, sizeof(uint32_t)*num_to_copy);
 
 	rules_nt_buffer_index += num_to_copy;
 	nt_buffer_index += num_to_copy;
 }
-PRIVATE void rule_copy_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_copy_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	rule_copy(nt_buffer, NUM_KEYS, rules_data_buffer, 15);
 }
-PRIVATE void rule_copy_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_copy_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	rule_copy(nt_buffer, NUM_KEYS, rules_data_buffer, 8);
 }
-PRIVATE void rule_lower_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_lower_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	for(; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; rules_nt_buffer_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int need_change = FALSE;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
-		unsigned int MAX = (lenght / 2 + 1)*NUM_KEYS;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t MAX = (lenght / 2 + 1)*NUM_KEYS;
 
 		for(i = 0; i < MAX; i+=NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 			{
@@ -80,7 +80,7 @@ PRIVATE void rule_lower_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsi
 
 		if(need_change)
 		{
-			unsigned int old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
+			uint32_t old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
 			for (; i < old_len; i += NUM_KEYS)
 				nt_buffer[i + nt_buffer_index] = 0;
 
@@ -91,18 +91,18 @@ PRIVATE void rule_lower_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsi
 			nt_buffer[14 * NUM_KEYS + nt_buffer_index] = __max(nt_buffer[14 * NUM_KEYS + nt_buffer_index], lenght << 4);
 	}
 }
-PRIVATE void rule_lower_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_lower_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	for (; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; rules_nt_buffer_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int need_change = FALSE;
 		int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		unsigned int MAX = (lenght / 4 + 1)*NUM_KEYS;
+		uint32_t MAX = (lenght / 4 + 1)*NUM_KEYS;
 
 		for (i = 0; i < MAX; i += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 			{
@@ -138,18 +138,18 @@ PRIVATE void rule_lower_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 		}
 	}
 }
-PRIVATE void rule_upper_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_upper_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	for(; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; rules_nt_buffer_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int need_change = FALSE;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
-		unsigned int MAX = (lenght/2+1)*NUM_KEYS;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t MAX = (lenght/2+1)*NUM_KEYS;
 
 		for(i = 0; i < MAX; i+=NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if(((_tmp & 0xFF) - 97u) <= 25u)
 			{
@@ -167,7 +167,7 @@ PRIVATE void rule_upper_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsi
 
 		if(need_change)
 		{
-			unsigned int old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
+			uint32_t old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
 			for (; i < old_len; i += NUM_KEYS)
 				nt_buffer[i + nt_buffer_index] = 0;
 
@@ -178,18 +178,18 @@ PRIVATE void rule_upper_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsi
 			nt_buffer[14 * NUM_KEYS + nt_buffer_index] = __max(nt_buffer[14 * NUM_KEYS + nt_buffer_index], lenght << 4);
 	}
 }
-PRIVATE void rule_upper_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_upper_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	for (; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; rules_nt_buffer_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int need_change = FALSE;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		unsigned int MAX = (lenght / 4 + 1)*NUM_KEYS;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t MAX = (lenght / 4 + 1)*NUM_KEYS;
 
 		for (i = 0; i < MAX; i += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 97u) <= 25u)
 			{
@@ -225,18 +225,18 @@ PRIVATE void rule_upper_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 		}
 	}
 }
-PRIVATE void rule_capitalize_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_capitalize_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	for (; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; rules_nt_buffer_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int need_change = FALSE;
-		unsigned int lenght = rules_nt_buffer[14 * NUM_KEYS + rules_nt_buffer_index] >> 4;
-		unsigned int MAX = (lenght / 2 + 1)*NUM_KEYS;
+		uint32_t lenght = rules_nt_buffer[14 * NUM_KEYS + rules_nt_buffer_index] >> 4;
+		uint32_t MAX = (lenght / 2 + 1)*NUM_KEYS;
 
 		for (i = 0; i < MAX; i += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (i)
 			{
@@ -265,7 +265,7 @@ PRIVATE void rule_capitalize_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 
 		if (need_change)
 		{
-			unsigned int old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
+			uint32_t old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
 			for (; i < old_len; i += NUM_KEYS)
 				nt_buffer[i + nt_buffer_index] = 0;
 
@@ -276,18 +276,18 @@ PRIVATE void rule_capitalize_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 			nt_buffer[14 * NUM_KEYS + nt_buffer_index] = __max(nt_buffer[14 * NUM_KEYS + nt_buffer_index], lenght << 4);
 	}
 }
-PRIVATE void rule_capitalize_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_capitalize_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	for (; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; rules_nt_buffer_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int need_change = FALSE;
 		int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		unsigned int MAX = (lenght / 4 + 1)*NUM_KEYS;
+		uint32_t MAX = (lenght / 4 + 1)*NUM_KEYS;
 
 		for (i = 0; i < MAX; i += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (i)
 			{
@@ -334,7 +334,7 @@ PRIVATE void rule_capitalize_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		}
 	}
 }
-PRIVATE void rule_duplicate_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_duplicate_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	for(; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; rules_nt_buffer_index++)
 	{
@@ -346,11 +346,11 @@ PRIVATE void rule_duplicate_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, 
 
 		if(lenght & 1)
 		{ 
-			unsigned int last_tmp = rules_nt_buffer[lenght_2num_keys+rules_nt_buffer_index] & 0xFF;
+			uint32_t last_tmp = rules_nt_buffer[lenght_2num_keys+rules_nt_buffer_index] & 0xFF;
 
 			for(i = 0; i < lenght_2num_keys; i+=NUM_KEYS)
 			{
-				unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+				uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 				nt_buffer[i+nt_buffer_index] = _tmp;
 				nt_buffer[i+lenght_2num_keys+nt_buffer_index] = (_tmp << 16) | last_tmp;
 
@@ -362,7 +362,7 @@ PRIVATE void rule_duplicate_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, 
 		else
 			for(i = 0; i < lenght_2num_keys; i+=NUM_KEYS)
 			{
-				unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+				uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 				nt_buffer[i+nt_buffer_index] = _tmp;
 				nt_buffer[i+lenght_2num_keys+nt_buffer_index] = _tmp;
 			}
@@ -377,48 +377,48 @@ PRIVATE void rule_duplicate_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, 
 		nt_buffer_index++;
 	}
 }
-PRIVATE void rule_duplicate_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_duplicate_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	for (; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; rules_nt_buffer_index++)
 	{
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 
 		if (lenght > 13) continue;
 
-		for (unsigned int i = 0; i < lenght / 4; i++)
+		for (uint32_t i = 0; i < lenght / 4; i++)
 			nt_buffer[i * NUM_KEYS + nt_buffer_index] = rules_nt_buffer[i* NUM_KEYS + rules_nt_buffer_index];
 
 		switch (lenght&3)
 		{
-			unsigned int _tmp;
+			uint32_t _tmp;
 		case 0:
-			for (unsigned int i = 0; i < lenght / 4; i++)
+			for (uint32_t i = 0; i < lenght / 4; i++)
 				nt_buffer[(lenght / 4+i) * NUM_KEYS + nt_buffer_index] = rules_nt_buffer[i* NUM_KEYS + rules_nt_buffer_index];
 
 			nt_buffer[2 * (lenght / 4) * NUM_KEYS + nt_buffer_index] = 0x80;
 
-			for (unsigned int i = 2 * (lenght / 4)+1; i < 7; i++)
+			for (uint32_t i = 2 * (lenght / 4)+1; i < 7; i++)
 				nt_buffer[i * NUM_KEYS + nt_buffer_index] = 0;
 			break;
 		case 1:
 			_tmp = rules_nt_buffer[lenght / 4 * NUM_KEYS + rules_nt_buffer_index] & 0xff;
-			for (unsigned int i = 0; i < lenght / 4; i++)
+			for (uint32_t i = 0; i < lenght / 4; i++)
 			{
-				unsigned int in_tmp = rules_nt_buffer[i* NUM_KEYS + rules_nt_buffer_index];
+				uint32_t in_tmp = rules_nt_buffer[i* NUM_KEYS + rules_nt_buffer_index];
 				nt_buffer[(lenght / 4 + i) * NUM_KEYS + nt_buffer_index] = _tmp + (in_tmp<<8);
 				_tmp = in_tmp >> 24;
 			}
 
 			nt_buffer[2 * (lenght / 4) * NUM_KEYS + nt_buffer_index] = _tmp + (rules_nt_buffer[lenght / 4 * NUM_KEYS + rules_nt_buffer_index] << 8);
 
-			for (unsigned int i = 2 * (lenght / 4) + 1; i < 7; i++)
+			for (uint32_t i = 2 * (lenght / 4) + 1; i < 7; i++)
 				nt_buffer[i * NUM_KEYS + nt_buffer_index] = 0;
 			break;
 		case 2:
 			_tmp = rules_nt_buffer[lenght / 4 * NUM_KEYS + rules_nt_buffer_index] & 0xffff;
-			for (unsigned int i = 0; i < lenght / 4; i++)
+			for (uint32_t i = 0; i < lenght / 4; i++)
 			{
-				unsigned int in_tmp = rules_nt_buffer[i* NUM_KEYS + rules_nt_buffer_index];
+				uint32_t in_tmp = rules_nt_buffer[i* NUM_KEYS + rules_nt_buffer_index];
 				nt_buffer[(lenght / 4 + i) * NUM_KEYS + nt_buffer_index] = _tmp + (in_tmp << 16);
 				_tmp = in_tmp >> 16;
 			}
@@ -426,23 +426,23 @@ PRIVATE void rule_duplicate_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 			nt_buffer[2 * (lenght / 4) * NUM_KEYS + nt_buffer_index] = _tmp + (rules_nt_buffer[lenght / 4 * NUM_KEYS + rules_nt_buffer_index] << 16);
 			nt_buffer[(2 * (lenght / 4)+1) * NUM_KEYS + nt_buffer_index] = 0x80;
 
-			for (unsigned int i = 2 * (lenght / 4) + 2; i < 7; i++)
+			for (uint32_t i = 2 * (lenght / 4) + 2; i < 7; i++)
 				nt_buffer[i * NUM_KEYS + nt_buffer_index] = 0;
 			break;
 		case 3:
 			_tmp = rules_nt_buffer[lenght / 4 * NUM_KEYS + rules_nt_buffer_index] & 0xffffff;
-			for (unsigned int i = 0; i < lenght / 4; i++)
+			for (uint32_t i = 0; i < lenght / 4; i++)
 			{
-				unsigned int in_tmp = rules_nt_buffer[i* NUM_KEYS + rules_nt_buffer_index];
+				uint32_t in_tmp = rules_nt_buffer[i* NUM_KEYS + rules_nt_buffer_index];
 				nt_buffer[(lenght / 4 + i) * NUM_KEYS + nt_buffer_index] = _tmp + (in_tmp << 24);
 				_tmp = in_tmp >> 8;
 			}
 
-			unsigned int in_tmp = rules_nt_buffer[lenght / 4 * NUM_KEYS + rules_nt_buffer_index];
+			uint32_t in_tmp = rules_nt_buffer[lenght / 4 * NUM_KEYS + rules_nt_buffer_index];
 			nt_buffer[2 * (lenght / 4) * NUM_KEYS + nt_buffer_index] = _tmp + (in_tmp << 24);
 			nt_buffer[(2 * (lenght / 4) + 1) * NUM_KEYS + nt_buffer_index] = in_tmp >> 8;
 
-			for (unsigned int i = 2 * (lenght / 4) + 2; i < 7; i++)
+			for (uint32_t i = 2 * (lenght / 4) + 2; i < 7; i++)
 				nt_buffer[i * NUM_KEYS + nt_buffer_index] = 0;
 			break;
 		}
@@ -451,19 +451,19 @@ PRIVATE void rule_duplicate_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 		nt_buffer_index++;
 	}
 }
-PRIVATE void ru_lower_upperlast_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void ru_lower_upperlast_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	for(; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; rules_nt_buffer_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int need_change = FALSE;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
-		unsigned int MAX = (lenght & 1) ? lenght/2*NUM_KEYS : (lenght/2-1)*NUM_KEYS;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t MAX = (lenght & 1) ? lenght/2*NUM_KEYS : (lenght/2-1)*NUM_KEYS;
 		if(!lenght) continue;
 
 		for(i = 0; i < MAX; i+=NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 			{
@@ -482,7 +482,7 @@ PRIVATE void ru_lower_upperlast_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		// Last letter --> uppercase
 		if(lenght & 1)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 97u) <= 25u)
 			{
@@ -494,7 +494,7 @@ PRIVATE void ru_lower_upperlast_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		}
 		else
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 			{
@@ -516,7 +516,7 @@ PRIVATE void ru_lower_upperlast_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		{
 			i += NUM_KEYS;
 
-			unsigned int old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
+			uint32_t old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
 			for(; i < old_len; i+=NUM_KEYS)
 				nt_buffer[i+nt_buffer_index] = 0;
 
@@ -527,19 +527,19 @@ PRIVATE void ru_lower_upperlast_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 			nt_buffer[14 * NUM_KEYS + nt_buffer_index] = __max(nt_buffer[14 * NUM_KEYS + nt_buffer_index], lenght << 4);
 	}
 }
-PRIVATE void ru_low_upperlas_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void ru_low_upperlas_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	for (; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; rules_nt_buffer_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int need_change = FALSE;
 		int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		unsigned int MAX = ((lenght-1) / 4)*NUM_KEYS;
+		uint32_t MAX = ((lenght-1) / 4)*NUM_KEYS;
 		if (!lenght) continue;
 
 		for (i = 0; i < MAX; i += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 			{
@@ -565,7 +565,7 @@ PRIVATE void ru_low_upperlas_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 			nt_buffer[i + nt_buffer_index] = _tmp;
 		}
 
-		unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+		uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 		switch (lenght&3)
 		{
 		case 0:
@@ -659,7 +659,7 @@ PRIVATE void end_brace(char* source)
 }
 PRIVATE void ocl_fill_buffer(char nt_buffer[16][16], cl_uint lenght)
 {
-	unsigned int i;
+	uint32_t i;
 	for (i = 0; i < lenght / 2; i++)
 		sprintf(nt_buffer[i], "+nt_buffer%u", i);
 
@@ -676,7 +676,7 @@ PRIVATE void ocl_fill_buffer(char nt_buffer[16][16], cl_uint lenght)
 }
 PRIVATE void ocl_fill_buffer_array(char nt_buffer[16][16], cl_uint lenght)
 {
-	unsigned int i;
+	uint32_t i;
 	for (i = 0; i < lenght / 2; i++)
 		sprintf(nt_buffer[i], "+nt_buffer[%u]", i);
 
@@ -703,7 +703,7 @@ PRIVATE cl_uint oclru_copy_ucs(char* source, char nt_buffer[16][16], char nt_buf
 		gpu_key_buffer_lenght += (i + 3) / 4;
 
 	// Total number of keys
-	sprintf(source + strlen(source), "indx=get_global_id(0)+%uu;uint copy_tmp;", MAX_KEY_LENGHT_SMALL + gpu_key_buffer_lenght*NUM_KEYS_OPENCL);
+	sprintf(source + strlen(source), "indx+=%uu;uint copy_tmp;", MAX_KEY_LENGHT_SMALL + gpu_key_buffer_lenght*NUM_KEYS_OPENCL);
 	// Convert the key into a nt_buffer
 	for (i = 0; i < ((lenght + 3) / 4 - 1); i++)
 		sprintf(source + strlen(source),
@@ -724,7 +724,7 @@ PRIVATE cl_uint oclru_copy_ucs(char* source, char nt_buffer[16][16], char nt_buf
 }
 PRIVATE void oclru_copy_array(char* source, char nt_buffer[16][16], char nt_buffer_vector_size[16], cl_uint lenght, cl_uint NUM_KEYS_OPENCL, cl_uint more_buffer)
 {
-	unsigned int i, gpu_key_buffer_lenght;
+	uint32_t i, gpu_key_buffer_lenght;
 
 	ocl_fill_buffer_array(nt_buffer, lenght);
 	if (!lenght) return;
@@ -734,7 +734,7 @@ PRIVATE void oclru_copy_array(char* source, char nt_buffer[16][16], char nt_buff
 		gpu_key_buffer_lenght += (i + 3) / 4;
 
 	// Total number of keys
-	sprintf(source + strlen(source),"indx=get_global_id(0)+%uu;"
+	sprintf(source + strlen(source),"indx+=%uu;"
 									"uint nt_buffer[%u];uint copy_tmp;", MAX_KEY_LENGHT_SMALL+gpu_key_buffer_lenght*NUM_KEYS_OPENCL, (lenght + 1 + more_buffer) / 2);
 	// Convert the key into a nt_buffer
 	for (i = 0; i < ((lenght + 3) / 4 - 1); i++)
@@ -771,14 +771,14 @@ PRIVATE cl_uint oclru_upper_ucs(char* source, char nt_buffer[16][16], char nt_bu
 	oclru_copy_ucs(source, nt_buffer, nt_buffer_vector_size, lenght, NUM_KEYS_OPENCL, prefered_vector_size);
 
 	// Uppercase
-	for (unsigned int i = 0; i < lenght; i++)
+	for (uint32_t i = 0; i < lenght; i++)
 		if (i & 1)
 			sprintf(source + strlen(source), "if((nt_buffer%u-6356992u)<=1703935u)"
-												"nt_buffer%u-=32<<16;"
+												"nt_buffer%u-=32u<<16u;"
 												, i / 2, i / 2);
 		else
 			sprintf(source + strlen(source), "if(((nt_buffer%u&0xFF)-97u)<=25u)"
-												"nt_buffer%u-=32;"
+												"nt_buffer%u-=32u;"
 												, i / 2, i / 2);
 
 	return 1;
@@ -818,14 +818,14 @@ PRIVATE cl_uint oclru_duplicate_ucs(char* source, char nt_buffer[16][16], char n
 	if (lenght & 1)
 	{
 		sprintf(source + strlen(source), "nt_buffer%u=(nt_buffer%u&0xff)|(nt_buffer0<<16u);", lenght / 2, lenght / 2);
-		for (unsigned int i = 0; i < lenght / 2; i++)
+		for (uint32_t i = 0; i < lenght / 2; i++)
 		{
 			sprintf(nt_buffer[lenght / 2 + i + 1], "+nt_buffer%u", lenght / 2 + i + 1);
 			sprintf(source + strlen(source), "uint nt_buffer%u=(nt_buffer%u<<16u)|(nt_buffer%u>>16u);", lenght / 2 + i + 1, i+1, i);
 		}
 	}
 	else
-		for (unsigned int i = 0; i < lenght/2; i++)
+		for (uint32_t i = 0; i < lenght/2; i++)
 			strcpy(nt_buffer[lenght / 2 + i], nt_buffer[i]);
 
 	strcpy(nt_buffer[lenght], "+0x80");
@@ -833,7 +833,7 @@ PRIVATE cl_uint oclru_duplicate_ucs(char* source, char nt_buffer[16][16], char n
 }
 PRIVATE cl_uint oclru_lower_upper_last_ucs(char* source, char nt_buffer[16][16], char nt_buffer_vector_size[16], cl_uint lenght, cl_uint NUM_KEYS_OPENCL, cl_uint prefered_vector_size)
 {
-	unsigned int i;
+	uint32_t i;
 	oclru_copy_ucs(source, nt_buffer, nt_buffer_vector_size, lenght, NUM_KEYS_OPENCL, prefered_vector_size);
 
 	// Requires length greater than 0
@@ -913,7 +913,7 @@ PRIVATE void oclru_copy_array_utf8(char* source, char nt_buffer[16][16], cl_uint
 		gpu_key_buffer_lenght += (i + 3) / 4;
 
 	// Total number of keys
-	sprintf(source + strlen(source),"indx=get_global_id(0)+%uu;"
+	sprintf(source + strlen(source),"indx+=%uu;"
 									"uint nt_buffer[%u];", MAX_KEY_LENGHT_SMALL+gpu_key_buffer_lenght*NUM_KEYS_OPENCL, (lenght + 3 + more_buffer) / 4);
 	// Convert the key into a nt_buffer
 	for (i = 0; i < (lenght + 3) / 4; i++)
@@ -931,7 +931,7 @@ PRIVATE cl_uint oclru_copy_utf8(char* source, char nt_buffer[16][16], char nt_bu
 		gpu_key_buffer_lenght += (i + 3) / 4;
 
 	// Total number of keys
-	sprintf(source + strlen(source), "indx=get_global_id(0)+%uu;", MAX_KEY_LENGHT_SMALL + gpu_key_buffer_lenght*NUM_KEYS_OPENCL);
+	sprintf(source + strlen(source), "indx+=%uu;", MAX_KEY_LENGHT_SMALL + gpu_key_buffer_lenght*NUM_KEYS_OPENCL);
 	// Convert the key into a nt_buffer
 	for (i = 0; i < ((lenght+3)/4); i++)
 		sprintf(source + strlen(source), "uint buffer%u=keys[indx+%uu];", i, i*NUM_KEYS_OPENCL);
@@ -943,7 +943,7 @@ PRIVATE cl_uint oclru_lower_utf8(char* source, char nt_buffer[16][16], char nt_b
 	oclru_copy_utf8(source, nt_buffer, nt_buffer_vector_size, lenght, NUM_KEYS_OPENCL, prefered_vector_size);
 
 	// Lowercase
-	for (unsigned int i = 0; i < lenght; i++)
+	for (uint32_t i = 0; i < lenght; i++)
 		switch (i & 3)
 		{
 		case 1: case 2:
@@ -970,7 +970,7 @@ PRIVATE cl_uint oclru_upper_utf8(char* source, char nt_buffer[16][16], char nt_b
 	oclru_copy_utf8(source, nt_buffer, nt_buffer_vector_size, lenght, NUM_KEYS_OPENCL, prefered_vector_size);
 
 	// Uppercase
-	for (unsigned int i = 0; i < lenght; i++)
+	for (uint32_t i = 0; i < lenght; i++)
 		switch (i & 3)
 		{
 			case 1: case 2:
@@ -997,7 +997,7 @@ PRIVATE cl_uint oclru_capitalize_utf8(char* source, char nt_buffer[16][16], char
 	oclru_copy_utf8(source, nt_buffer, nt_buffer_vector_size, lenght, NUM_KEYS_OPENCL, prefered_vector_size);
 
 	// Lowercase
-	for (unsigned int i = 0; i < lenght; i++)
+	for (uint32_t i = 0; i < lenght; i++)
 		switch (i & 3)
 		{
 			case 1: case 2:
@@ -1044,7 +1044,7 @@ PRIVATE cl_uint oclru_duplicate_utf8(char* source, char nt_buffer[16][16], char 
 		if ((lenght & 3) == 2)
 			strcpy(nt_buffer[lenght / 2], "+0x80");
 
-		for (unsigned int i = 0; i < lenght / 4; i++)
+		for (uint32_t i = 0; i < lenght / 4; i++)
 		{
 			sprintf(nt_buffer[lenght / 4 + i + 1], "+buffer%u", lenght / 4 + i + 1);
 			sprintf(source + strlen(source), "uint buffer%u=(buffer%u<<%uu)|(buffer%u>>%uu);", lenght / 4 + i + 1, i + 1, 8 * (lenght & 3), i, 32-8 * (lenght & 3));
@@ -1053,7 +1053,7 @@ PRIVATE cl_uint oclru_duplicate_utf8(char* source, char nt_buffer[16][16], char 
 	}
 	else
 	{
-		for (unsigned int i = 0; i < lenght / 4; i++)
+		for (uint32_t i = 0; i < lenght / 4; i++)
 			strcpy(nt_buffer[lenght / 4 + i], nt_buffer[i]);
 
 		strcpy(nt_buffer[lenght/2], "+0x80");
@@ -1433,17 +1433,17 @@ PRIVATE void oclru_lower_upper_last_common(char* source, char* rule_name, cl_uin
 #define MIN_CHAR_ADDED  32/*' '*/
 #define LENGHT_CHAR_ADDED (MAX_CHAR_ADDED-MIN_CHAR_ADDED+1)
 
-PRIVATE void rule_lower_plus_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_lower_plus_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added = rules_data_buffer[CHAR_ADDED_INDEX];
+	uint32_t char_added = rules_data_buffer[CHAR_ADDED_INDEX];
 	nt_buffer += nt_buffer_index;
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(MAX_CHAR_ADDED - char_added + 1, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = num_to_copy;
+		uint32_t MAX = num_to_copy;
 
 		if (lenght >= 27)
 		{
@@ -1455,7 +1455,7 @@ PRIVATE void rule_lower_plus_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Lowercase
 		for (i = 0; i < lenght / 4 * NUM_KEYS; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 				_tmp += 32;
@@ -1472,7 +1472,7 @@ PRIVATE void rule_lower_plus_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Last
 		switch (lenght & 3)
 		{
-			unsigned int _tmp;
+			uint32_t _tmp;
 		case 0:
 			_tmp = char_added + 0x8000;
 			for (j = i; j < MAX; j++, _tmp++)
@@ -1542,17 +1542,17 @@ PRIVATE void rule_lower_plus_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 
 	rules_data_buffer[CHAR_ADDED_INDEX] = char_added;
 }
-PRIVATE void rule_cap_append_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_cap_append_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added = rules_data_buffer[CHAR_ADDED_INDEX];
+	uint32_t char_added = rules_data_buffer[CHAR_ADDED_INDEX];
 	nt_buffer += nt_buffer_index;
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(MAX_CHAR_ADDED - char_added + 1, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = num_to_copy;
+		uint32_t MAX = num_to_copy;
 
 		if (lenght >= 27)
 		{
@@ -1564,7 +1564,7 @@ PRIVATE void rule_cap_append_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Lowercase
 		for (i = 0; i < lenght / 4 * NUM_KEYS; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (i)
 			{
@@ -1589,7 +1589,7 @@ PRIVATE void rule_cap_append_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Last
 		switch (lenght & 3)
 		{
-			unsigned int _tmp;
+			uint32_t _tmp;
 		case 0:
 			_tmp = char_added + 0x8000;
 			for (j = i; j < MAX; j++, _tmp++)
@@ -1683,17 +1683,17 @@ PRIVATE void rule_cap_append_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 
 	rules_data_buffer[CHAR_ADDED_INDEX] = char_added;
 }
-PRIVATE void rule_lower_append_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_lower_append_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added = rules_data_buffer[CHAR_ADDED_INDEX];
+	uint32_t char_added = rules_data_buffer[CHAR_ADDED_INDEX];
 	nt_buffer += nt_buffer_index;
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(MAX_CHAR_ADDED-char_added+1, __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
-		unsigned int MAX = num_to_copy;
+		uint32_t MAX = num_to_copy;
 
 		if(lenght >= 27)
 		{
@@ -1705,7 +1705,7 @@ PRIVATE void rule_lower_append_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 		// Lowercase
 		for(i = 0; i < lenght/2*NUM_KEYS; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if(((_tmp & 0xFF) - 65u) <= 25u)
 				_tmp += 32;
@@ -1719,7 +1719,7 @@ PRIVATE void rule_lower_append_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 		if(lenght & 1)
 		{
 			// Lowercase
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index] & 0xFF;
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index] & 0xFF;
 			if ((_tmp - 65u) <= 25u)
 				_tmp += 32;
 
@@ -1735,7 +1735,7 @@ PRIVATE void rule_lower_append_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 		}
 		else
 		{
-			unsigned int _tmp = char_added + 0x800000;
+			uint32_t _tmp = char_added + 0x800000;
 			for (j = i; j < MAX; j++, _tmp++)
 				nt_buffer[j] = _tmp;
 		}
@@ -1745,8 +1745,8 @@ PRIVATE void rule_lower_append_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 		// Fill with 0
 		for (int j = 0; j < num_to_copy; j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy;
@@ -1767,16 +1767,16 @@ PRIVATE void rule_lower_append_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 
 	rules_data_buffer[CHAR_ADDED_INDEX] = char_added;
 }
-PRIVATE void rule_cap_append_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_cap_append_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added = rules_data_buffer[CHAR_ADDED_INDEX];
+	uint32_t char_added = rules_data_buffer[CHAR_ADDED_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(MAX_CHAR_ADDED - char_added + 1, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if(lenght >= 27)
 		{
@@ -1788,7 +1788,7 @@ PRIVATE void rule_cap_append_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 		// Lowercase
 		for(i = 0; i < lenght/2*NUM_KEYS; i+=NUM_KEYS,MAX+=NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if(i)
 			{
@@ -1809,7 +1809,7 @@ PRIVATE void rule_cap_append_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 		if(lenght & 1)
 		{
 			// Lowercase
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index] & 0xFF;
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index] & 0xFF;
 			if(i)
 			{
 				if((_tmp - 65u) <= 25u)
@@ -1836,8 +1836,8 @@ PRIVATE void rule_cap_append_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -1857,17 +1857,17 @@ PRIVATE void rule_cap_append_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 
 	rules_data_buffer[CHAR_ADDED_INDEX] = char_added;
 }
-PRIVATE void rule_prefix_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_prefix_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added = rules_data_buffer[CHAR_ADDED_INDEX];
+	uint32_t char_added = rules_data_buffer[CHAR_ADDED_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(MAX_CHAR_ADDED-char_added+1, __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
-		unsigned int MAX_LOWER = (lenght+3)/2*NUM_KEYS;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX_LOWER = (lenght+3)/2*NUM_KEYS;
 
 		if(lenght >= 27)
 		{
@@ -1879,8 +1879,8 @@ PRIVATE void rule_prefix_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 		// Copy
 		for(i = 0; i < MAX_LOWER; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
-			unsigned int last_tmp;
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t last_tmp;
 
 			if(i)
 			{
@@ -1900,8 +1900,8 @@ PRIVATE void rule_prefix_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -1921,17 +1921,17 @@ PRIVATE void rule_prefix_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 
 	rules_data_buffer[CHAR_ADDED_INDEX] = char_added;
 }
-PRIVATE void rule_prefix_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_prefix_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added = rules_data_buffer[CHAR_ADDED_INDEX];
+	uint32_t char_added = rules_data_buffer[CHAR_ADDED_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(MAX_CHAR_ADDED - char_added + 1, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
-		unsigned int MAX_LOWER = ((lenght+1) / 4 + 1) * NUM_KEYS;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX_LOWER = ((lenght+1) / 4 + 1) * NUM_KEYS;
 
 		if (lenght >= 27)
 		{
@@ -1943,8 +1943,8 @@ PRIVATE void rule_prefix_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, un
 		// Copy
 		for (i = 0; i < MAX_LOWER; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
-			unsigned int last_tmp;
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t last_tmp;
 
 			if (i)
 			{
@@ -2339,18 +2339,18 @@ PRIVATE void oclru_prefix_common(char* source, char* rule_name, cl_uint in_NUM_K
 #endif
 
 // Less common
-PRIVATE void rule_overstrike_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_overstrike_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added = rules_data_buffer[CHAR_ADDED_INDEX];
-	unsigned int change_pos = rules_data_buffer[CHANGE_POS_INDEX];
+	uint32_t char_added = rules_data_buffer[CHAR_ADDED_INDEX];
+	uint32_t change_pos = rules_data_buffer[CHANGE_POS_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(MAX_CHAR_ADDED-char_added+1, __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
-		unsigned int MAX_LOWER = (lenght + 2) / 2 * NUM_KEYS;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX_LOWER = (lenght + 2) / 2 * NUM_KEYS;
 
 		if(lenght > 27)
 		{
@@ -2363,7 +2363,7 @@ PRIVATE void rule_overstrike_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 		// Copy and over-strike
 		for(i = 0; i < MAX_LOWER; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if(i == change_pos/2*NUM_KEYS)// over-strike
 			{
@@ -2392,8 +2392,8 @@ PRIVATE void rule_overstrike_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -2422,18 +2422,18 @@ PRIVATE void rule_overstrike_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 	rules_data_buffer[CHANGE_POS_INDEX] = change_pos;
 	rules_data_buffer[CHAR_ADDED_INDEX] = char_added;
 }
-PRIVATE void rule_overstrike_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_overstrike_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added = rules_data_buffer[CHAR_ADDED_INDEX];
-	unsigned int change_pos = rules_data_buffer[CHANGE_POS_INDEX];
+	uint32_t char_added = rules_data_buffer[CHAR_ADDED_INDEX];
+	uint32_t change_pos = rules_data_buffer[CHANGE_POS_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(MAX_CHAR_ADDED - char_added + 1, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
-		unsigned int MAX_LOWER = (lenght / 4 + 1) * NUM_KEYS;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX_LOWER = (lenght / 4 + 1) * NUM_KEYS;
 
 		if (lenght > 27)
 		{
@@ -2446,11 +2446,11 @@ PRIVATE void rule_overstrike_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Copy and over-strike
 		for (i = 0; i < MAX_LOWER; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (i == change_pos / 4 * NUM_KEYS)// over-strike
 			{
-				unsigned int shift = 8 * (change_pos & 3);
+				uint32_t shift = 8 * (change_pos & 3);
 				_tmp = (_tmp & ~(0xff << shift)) + (char_added << shift);
 
 				for (j = i + nt_buffer_index; j < MAX; j++, _tmp += (1u << shift))
@@ -2493,15 +2493,15 @@ PRIVATE void rule_overstrike_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 	rules_data_buffer[CHANGE_POS_INDEX] = change_pos;
 	rules_data_buffer[CHAR_ADDED_INDEX] = char_added;
 }
-PRIVATE void rule_remove_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_remove_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int change_pos = rules_data_buffer[CHANGE_POS_INDEX];
+	uint32_t change_pos = rules_data_buffer[CHANGE_POS_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
-		unsigned int last_tmp;
+		uint32_t i;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t last_tmp;
 
 		if(lenght == 0)
 		{
@@ -2522,7 +2522,7 @@ PRIVATE void rule_remove_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 		// Remove
 		for(; i < (lenght+2)/2*NUM_KEYS; i += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			nt_buffer[i-NUM_KEYS+nt_buffer_index] = (_tmp << 16) | (last_tmp >> 16);
 
@@ -2534,7 +2534,7 @@ PRIVATE void rule_remove_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 		else
 			i -= NUM_KEYS;
 		// Fill with 0
-		unsigned int old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
+		uint32_t old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
 		for(; i < old_len; i += NUM_KEYS)
 			nt_buffer[i+nt_buffer_index] = 0;
 
@@ -2554,15 +2554,15 @@ PRIVATE void rule_remove_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 
 	rules_data_buffer[CHANGE_POS_INDEX] = change_pos;
 }
-PRIVATE void rule_remove_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_remove_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int change_pos = rules_data_buffer[CHANGE_POS_INDEX];
+	uint32_t change_pos = rules_data_buffer[CHANGE_POS_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		unsigned int last_tmp;
+		uint32_t i;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t last_tmp;
 
 		if (lenght == 0)
 		{
@@ -2596,7 +2596,7 @@ PRIVATE void rule_remove_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, un
 		// Remove
 		for (; i < (lenght / 4+1) * NUM_KEYS; i += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			nt_buffer[i - NUM_KEYS + nt_buffer_index] = (_tmp << 24) + last_tmp;
 
@@ -2832,7 +2832,7 @@ PRIVATE void oclru_remove_common(char* source, char* rule_name, cl_uint in_NUM_K
 	oclru_common_kernel_definition(source, rule_name, TRUE);
 
 	sprintf(source + strlen(source),
-		"uint len=in_key[7u*%uu+idx]>>4;"
+		"uint len=in_key[7u*%uu+idx]>>4u;"
 		"if(param >= len)return;"
 
 		"uint out_index=atomic_inc(begin_out_index);"
@@ -2843,7 +2843,7 @@ PRIVATE void oclru_remove_common(char* source, char* rule_name, cl_uint in_NUM_K
 			"out_key[i*%uu+out_index]=in_key[i*%uu+idx];"
 
 		"uint part_key=in_key[(param/4)*%uu+idx];"
-		"if(param){"
+		"if(param&3u){"
 			"uint pos3 = 8u*(param&3u);"
 			"part_key = (part_key & (0xffffffff>>(32u-pos3))) + ((part_key>>8u) & (0xffffffff<<pos3));"
 		"}else{"
@@ -2853,30 +2853,30 @@ PRIVATE void oclru_remove_common(char* source, char* rule_name, cl_uint in_NUM_K
 		"for(uint i=param/4+1;i<max_iter;i++)"
 		"{"
 			"uint in_part=in_key[i*%uu+idx];"
-			"out_key[(i-1)*%uu+out_index]= part_key +( in_part<<24u);"
+			"out_key[(i-1)*%uu+out_index]=part_key+(in_part<<24u);"
 			"part_key=in_part>>8u;"
 		"}"
-		"if((len&3u) >= 1u)"
-			"out_key[(max_iter-1)*%uu+out_index]= part_key;"
-			, in_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, in_NUM_KEYS_OPENCL, in_NUM_KEYS_OPENCL, in_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL);
+		"if((len&3u)>=1u)"
+			"out_key[(max_iter-1)*%uu+out_index]=part_key;"
+		, in_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, in_NUM_KEYS_OPENCL, in_NUM_KEYS_OPENCL, in_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL);
 
 	strcat(source, "}");
 }
 #endif
 
-PRIVATE void rule_insert_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_insert_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added = rules_data_buffer[CHAR_ADDED_INDEX];
-	unsigned int insert_pos = rules_data_buffer[INSERT_POS_INDEX];
+	uint32_t char_added = rules_data_buffer[CHAR_ADDED_INDEX];
+	uint32_t insert_pos = rules_data_buffer[INSERT_POS_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(MAX_CHAR_ADDED-char_added+1, __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
-		unsigned int MAX_LOWER = (lenght+3)/2*NUM_KEYS;
-		unsigned int last_tmp;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX_LOWER = (lenght+3)/2*NUM_KEYS;
+		uint32_t last_tmp;
 
 		if(lenght >= 27 || lenght < 2)
 		{
@@ -2896,13 +2896,13 @@ PRIVATE void rule_insert_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 
 		if (insert_pos & 1)
 		{
-			unsigned int _tmp = (last_tmp & 0x0000FFFF) | (char_added << 16);
+			uint32_t _tmp = (last_tmp & 0x0000FFFF) | (char_added << 16);
 			for (j = i + nt_buffer_index; j < MAX; j++, _tmp += (1 << 16))
 				nt_buffer[j] = _tmp;
 		}
 		else
 		{
-			unsigned int _tmp = (last_tmp << 16) | char_added;
+			uint32_t _tmp = (last_tmp << 16) | char_added;
 			for (j = i + nt_buffer_index; j < MAX; j++, _tmp++)
 				nt_buffer[j] = _tmp;
 		}
@@ -2914,7 +2914,7 @@ PRIVATE void rule_insert_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 		// Copy
 		for(; i < MAX_LOWER; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			last_tmp = (_tmp << 16) | (last_tmp >> 16);
 			for(j = i+nt_buffer_index; j < MAX; j++)
@@ -2926,8 +2926,8 @@ PRIVATE void rule_insert_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -2953,19 +2953,19 @@ PRIVATE void rule_insert_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, uns
 	rules_data_buffer[INSERT_POS_INDEX] = insert_pos;
 	rules_data_buffer[CHAR_ADDED_INDEX] = char_added;
 }
-PRIVATE void rule_insert_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_insert_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added = rules_data_buffer[CHAR_ADDED_INDEX];
-	unsigned int insert_pos = rules_data_buffer[INSERT_POS_INDEX];
+	uint32_t char_added = rules_data_buffer[CHAR_ADDED_INDEX];
+	uint32_t insert_pos = rules_data_buffer[INSERT_POS_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(MAX_CHAR_ADDED - char_added + 1, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
-		unsigned int MAX_LOWER = ((lenght + 1) / 4 + 1) * NUM_KEYS;
-		unsigned int last_tmp;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX_LOWER = ((lenght + 1) / 4 + 1) * NUM_KEYS;
+		uint32_t last_tmp;
 
 		if (lenght >= 27 || lenght < 2)
 		{
@@ -2982,7 +2982,7 @@ PRIVATE void rule_insert_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, un
 
 		// Insert
 		last_tmp = rules_nt_buffer[i + rules_nt_buffer_index];
-		unsigned int _tmp;
+		uint32_t _tmp;
 		switch (insert_pos&3)
 		{
 		case 0:
@@ -3149,7 +3149,7 @@ PRIVATE cl_uint oclru_insert_utf8(char* source, char nt_buffer[16][16], char nt_
 }
 PRIVATE void ocl_insert_get_key(unsigned char* out_key, unsigned char* plain, cl_uint param)
 {
-	unsigned int insert_index = param >> 8;
+	uint32_t insert_index = param >> 8;
 	strcpy(out_key, plain);
 	memmove(out_key + insert_index + 1, out_key + insert_index, strlen(out_key) - insert_index + 1);
 	out_key[insert_index] = (unsigned char)(MIN_CHAR_ADDED + (param & 0xff));
@@ -3205,17 +3205,17 @@ PRIVATE void oclru_insert_common(char* source, char* rule_name, cl_uint in_NUM_K
 #endif
 
 // Append 2 digits
-PRIVATE void ru_lower_plus_2dig_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void ru_lower_plus_2dig_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	unsigned char digit1 = rules_data_buffer[DIGIT1_INDEX];
 	unsigned char digit2 = rules_data_buffer[DIGIT2_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[14 * NUM_KEYS + rules_nt_buffer_index] >> 4;
-		int num_to_copy = __min((unsigned int)(('9' - digit1) * 10 + '9' - digit2 + 1), __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[14 * NUM_KEYS + rules_nt_buffer_index] >> 4;
+		int num_to_copy = __min((uint32_t)(('9' - digit1) * 10 + '9' - digit2 + 1), __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 26)
 		{
@@ -3228,7 +3228,7 @@ PRIVATE void ru_lower_plus_2dig_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		// Lowercase
 		for (i = 0; i < lenght / 2 * NUM_KEYS; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 				_tmp += 32;
@@ -3242,7 +3242,7 @@ PRIVATE void ru_lower_plus_2dig_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		if (lenght & 1)
 		{
 			// Lowercase
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index] & 0xFF;
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index] & 0xFF;
 			if ((_tmp - 65u) <= 25u)
 				_tmp += 32;
 
@@ -3282,8 +3282,8 @@ PRIVATE void ru_lower_plus_2dig_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -3305,17 +3305,17 @@ PRIVATE void ru_lower_plus_2dig_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 	rules_data_buffer[DIGIT1_INDEX] = digit1;
 	rules_data_buffer[DIGIT2_INDEX] = digit2;
 }
-PRIVATE void ru_lo_plus_2dig_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void ru_lo_plus_2dig_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	unsigned char digit1 = rules_data_buffer[DIGIT1_INDEX];
 	unsigned char digit2 = rules_data_buffer[DIGIT2_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		int num_to_copy = __min((unsigned int)(('9' - digit1) * 10 + '9' - digit2 + 1), __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		int num_to_copy = __min((uint32_t)(('9' - digit1) * 10 + '9' - digit2 + 1), __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 26)
 		{
@@ -3328,7 +3328,7 @@ PRIVATE void ru_lo_plus_2dig_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Lowercase
 		for (i = 0; i < lenght / 4 * NUM_KEYS; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 				_tmp += 32;
@@ -3345,7 +3345,7 @@ PRIVATE void ru_lo_plus_2dig_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 
 		switch (lenght & 3)
 		{
-			unsigned int _tmp;
+			uint32_t _tmp;
 		case 0:
 			for (j = i + nt_buffer_index; j < MAX; j++, digit2++)
 			{
@@ -3439,17 +3439,17 @@ PRIVATE void ru_lo_plus_2dig_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 	rules_data_buffer[DIGIT1_INDEX] = digit1;
 	rules_data_buffer[DIGIT2_INDEX] = digit2;
 }
-PRIVATE void rule_cap_plus_2dig_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_cap_plus_2dig_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	unsigned char digit1 = rules_data_buffer[DIGIT1_INDEX];
 	unsigned char digit2 = rules_data_buffer[DIGIT2_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
-		int num_to_copy = __min((unsigned int)(('9'-digit1)*10+'9'-digit2+1), __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		int num_to_copy = __min((uint32_t)(('9'-digit1)*10+'9'-digit2+1), __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if(lenght >= 26)
 		{
@@ -3462,7 +3462,7 @@ PRIVATE void rule_cap_plus_2dig_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		// Lowercase
 		for(i = 0; i < lenght/2*NUM_KEYS; i+=NUM_KEYS,MAX+=NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if(i)
 			{
@@ -3483,7 +3483,7 @@ PRIVATE void rule_cap_plus_2dig_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		if(lenght & 1)
 		{
 			// Lowercase
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index] & 0xFF;
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index] & 0xFF;
 			if (i)
 			{
 				if (((_tmp & 0xFF) - 65u) <= 25u)
@@ -3530,8 +3530,8 @@ PRIVATE void rule_cap_plus_2dig_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -3553,17 +3553,17 @@ PRIVATE void rule_cap_plus_2dig_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 	rules_data_buffer[DIGIT1_INDEX] = digit1;
 	rules_data_buffer[DIGIT2_INDEX] = digit2;
 }
-PRIVATE void r_cap_plus_2dig_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void r_cap_plus_2dig_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	unsigned char digit1 = rules_data_buffer[DIGIT1_INDEX];
 	unsigned char digit2 = rules_data_buffer[DIGIT2_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		int num_to_copy = __min((unsigned int)(('9' - digit1) * 10 + '9' - digit2 + 1), __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		int num_to_copy = __min((uint32_t)(('9' - digit1) * 10 + '9' - digit2 + 1), __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 26)
 		{
@@ -3576,7 +3576,7 @@ PRIVATE void r_cap_plus_2dig_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Lowercase
 		for (i = 0; i < lenght / 4 * NUM_KEYS; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (i)
 			{
@@ -3599,7 +3599,7 @@ PRIVATE void r_cap_plus_2dig_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 
 		switch (lenght & 3)
 		{
-			unsigned int _tmp;
+			uint32_t _tmp;
 		case 0:
 			for (j = i + nt_buffer_index; j < MAX; j++, digit2++)
 			{
@@ -3965,16 +3965,16 @@ PRIVATE void oclru_cap_plus_2dig_common(char* source, char* rule_name, cl_uint i
 #endif
 
 // Append a year between 1900-2019
-PRIVATE void ru_lower_plus_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void ru_lower_plus_year_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int year = rules_data_buffer[YEAR_INDEX];
+	uint32_t year = rules_data_buffer[YEAR_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(120-year, __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if(lenght >= 24)
 		{
@@ -3986,7 +3986,7 @@ PRIVATE void ru_lower_plus_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		// Lowercase
 		for(i = 0; i < lenght/2*NUM_KEYS; i+=NUM_KEYS,MAX+=NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 				_tmp += 32;
@@ -4000,7 +4000,7 @@ PRIVATE void ru_lower_plus_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		if(lenght & 1)
 		{
 			// Lowercase
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index] & 0xFF;
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index] & 0xFF;
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 				_tmp += 32;
 
@@ -4032,8 +4032,8 @@ PRIVATE void ru_lower_plus_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -4053,16 +4053,16 @@ PRIVATE void ru_lower_plus_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 
 	rules_data_buffer[YEAR_INDEX] = year;
 }
-PRIVATE void r_low_plus_year_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void r_low_plus_year_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int year = rules_data_buffer[YEAR_INDEX];
+	uint32_t year = rules_data_buffer[YEAR_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(120-year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 24)
 		{
@@ -4074,7 +4074,7 @@ PRIVATE void r_low_plus_year_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Lowercase
 		for (i = 0; i < lenght / 4 * NUM_KEYS; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 				_tmp += 32;
@@ -4092,7 +4092,7 @@ PRIVATE void r_low_plus_year_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Last
 		switch (lenght & 3)
 		{
-			unsigned int _tmp;
+			uint32_t _tmp;
 		case 0:
 			for (j = i + nt_buffer_index; j < MAX; j++, year++)
 			{
@@ -4162,16 +4162,16 @@ PRIVATE void r_low_plus_year_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 
 	rules_data_buffer[YEAR_INDEX] = year;
 }
-PRIVATE void rule_cap_plus_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_cap_plus_year_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int year = rules_data_buffer[YEAR_INDEX];
+	uint32_t year = rules_data_buffer[YEAR_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[14 * NUM_KEYS + rules_nt_buffer_index] >> 4;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[14 * NUM_KEYS + rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(120 - year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 24)
 		{
@@ -4183,7 +4183,7 @@ PRIVATE void rule_cap_plus_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		// Lowercase
 		for (i = 0; i < lenght / 2 * NUM_KEYS; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (i)
 			{
@@ -4205,7 +4205,7 @@ PRIVATE void rule_cap_plus_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		if (lenght & 1)
 		{
 			// Lowercase
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index] & 0xFF;
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index] & 0xFF;
 			if (i)
 			{
 				if ((_tmp - 65u) <= 25u)
@@ -4245,8 +4245,8 @@ PRIVATE void rule_cap_plus_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -4266,16 +4266,16 @@ PRIVATE void rule_cap_plus_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KE
 
 	rules_data_buffer[YEAR_INDEX] = year;
 }
-PRIVATE void r_cap_plus_year_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void r_cap_plus_year_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int year = rules_data_buffer[YEAR_INDEX];
+	uint32_t year = rules_data_buffer[YEAR_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(120 - year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 24)
 		{
@@ -4287,7 +4287,7 @@ PRIVATE void r_cap_plus_year_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Lowercase
 		for (i = 0; i < lenght / 4 * NUM_KEYS; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (i)
 			{
@@ -4313,7 +4313,7 @@ PRIVATE void r_cap_plus_year_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Last
 		switch (lenght & 3)
 		{
-			unsigned int _tmp;
+			uint32_t _tmp;
 		case 0:
 			for (j = i + nt_buffer_index; j < MAX; j++, year++)
 			{
@@ -4686,16 +4686,16 @@ PRIVATE void oclru_cap_plus_year_common(char* source, char* rule_name, cl_uint i
 #endif
 
 // Prefix a year between 1900-2019
-PRIVATE void rule_prefix_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_prefix_year_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int year = rules_data_buffer[YEAR_INDEX];
+	uint32_t year = rules_data_buffer[YEAR_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(120-year, __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if(lenght >= 24)
 		{
@@ -4720,8 +4720,8 @@ PRIVATE void rule_prefix_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -4741,16 +4741,16 @@ PRIVATE void rule_prefix_year_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS
 
 	rules_data_buffer[YEAR_INDEX] = year;
 }
-PRIVATE void rul_prefix_year_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rul_prefix_year_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int year = rules_data_buffer[YEAR_INDEX];
+	uint32_t year = rules_data_buffer[YEAR_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(120 - year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 24)
 		{
@@ -4767,7 +4767,7 @@ PRIVATE void rul_prefix_year_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		MAX += NUM_KEYS;
 		for (i = 0; i < (lenght / 4 + 1)*NUM_KEYS; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 			for (j = i + nt_buffer_index + NUM_KEYS; j < MAX; j++)
 				nt_buffer[j] = _tmp;
 		}
@@ -4797,7 +4797,7 @@ PRIVATE void rul_prefix_year_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 #ifdef HS_OPENCL_SUPPORT
 PRIVATE cl_uint oclru_prefix_year_ucs(char* source, char nt_buffer[16][16], char nt_buffer_vector_size[16], cl_uint lenght, cl_uint NUM_KEYS_OPENCL, cl_uint prefered_vector_size)
 {
-	unsigned int i;
+	uint32_t i;
 	oclru_copy_ucs(source, nt_buffer, nt_buffer_vector_size, lenght, NUM_KEYS_OPENCL, prefered_vector_size);
 
 	// Check lenght
@@ -4917,18 +4917,18 @@ PRIVATE void oclru_prefix_year_common(char* source, char* rule_name, cl_uint in_
 #endif
 
 // Prefix two characters
-PRIVATE void rule_prefix_2char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_prefix_2char_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
-	unsigned int char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
+	uint32_t char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
+	uint32_t char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(MAX_CHAR_ADDED-char_added0+1+(MAX_CHAR_ADDED-MIN_CHAR_ADDED+1)*(MAX_CHAR_ADDED-char_added1), 
 							  __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if(lenght >= 26)
 		{
@@ -4958,8 +4958,8 @@ PRIVATE void rule_prefix_2char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -4981,18 +4981,18 @@ PRIVATE void rule_prefix_2char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 	rules_data_buffer[CHAR_ADDED0_INDEX] = char_added0;
 	rules_data_buffer[CHAR_ADDED1_INDEX] = char_added1;
 }
-PRIVATE void ru_prefix_2char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void ru_prefix_2char_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
-	unsigned int char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
+	uint32_t char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
+	uint32_t char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(MAX_CHAR_ADDED - char_added0 + 1 + (MAX_CHAR_ADDED - MIN_CHAR_ADDED + 1)*(MAX_CHAR_ADDED - char_added1),
 			__min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 26)
 		{
@@ -5002,7 +5002,7 @@ PRIVATE void ru_prefix_2char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 			continue;
 		}
 
-		unsigned int last_tmp = rules_nt_buffer[rules_nt_buffer_index];
+		uint32_t last_tmp = rules_nt_buffer[rules_nt_buffer_index];
 		// Prefix 2 char
 		for (j = nt_buffer_index; j < MAX; j++, char_added0++)
 		{
@@ -5018,7 +5018,7 @@ PRIVATE void ru_prefix_2char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		MAX += NUM_KEYS;
 		for (i = NUM_KEYS; i < (lenght / 4 + 1)*NUM_KEYS; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 			last_tmp = (last_tmp >> 16) + (_tmp << 16);
 
 			for (j = i + nt_buffer_index; j < MAX; j++)
@@ -5056,18 +5056,18 @@ PRIVATE void ru_prefix_2char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 	rules_data_buffer[CHAR_ADDED0_INDEX] = char_added0;
 	rules_data_buffer[CHAR_ADDED1_INDEX] = char_added1;
 }
-PRIVATE void rule_append_2char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_append_2char_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
-	unsigned int char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
+	uint32_t char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
+	uint32_t char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(MAX_CHAR_ADDED-char_added0+1+(MAX_CHAR_ADDED-MIN_CHAR_ADDED+1)*(MAX_CHAR_ADDED-char_added1),
 			__min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if(lenght >= 26)
 		{
@@ -5120,8 +5120,8 @@ PRIVATE void rule_append_2char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -5143,18 +5143,18 @@ PRIVATE void rule_append_2char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 	rules_data_buffer[CHAR_ADDED0_INDEX] = char_added0;
 	rules_data_buffer[CHAR_ADDED1_INDEX] = char_added1;
 }
-PRIVATE void rule_plus_2char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_plus_2char_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
-	unsigned int char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
+	uint32_t char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
+	uint32_t char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(MAX_CHAR_ADDED - char_added0 + 1 + (MAX_CHAR_ADDED - MIN_CHAR_ADDED + 1)*(MAX_CHAR_ADDED - char_added1),
 			__min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 26)
 		{
@@ -5171,7 +5171,7 @@ PRIVATE void rule_plus_2char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 
 		switch (lenght & 3)
 		{
-			unsigned int _tmp;
+			uint32_t _tmp;
 		case 0:
 			for (j = i + nt_buffer_index; j < MAX; j++, char_added0++)
 			{
@@ -5254,7 +5254,7 @@ PRIVATE void rule_plus_2char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 #ifdef HS_OPENCL_SUPPORT
 PRIVATE cl_uint oclru_prefix_2char_ucs(char* source, char nt_buffer[16][16], char nt_buffer_vector_size[16], cl_uint lenght, cl_uint NUM_KEYS_OPENCL, cl_uint prefered_vector_size)
 {
-	unsigned int i;
+	uint32_t i;
 	oclru_copy_ucs(source, nt_buffer, nt_buffer_vector_size, lenght, NUM_KEYS_OPENCL, prefered_vector_size);
 
 	// Check lenght
@@ -5528,19 +5528,19 @@ PRIVATE void oclru_plus_2char_common(char* source, char* rule_name, cl_uint in_N
 #endif
 
 // 3 char
-PRIVATE void rule_append_3char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_append_3char_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
-	unsigned int char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
-	unsigned int char_added2 = rules_data_buffer[CHAR_ADDED2_INDEX];
+	uint32_t char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
+	uint32_t char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
+	uint32_t char_added2 = rules_data_buffer[CHAR_ADDED2_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(MAX_CHAR_ADDED-char_added0+1+LENGHT_CHAR_ADDED*(MAX_CHAR_ADDED-char_added1)+LENGHT_CHAR_ADDED*LENGHT_CHAR_ADDED*(MAX_CHAR_ADDED-char_added2),
 			__min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if(lenght >= 25)
 		{
@@ -5603,8 +5603,8 @@ PRIVATE void rule_append_3char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -5628,19 +5628,19 @@ PRIVATE void rule_append_3char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 	rules_data_buffer[CHAR_ADDED1_INDEX] = char_added1;
 	rules_data_buffer[CHAR_ADDED2_INDEX] = char_added2;
 }
-PRIVATE void rule_plus_3char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_plus_3char_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
-	unsigned int char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
-	unsigned int char_added2 = rules_data_buffer[CHAR_ADDED2_INDEX];
+	uint32_t char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
+	uint32_t char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
+	uint32_t char_added2 = rules_data_buffer[CHAR_ADDED2_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(MAX_CHAR_ADDED - char_added0 + 1 + LENGHT_CHAR_ADDED*(MAX_CHAR_ADDED - char_added1) + LENGHT_CHAR_ADDED*LENGHT_CHAR_ADDED*(MAX_CHAR_ADDED - char_added2),
 			__min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 25)
 		{
@@ -5658,7 +5658,7 @@ PRIVATE void rule_plus_3char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 
 		switch (lenght & 3)
 		{
-			unsigned int _tmp;
+			uint32_t _tmp;
 		case 0:
 			for (j = i + nt_buffer_index; j < MAX; j++, char_added0++)
 			{
@@ -5762,21 +5762,21 @@ PRIVATE void rule_plus_3char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 	rules_data_buffer[CHAR_ADDED1_INDEX] = char_added1;
 	rules_data_buffer[CHAR_ADDED2_INDEX] = char_added2;
 }
-PRIVATE void rule_prefix_3char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_prefix_3char_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
-	unsigned int char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
-	unsigned int char_added2 = rules_data_buffer[CHAR_ADDED2_INDEX];
+	uint32_t char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
+	uint32_t char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
+	uint32_t char_added2 = rules_data_buffer[CHAR_ADDED2_INDEX];
 
 	while(rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i,j;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t i,j;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
 		int num_to_copy = __min(MAX_CHAR_ADDED-char_added0+1+LENGHT_CHAR_ADDED*(MAX_CHAR_ADDED-char_added1)+LENGHT_CHAR_ADDED*LENGHT_CHAR_ADDED*(MAX_CHAR_ADDED-char_added2),
 			__min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
-		unsigned int MAX_LOWER = (lenght+2)/2*NUM_KEYS;
-		unsigned int last_tmp;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX_LOWER = (lenght+2)/2*NUM_KEYS;
+		uint32_t last_tmp;
 
 		if(lenght >= 25)
 		{
@@ -5810,7 +5810,7 @@ PRIVATE void rule_prefix_3char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 		// Copy
 		for(i = NUM_KEYS; i <= MAX_LOWER; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			last_tmp = (_tmp << 16) | (last_tmp >> 16);
 			for(j = i+nt_buffer_index+NUM_KEYS; j < MAX; j++)
@@ -5823,8 +5823,8 @@ PRIVATE void rule_prefix_3char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 		// Fill with 0
 		for (j = nt_buffer_index; j < (num_to_copy+nt_buffer_index); j++)
 		{
-			unsigned int old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
-			for (unsigned int z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
+			uint32_t old_len = ((nt_buffer[j + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS + j;
+			for (uint32_t z_index = j + i; z_index < old_len; z_index += NUM_KEYS)
 				nt_buffer[z_index] = 0;
 		}
 		MAX = 14 * NUM_KEYS + num_to_copy + nt_buffer_index;
@@ -5848,21 +5848,21 @@ PRIVATE void rule_prefix_3char_ucs(unsigned int* nt_buffer, unsigned int NUM_KEY
 	rules_data_buffer[CHAR_ADDED1_INDEX] = char_added1;
 	rules_data_buffer[CHAR_ADDED2_INDEX] = char_added2;
 }
-PRIVATE void ru_prefix_3char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void ru_prefix_3char_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
-	unsigned int char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
-	unsigned int char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
-	unsigned int char_added2 = rules_data_buffer[CHAR_ADDED2_INDEX];
+	uint32_t char_added0 = rules_data_buffer[CHAR_ADDED0_INDEX];
+	uint32_t char_added1 = rules_data_buffer[CHAR_ADDED1_INDEX];
+	uint32_t char_added2 = rules_data_buffer[CHAR_ADDED2_INDEX];
 
 	while (rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS)
 	{
-		unsigned int i, j;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t i, j;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
 		int num_to_copy = __min(MAX_CHAR_ADDED - char_added0 + 1 + LENGHT_CHAR_ADDED*(MAX_CHAR_ADDED - char_added1) + LENGHT_CHAR_ADDED*LENGHT_CHAR_ADDED*(MAX_CHAR_ADDED - char_added2),
 			__min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
-		unsigned int MAX = nt_buffer_index + num_to_copy;
-		unsigned int MAX_LOWER = (lenght / 4 + 1) * NUM_KEYS;
-		unsigned int last_tmp;
+		uint32_t MAX = nt_buffer_index + num_to_copy;
+		uint32_t MAX_LOWER = (lenght / 4 + 1) * NUM_KEYS;
+		uint32_t last_tmp;
 
 		if (lenght >= 25)
 		{
@@ -5894,7 +5894,7 @@ PRIVATE void ru_prefix_3char_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 		// Copy
 		for (i = NUM_KEYS; i < MAX_LOWER; i += NUM_KEYS, MAX += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			last_tmp = (_tmp << 24) | (last_tmp >> 8);
 			for (j = i + nt_buffer_index; j < MAX; j++)
@@ -5979,7 +5979,7 @@ PRIVATE cl_uint oclru_append_3char_ucs(char* source, char nt_buffer[16][16], cha
 }
 PRIVATE cl_uint oclru_prefix_3char_ucs(char* source, char nt_buffer[16][16], char nt_buffer_vector_size[16], cl_uint lenght, cl_uint NUM_KEYS_OPENCL, cl_uint prefered_vector_size)
 {
-	unsigned int i;
+	uint32_t i;
 	oclru_copy_ucs(source, nt_buffer, nt_buffer_vector_size, lenght, NUM_KEYS_OPENCL, prefered_vector_size);
 
 	// Check lenght
@@ -6241,20 +6241,20 @@ PRIVATE void oclru_plus_3char_common(char* source, char* rule_name, cl_uint in_N
 // Leet Stuff
 PRIVATE unsigned char leet_orig[]   = "aaeollssiibccgqttx";
 PRIVATE unsigned char leet_change[] = "4@301!$51!6<{997+%";
-PRIVATE void rule_lower_leet_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_lower_leet_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	int leet_index = rules_data_buffer[LEET_INDEX0];
 
 	for(; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; leet_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int letter_exist = FALSE;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
-		unsigned int MAX = (lenght / 2 + 1)*NUM_KEYS;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t MAX = (lenght / 2 + 1)*NUM_KEYS;
 
 		for(i = 0; i < MAX; i+=NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 				_tmp += 32;
@@ -6264,12 +6264,12 @@ PRIVATE void rule_lower_leet_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 			// Leet change
 			if((_tmp & 0xFF) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0xFFFF0000) | ((unsigned int)(leet_change[leet_index]));
+				_tmp = (_tmp & 0xFFFF0000) | ((uint32_t)(leet_change[leet_index]));
 				letter_exist = TRUE;
 			}
 			if(((_tmp >> 16) & 0xFF) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0xFFFF) | (((unsigned int)(leet_change[leet_index])) << 16);
+				_tmp = (_tmp & 0xFFFF) | (((uint32_t)(leet_change[leet_index])) << 16);
 				letter_exist = TRUE;
 			}
 
@@ -6278,7 +6278,7 @@ PRIVATE void rule_lower_leet_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 
 		if(letter_exist)
 		{
-			unsigned int old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
+			uint32_t old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
 			for (; i < old_len; i += NUM_KEYS)
 				nt_buffer[i + nt_buffer_index] = 0;
 
@@ -6300,20 +6300,20 @@ PRIVATE void rule_lower_leet_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS,
 
 	rules_data_buffer[LEET_INDEX0] = leet_index;
 }
-PRIVATE void rule_lower_leet_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_lower_leet_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	int leet_index = rules_data_buffer[LEET_INDEX0];
 
 	for (; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; leet_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int letter_exist = FALSE;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		unsigned int MAX = (lenght / 4 + 1)*NUM_KEYS;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t MAX = (lenght / 4 + 1)*NUM_KEYS;
 
 		for (i = 0; i < MAX; i += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (((_tmp & 0xFF) - 65u) <= 25u)
 				_tmp += 32;
@@ -6327,22 +6327,22 @@ PRIVATE void rule_lower_leet_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 			// Leet change
 			if ((_tmp & 0xFF) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0xFFFFFF00) | ((unsigned int)(leet_change[leet_index]));
+				_tmp = (_tmp & 0xFFFFFF00) | ((uint32_t)(leet_change[leet_index]));
 				letter_exist = TRUE;
 			}
 			if (((_tmp >> 8) & 0xFF) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0xFFFF00FF) | (((unsigned int)(leet_change[leet_index])) << 8);
+				_tmp = (_tmp & 0xFFFF00FF) | (((uint32_t)(leet_change[leet_index])) << 8);
 				letter_exist = TRUE;
 			}
 			if (((_tmp >> 16) & 0xFF) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0xFF00FFFF) | (((unsigned int)(leet_change[leet_index])) << 16);
+				_tmp = (_tmp & 0xFF00FFFF) | (((uint32_t)(leet_change[leet_index])) << 16);
 				letter_exist = TRUE;
 			}
 			if (((_tmp >> 24)) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0x00FFFFFF) | (((unsigned int)(leet_change[leet_index])) << 24);
+				_tmp = (_tmp & 0x00FFFFFF) | (((uint32_t)(leet_change[leet_index])) << 24);
 				letter_exist = TRUE;
 			}
 
@@ -6370,20 +6370,20 @@ PRIVATE void rule_lower_leet_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS
 
 	rules_data_buffer[LEET_INDEX0] = leet_index;
 }
-PRIVATE void rule_cap_leet_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_cap_leet_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	int leet_index = rules_data_buffer[LEET_INDEX0];
 
 	for(; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; leet_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int letter_exist = FALSE;
-		unsigned int lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
-		unsigned int MAX = (lenght/2+1)*NUM_KEYS;
+		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
+		uint32_t MAX = (lenght/2+1)*NUM_KEYS;
 
 		for(i = 0; i < MAX; i+=NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i+rules_nt_buffer_index];
 
 			if (i)
 			{
@@ -6400,12 +6400,12 @@ PRIVATE void rule_cap_leet_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, u
 			// Leet change
 			if((_tmp & 0xFF) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0xFFFF0000) | ((unsigned int)(leet_change[leet_index]));
+				_tmp = (_tmp & 0xFFFF0000) | ((uint32_t)(leet_change[leet_index]));
 				letter_exist = TRUE;
 			}
 			if(((_tmp >> 16) & 0xFF) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0xFFFF) | (((unsigned int)(leet_change[leet_index])) << 16);
+				_tmp = (_tmp & 0xFFFF) | (((uint32_t)(leet_change[leet_index])) << 16);
 				letter_exist = TRUE;
 			}
 
@@ -6414,7 +6414,7 @@ PRIVATE void rule_cap_leet_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, u
 
 		if(letter_exist)
 		{
-			unsigned int old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
+			uint32_t old_len = ((nt_buffer[nt_buffer_index + 14 * NUM_KEYS] >> 5) + 1)*NUM_KEYS;
 			for (; i < old_len; i += NUM_KEYS)
 				nt_buffer[i + nt_buffer_index] = 0;
 
@@ -6436,20 +6436,20 @@ PRIVATE void rule_cap_leet_ucs(unsigned int* nt_buffer, unsigned int NUM_KEYS, u
 
 	rules_data_buffer[LEET_INDEX0] = leet_index;
 }
-PRIVATE void rule_cap_leet_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, unsigned int* rules_data_buffer)
+PRIVATE void rule_cap_leet_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	int leet_index = rules_data_buffer[LEET_INDEX0];
 
 	for (; rules_nt_buffer_index < NUM_KEYS && nt_buffer_index < NUM_KEYS; leet_index++)
 	{
-		unsigned int i;
+		uint32_t i;
 		int letter_exist = FALSE;
-		unsigned int lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		unsigned int MAX = (lenght / 4 + 1)*NUM_KEYS;
+		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
+		uint32_t MAX = (lenght / 4 + 1)*NUM_KEYS;
 
 		for (i = 0; i < MAX; i += NUM_KEYS)
 		{
-			unsigned int _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
+			uint32_t _tmp = rules_nt_buffer[i + rules_nt_buffer_index];
 
 			if (i)
 			{
@@ -6471,22 +6471,22 @@ PRIVATE void rule_cap_leet_utf8(unsigned int* nt_buffer, unsigned int NUM_KEYS, 
 			// Leet change
 			if ((_tmp & 0xFF) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0xFFFFFF00) | ((unsigned int)(leet_change[leet_index]));
+				_tmp = (_tmp & 0xFFFFFF00) | ((uint32_t)(leet_change[leet_index]));
 				letter_exist = TRUE;
 			}
 			if (((_tmp >> 8) & 0xFF) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0xFFFF00FF) | (((unsigned int)(leet_change[leet_index])) << 8);
+				_tmp = (_tmp & 0xFFFF00FF) | (((uint32_t)(leet_change[leet_index])) << 8);
 				letter_exist = TRUE;
 			}
 			if (((_tmp >> 16) & 0xFF) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0xFF00FFFF) | (((unsigned int)(leet_change[leet_index])) << 16);
+				_tmp = (_tmp & 0xFF00FFFF) | (((uint32_t)(leet_change[leet_index])) << 16);
 				letter_exist = TRUE;
 			}
 			if (((_tmp >> 24)) == leet_orig[leet_index])
 			{
-				_tmp = (_tmp & 0x00FFFFFF) | (((unsigned int)(leet_change[leet_index])) << 24);
+				_tmp = (_tmp & 0x00FFFFFF) | (((uint32_t)(leet_change[leet_index])) << 24);
 				letter_exist = TRUE;
 			}
 
@@ -6535,12 +6535,12 @@ PRIVATE cl_uint oclru_leet_ucs(char* source, cl_uint lenght)
 		return 1;
 	}
 
-	sprintf(source + strlen(source), "local uchar leet_local[%u];", (int)2*strlen(leet_orig));
+	sprintf(source + strlen(source), "local uchar leet_local[%u];", (cl_uint)(2*strlen(leet_orig)));
 
 	// Copy from global to local
 	sprintf(source + strlen(source), "for(uint i=get_local_id(0);i<%uu;i+=get_local_size(0))"
 										"leet_local[i]=leet_array[i];"
-									"barrier(CLK_LOCAL_MEM_FENCE);", (int)2*strlen(leet_orig));
+									"barrier(CLK_LOCAL_MEM_FENCE);", (cl_uint)(2*strlen(leet_orig)));
 
 	// Save to cache
 	for (cl_uint i = 0; i < (lenght + 1) / 2; i++)
@@ -6549,7 +6549,7 @@ PRIVATE cl_uint oclru_leet_ucs(char* source, cl_uint lenght)
 	sprintf(source + strlen(source), "for(uint i=0;i<%iu;i++){"
 										"uint bs_tmp;"
 										"uint leet_orig=leet_local[i];"
-										"uint leet_change=leet_local[i+%iu];", (int)strlen(leet_orig), (int)strlen(leet_orig));
+										"uint leet_change=leet_local[i+%iu];", (cl_uint)strlen(leet_orig), (cl_uint)strlen(leet_orig));
 	// Perform leet
 	for (cl_uint i = 0; i < lenght; i++)
 		if (i & 1)
@@ -6584,11 +6584,11 @@ PRIVATE cl_uint oclru_leet_utf8(char* source, cl_uint lenght)
 		return 1;
 	}
 
-	sprintf(source + strlen(source), "local uchar leet_local[%u];", (int)2*strlen(leet_orig));
+	sprintf(source + strlen(source), "local uchar leet_local[%u];", (cl_uint)(2*strlen(leet_orig)));
 	// Copy from global to local
 	sprintf(source + strlen(source), "for(uint i=get_local_id(0);i<%uu;i+=get_local_size(0))"
 										"leet_local[i]=leet_array[i];"
-									"barrier(CLK_LOCAL_MEM_FENCE);", (int)2*strlen(leet_orig));
+									"barrier(CLK_LOCAL_MEM_FENCE);", (cl_uint)(2*strlen(leet_orig)));
 
 	// Save to cache
 	for (cl_uint i = 0; i < (lenght + 3) / 4; i++)
@@ -6597,7 +6597,7 @@ PRIVATE cl_uint oclru_leet_utf8(char* source, cl_uint lenght)
 	sprintf(source + strlen(source), "for(uint i=0;i<%iu;i++){"
 										"uint bs_tmp;"
 										"uint leet_orig=leet_local[i];"
-										"uint leet_change=leet_local[i+%iu];", (int)strlen(leet_orig), (int)strlen(leet_orig));
+										"uint leet_change=leet_local[i+%iu];", (cl_uint)strlen(leet_orig), (cl_uint)strlen(leet_orig));
 	// Perform leet
 	for (cl_uint i = 0; i < lenght; i++)
 		switch (i & 3)
@@ -6999,15 +6999,15 @@ PUBLIC void rules_resume(int pmin_lenght, int pmax_lenght, char* param, const ch
 	num_key_space *= multipler;
 
 	// Put space needed to rules
-	key_providers[RULES_INDEX].per_thread_data_size = key_providers[provider_index].per_thread_data_size + sizeof(unsigned int)*RULES_THREAD_DATA_SIZE;
+	key_providers[RULES_INDEX].per_thread_data_size = key_providers[provider_index].per_thread_data_size + sizeof(uint32_t)*RULES_THREAD_DATA_SIZE;
 	key_providers[RULES_INDEX].save_resume_arg = key_providers[provider_index].save_resume_arg;
 }
 // Calculate adequately the key_space
 extern double wordlist_completition;
 extern char* thread_params;
-extern unsigned int num_thread_params;
+extern uint32_t num_thread_params;
 PRIVATE int64_t* num_keys_in_memory = NULL;
-PUBLIC void rules_calculate_key_space(unsigned int num_keys_original, int64_t pnum_keys_in_memory, unsigned int thread_id)
+PUBLIC void rules_calculate_key_space(uint32_t num_keys_original, int64_t pnum_keys_in_memory, uint32_t thread_id)
 {
 	HS_ENTER_MUTEX(&rules_mutex);
 
@@ -7029,7 +7029,7 @@ PUBLIC void rules_calculate_key_space(unsigned int num_keys_original, int64_t pn
 			if (thread_id < num_thread_params)
 				num_keys_in_memory[thread_id] = pnum_keys_in_memory;
 
-			for (unsigned int i = 0; i < num_thread_params; i++)
+			for (uint32_t i = 0; i < num_thread_params; i++)
 				total_keys_in_memory += num_keys_in_memory[i];
 
 			num_key_space = (int64_t)((get_num_keys_served() + total_keys_in_memory) * wordlist_completition);
@@ -7040,11 +7040,35 @@ PUBLIC void rules_calculate_key_space(unsigned int num_keys_original, int64_t pn
 
 	HS_LEAVE_MUTEX(&rules_mutex);
 }
-
-PUBLIC int rules_gen_common(unsigned int* nt_buffer, unsigned int NUM_KEYS, int thread_id)
+PUBLIC void rules_report_remain_key_space(int64_t pnum_keys_in_memory, uint32_t thread_id)
 {
-	unsigned int* rules_data_buffer = ((unsigned int*)(thread_params + num_thread_params*key_providers[provider_index].per_thread_data_size)) + RULES_THREAD_DATA_SIZE*thread_id;
+	HS_ENTER_MUTEX(&rules_mutex);
+
+	if (!num_keys_in_memory)
+		num_keys_in_memory = (int64_t*)calloc(num_thread_params, sizeof(int64_t));
+
+	// TODO: Eliminate this patch: Possibly put a flag in key_provider to use
+	if (num_key_space != KEY_SPACE_UNKNOW)
+	{
+		int64_t total_keys_in_memory = 0;
+
+		if (thread_id < num_thread_params)
+			num_keys_in_memory[thread_id] = pnum_keys_in_memory;
+
+		for (uint32_t i = 0; i < num_thread_params; i++)
+			total_keys_in_memory += num_keys_in_memory[i];
+
+		num_key_space = get_num_keys_served() + total_keys_in_memory;
+	}
+
+	HS_LEAVE_MUTEX(&rules_mutex);
+}
+
+PUBLIC int rules_gen_common(uint32_t* nt_buffer, uint32_t NUM_KEYS, int thread_id)
+{
+	uint32_t* rules_data_buffer = ((uint32_t*)(thread_params + num_thread_params*key_providers[provider_index].per_thread_data_size)) + RULES_THREAD_DATA_SIZE*thread_id;
 	nt_buffer_index = 0;
+	uint32_t num_orig_keys_processed = 0;
 
 	// Initialize data
 	if (!rules_data_buffer[RULES_IS_INIT_DATA_INDEX])
@@ -7071,6 +7095,7 @@ PUBLIC int rules_gen_common(unsigned int* nt_buffer, unsigned int NUM_KEYS, int 
 
 			current_rule_index = 0;
 			rules_nt_buffer_index = 0;
+			num_orig_keys_processed = NUM_KEYS;
 		}
 
 		current_rules[current_rule_index](nt_buffer, NUM_KEYS, rules_data_buffer);
@@ -7093,20 +7118,20 @@ end:
 	for (int i = current_rule_index + 1; i < current_rules_count; i++)
 		num_keys_in_memory += NUM_KEYS*rules[rules_remapped[i]].multipler;
 
-	rules_calculate_key_space(nt_buffer_index, num_keys_in_memory, thread_id);
+	rules_calculate_key_space(num_orig_keys_processed, num_keys_in_memory, thread_id);
 
 	return nt_buffer_index;
 }
 
 //// TODO: add AVX, AVX2 and Neon code
-//typedef void convert_ntlm_2_utf8_coalesc_func(unsigned int* nt_buffer, unsigned int NUM_KEYS);
+//typedef void convert_ntlm_2_utf8_coalesc_func(uint32_t* nt_buffer, uint32_t NUM_KEYS);
 //#ifndef _M_X64
-//PRIVATE void convert_ntlm_2_utf8_coalesc_le_c_code(unsigned int* nt_buffer, unsigned int NUM_KEYS)
+//PRIVATE void convert_ntlm_2_utf8_coalesc_le_c_code(uint32_t* nt_buffer, uint32_t NUM_KEYS)
 //{
-//	for (unsigned int i = 0; i < NUM_KEYS; i++, nt_buffer++)
+//	for (uint32_t i = 0; i < NUM_KEYS; i++, nt_buffer++)
 //	{
-//		unsigned int val0 = nt_buffer[0 * NUM_KEYS];
-//		unsigned int val1 = nt_buffer[1 * NUM_KEYS];
+//		uint32_t val0 = nt_buffer[0 * NUM_KEYS];
+//		uint32_t val1 = nt_buffer[1 * NUM_KEYS];
 //		nt_buffer[0 * NUM_KEYS] = (val0 & 0xff) + (val0 >> 8) + (val1 << 16) + ((val1 << 8) & 0xff000000);
 //
 //		val0 = nt_buffer[2 * NUM_KEYS];
@@ -7138,13 +7163,13 @@ end:
 //}
 //#endif
 //#include "arch_simd.h"
-//PRIVATE void convert_ntlm_2_utf8_coalesc_le_v128(V128_WORD* nt_buffer, unsigned int NUM_KEYS)
+//PRIVATE void convert_ntlm_2_utf8_coalesc_le_v128(V128_WORD* nt_buffer, uint32_t NUM_KEYS)
 //{
 //	NUM_KEYS /= 4;
 //	V128_WORD ff = V128_CONST(0xff);
 //	V128_WORD ff000000 = V128_CONST(0xff000000);
 //
-//	for (unsigned int i = 0; i < NUM_KEYS; i++, nt_buffer++)
+//	for (uint32_t i = 0; i < NUM_KEYS; i++, nt_buffer++)
 //	{
 //		V128_WORD val0 = nt_buffer[0 * NUM_KEYS];
 //		V128_WORD val1 = nt_buffer[1 * NUM_KEYS];

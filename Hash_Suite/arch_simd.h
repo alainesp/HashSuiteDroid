@@ -1,9 +1,22 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2014 by Alain Espinosa
+// Copyright (c) 2014-2015 by Alain Espinosa
 
 #include "system.h"
 
 #ifdef HS_X86
+
+// mmintrin.h  : MMX    intrinsics
+// xmmintrin.h : SSE    intrinsics
+// emmintrin.h : SSE2   intrinsics
+// pmmintrin.h : SSE3   intrinsics
+// tmmintrin.h : SSSE3  intrinsics
+// smmintrin.h : SSE4.1 intrinsics
+// nmmintrin.h : SSE4.2 intrinsics
+
+// wmmintrin.h : Intel(R) AES and PCLMULQDQ intrinsics
+// ammintrin.h : Definitions for AMD-specific intrinsics
+
+// imminitrin.h : AVX2 intrinsics
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // SSE2
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -47,6 +60,9 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #define V128_WORD				SSE2_WORD
 
+#define V128_LOAD(ptr)			_mm_load_si128(ptr)
+#define V128_STORE(ptr,value)	_mm_store_si128(ptr, value)
+
 #define V128_AND(a,b)			SSE2_AND(a,b)
 #define V128_XOR(a,b)			SSE2_XOR(a,b)
 #define V128_OR(a,b)			SSE2_OR(a,b)
@@ -78,6 +94,9 @@
 #include <arm_neon.h>
 
 #define V128_WORD uint32x4_t
+
+#define V128_LOAD(ptr)			vld1q_u32(ptr)
+#define V128_STORE(ptr,value)	vst1q_u32(ptr, value)
 
 #define V128_AND(a,b)			vandq_u32(a,b)
 #define V128_XOR(a,b)			veorq_u32(a,b)
