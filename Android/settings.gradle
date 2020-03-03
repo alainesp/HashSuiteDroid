@@ -1,2 +1,3 @@
-include ':aFileDialog'
+include ':aFileDialog', ':ratingdialog'
 include ':HashSuiteDroid'
+project(':ratingdialog').projectDir = new File('SmartAppRate/ratingdialog')

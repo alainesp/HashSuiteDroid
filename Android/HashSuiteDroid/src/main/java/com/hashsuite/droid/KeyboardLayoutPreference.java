@@ -23,7 +23,11 @@ public class KeyboardLayoutPreference extends DialogPreference implements OnItem
     private ArrayList<NameIDData> keyboards;
     ListView keyboards_list;
     static NameIDData[] kb_nameid;
-    
+
+    public static void loadKeyboardsFromDB()
+    {
+        kb_nameid = NameIDData.getKeyboards();
+    }
     public static void setKeyboard(int index)
     {
     	if(index >= 0 && index < kb_nameid.length)
@@ -44,9 +48,8 @@ public class KeyboardLayoutPreference extends DialogPreference implements OnItem
         setDialogIcon(R.drawable.ic_action_keyboard);
         setPositiveButtonText("");
         
-        keyboards = new ArrayList<NameIDData>();
-        
-        kb_nameid = NameIDData.getKeyboards();
+        keyboards = new ArrayList<>();
+
         for (int i = 0; i < kb_nameid.length; i++)
         	keyboards.add(kb_nameid[i]);
     }

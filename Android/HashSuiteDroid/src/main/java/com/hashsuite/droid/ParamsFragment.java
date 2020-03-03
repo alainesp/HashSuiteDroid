@@ -78,7 +78,7 @@ public class ParamsFragment extends PreferenceFragment
 	}
 	public static int getBatteryMaxTemperature()
 	{
-		return params.getInt(pref_key_battery_limit, 50) >> 8;
+		return params.getInt(pref_key_battery_limit, (50<<8)) >> 8;
 	}
 	public static int getUseRules(int format_index, int key_provider_index)
 	{

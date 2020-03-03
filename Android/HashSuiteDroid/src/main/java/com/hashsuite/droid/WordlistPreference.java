@@ -5,6 +5,8 @@ package com.hashsuite.droid;
 
 import java.io.File;
 import java.util.ArrayList;
+
+import android.Manifest;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.res.TypedArray;
@@ -105,7 +107,7 @@ public class WordlistPreference extends DialogPreference implements OnItemClickL
     
     private void setValue(int value)
     {
-    	if(value >=0 && value < wordlist.size())
+    	if(value >= 0 && value < wordlist.size())
     	{
     		mValue = value;
     		this.setSummary(wordlist.get(value).toString());
@@ -208,6 +210,51 @@ public class WordlistPreference extends DialogPreference implements OnItemClickL
         };
     }
 
+    public void onImportWordlistDialog()
+    {
+        // Create the dialog.
+        FileChooserDialog dialog = new FileChooserDialog(MainActivity.my_activity, "Select wordlist (txt, zip, gz, tgz, bz2)", MainActivity.my_activity.getLayoutInflater());
+
+        // Define the filter for select images.
+        dialog.setFilter(".*txt|.*zip|.*gz|.*tgz|.*bz2");
+
+        // Assign listener for the select event.
+        dialog.addListener(new FileChooserDialog.OnFileSelectedListener()
+        {
+            private void ImportWordlist(Dialog source, String file_path)
+            {
+                source.dismiss();
+
+                WordlistData data = new WordlistData(0);
+                File word_info = new File(file_path);
+                data.name = word_info.getName();
+                data.size = WordlistData.filelength2string(word_info.length());
+
+                data.id = MainActivity.SaveWordlist(file_path, data.name, word_info.length());
+
+                wordlist.add(wordlist.size()-1, data);
+
+                int position = wordlist.size()-2;
+                if (callChangeListener(position))
+                {
+                    setValue(position);
+                }
+            }
+
+            public void onFileSelected(Dialog source, File file)
+            {
+                ImportWordlist(source, file.getAbsolutePath());
+            }
+
+            public void onFileSelected(Dialog source, File folder, String name)
+            {
+                ImportWordlist(source, folder.getAbsolutePath() + name);
+            }
+        });
+
+        // Show the dialog.
+        dialog.show();
+    }
 	@Override
 	public void onItemClick(AdapterView<?> parent, View view, int position, long id)
 	{
@@ -215,48 +262,8 @@ public class WordlistPreference extends DialogPreference implements OnItemClickL
 		
 		if(position == wordlist.size() - 1)
 		{
-			// Create the dialog.
-			FileChooserDialog dialog = new FileChooserDialog(MainActivity.my_activity, "Select wordlist (txt, zip, gz, tgz, bz2)", MainActivity.my_activity.getLayoutInflater());
-
-			// Define the filter for select images.
-			dialog.setFilter(".*txt|.*zip|.*gz|.*tgz|.*bz2");
-
-			// Assign listener for the select event.
-			dialog.addListener(new FileChooserDialog.OnFileSelectedListener()
-			{
-				private void ImportWordlist(Dialog source, String file_path)
-				{
-					source.dismiss();
-					
-					WordlistData data = new WordlistData(0);
-					File word_info = new File(file_path);
-					data.name = word_info.getName();
-					data.size = WordlistData.filelength2string(word_info.length());
-					
-					data.id = MainActivity.SaveWordlist(file_path, data.name, word_info.length());
-					
-					wordlist.add(wordlist.size()-1, data);
-					
-					int position = wordlist.size()-2;
-					if (callChangeListener(position))
-			        {
-			            setValue(position);
-			        }
-				}
-
-				public void onFileSelected(Dialog source, File file)
-				{
-					ImportWordlist(source, file.getAbsolutePath());
-				}
-
-				public void onFileSelected(Dialog source, File folder, String name)
-				{
-					ImportWordlist(source, folder.getAbsolutePath() + name);
-				}
-			});
-
-			// Show the dialog.
-			dialog.show();
+            MainActivity.my_activity.wp = this;
+            MainActivity.my_activity.requestPermission(Manifest.permission.READ_EXTERNAL_STORAGE, MainActivity.my_activity.MY_PERMISSIONS_READ_EXTERNAL_STORAGE_WP);
 		}
 		else if (callChangeListener(position))
         {

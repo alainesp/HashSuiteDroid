@@ -6,7 +6,7 @@ android {
 
     defaultConfig {
         applicationId "com.hashsuite.droid"
-        minSdkVersion 11
+        minSdkVersion 15
         targetSdkVersion 28
 
         ndk {
@@ -34,8 +34,16 @@ android {
             path file('src/main/jni/Android.mk')
         }
     }
+
+    // Eliminate error: "Invoke-customs are only supported starting with android 0 --min-api 26"
+    // https://stackoverflow.com/questions/49891730/invoke-customs-are-only-supported-starting-with-android-0-min-api-26
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
 }
 
 dependencies {
     implementation project(':aFileDialog')
+    implementation project(':ratingdialog')
 }

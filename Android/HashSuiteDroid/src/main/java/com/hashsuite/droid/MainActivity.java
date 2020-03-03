@@ -1,6 +1,6 @@
 /*
 This file is part of Hash Suite password cracker,
-Copyright (c) 2014-2015 by Alain Espinosa. See LICENSE.
+Copyright (c) 2014-2020 by Alain Espinosa. See LICENSE.
 */
 
 package com.hashsuite.droid;
@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.LineNumberReader;
 import java.io.OutputStreamWriter;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Timer;
@@ -33,7 +34,6 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.DialogInterface.OnCancelListener;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
@@ -54,6 +54,7 @@ import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.AdapterView;
@@ -68,6 +69,8 @@ import android.widget.TableLayout;
 import android.widget.TableRow;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import com.codemybrainsout.ratingdialog.RatingDialog;
 import ar.com.daidalos.afiledialog.FileChooserDialog;
 
 public class MainActivity extends Activity implements ActionBar.TabListener, OnItemSelectedListener
@@ -128,6 +131,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	private static final String DEFAULT_WORDLIST = "common_wordlist.txt";
 	private static final String DEFAULT_PHRASES_FILE = "more_used_words.txt";
 	private static final String DOWNLOADING_STATE = "wl_downloading.txt";
+    private static final String DEFAULT_HASHES = "default_hashes.txt";
 	// Constants to save settings in the same manner of the desktop version
 	private static final int ID_FORMAT_BASE = 32991;
 	private static final int ID_KEY_PROV_BASE = 33101;
@@ -145,8 +149,11 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	// Permissions
 	public static final int MY_PERMISSIONS_READ_EXTERNAL_STORAGE = 1;
 	public static final int MY_PERMISSIONS_WRITE_EXTERNAL_STORAGE = 2;
+	public static final int MY_PERMISSIONS_READ_EXTERNAL_STORAGE_WP = 3;// WordlistPreference
+	public static final int MY_PERMISSIONS_DOWNLOAD_WORDLISTS = 4;// Download wordlists
 
 	public static MainActivity my_activity;
+	public WordlistPreference wp;// saved value when asking for android permission
 	private static ArrayList<WordlistDownloadingData> downloading_data;
 	
 	// Tabs
@@ -178,7 +185,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	static
 	{
 		System.loadLibrary("HashSuiteNative");
-		downloading_data = new ArrayList<WordlistDownloadingData>();
+		downloading_data = new ArrayList<>();
 	}
 
 	public static int calculateDialogWidth(int dp)
@@ -197,7 +204,12 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		return 0;
 			
 	}
-	private void copyFile(String filename, boolean is_wordlist)
+	enum AssetFileType{
+	    WORDLIST,
+        PHRASES,
+        HASHES
+    }
+	private void copyFile(String filename, AssetFileType fileType)
 	{
 		File woutput = new File(getFilesDir().getAbsolutePath() + "/" + filename);
 		if (!woutput.exists())
@@ -220,13 +232,18 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 				os.close();
 			}
 			catch (IOException e)
-			{
-			}
+			{}
 			// Save to db
-			if (is_wordlist)
-				SaveWordlist(woutput.getAbsolutePath(), filename, lenght);
-			else
-				SavePhrases(woutput.getAbsolutePath(), filename, lenght);
+            switch(fileType)
+            {
+                case WORDLIST:
+                    SaveWordlist(woutput.getAbsolutePath(), filename, lenght);
+                    break;
+                case PHRASES:
+                    SavePhrases(woutput.getAbsolutePath(), filename, lenght);
+                    break;
+                case HASHES: break;
+            }
 		}
 	}
 	@Override
@@ -245,16 +262,26 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		{
 			initAll(getFilesDir().getAbsolutePath());
 			is_initialize_native = true;
+			KeyboardLayoutPreference.loadKeyboardsFromDB();
 
 			format_index = GetSetting(ID_FORMAT_BASE, ID_FORMAT_BASE) - ID_FORMAT_BASE;
 			key_provider_index = GetSetting(ID_KEY_PROV_BASE, ID_KEY_PROV_BASE) - ID_KEY_PROV_BASE;
-			SaveSetting(ID_WIZARD, 1);
 
-			// Put the default wordlist
-			copyFile(DEFAULT_WORDLIST, true);
+            if (0 == GetSetting(ID_WIZARD, 0))
+            {
+                // Put the default wordlist
+                copyFile(DEFAULT_WORDLIST, AssetFileType.WORDLIST);
 
-			// Put the default Phrases
-			copyFile(DEFAULT_PHRASES_FILE, false);
+                // Put the default Phrases
+                copyFile(DEFAULT_PHRASES_FILE, AssetFileType.PHRASES);
+
+                // Put the default hashes
+                copyFile(DEFAULT_HASHES, AssetFileType.HASHES);
+
+				onImportHashesDialog(getFilesDir().getAbsolutePath() + "/" + DEFAULT_HASHES);
+
+				SaveSetting(ID_WIZARD, 1);
+            }
 		}
 		
 		// Set up the action bar.
@@ -302,7 +329,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			@Override
 			public void onReceive(Context context, Intent intent)
 			{
-				if (DownloadManager.ACTION_DOWNLOAD_COMPLETE.equals(intent.getAction()))
+				if (DownloadManager.ACTION_DOWNLOAD_COMPLETE.equals(intent.getAction()) && intent.getExtras() != null)
 				{
 					long downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, 0);
 					int d_index = -1;
@@ -322,15 +349,16 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 						Cursor c = dm.query(query);
 						if (c.moveToFirst())
 						{
-							int columnIndex = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
-							if (DownloadManager.STATUS_SUCCESSFUL == c.getInt(columnIndex))
+							if (DownloadManager.STATUS_SUCCESSFUL == c.getInt(c.getColumnIndex(DownloadManager.COLUMN_STATUS)))
 							{
-								String path = c.getString(c.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME));
+								//String path = c.getString(c.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME));
+								String path = c.getString(c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)).replace("file://","");
 								WordlistData.finishWordlistDownload(downloading_data.get(d_index).db_id, path, new File(path).length());
 								downloading_data.remove(d_index);
 							}
 							// TODO: check failed downloads
 						}
+						c.close();
 					}
 				}
 			}
@@ -358,6 +386,25 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			}
 		}
 		refreshHashes();
+
+		// Rate app
+		final RatingDialog ratingDialog =  new RatingDialog.Builder(this)
+            .threshold(4)
+            .session(7)
+			.build();
+
+        ratingDialog.show();
+
+        // Hack to try always show overflow menu
+		// https://stackoverflow.com/questions/9286822/how-to-force-use-of-overflow-menu-on-devices-with-menu-button
+		try {
+			ViewConfiguration config = ViewConfiguration.get(this);
+			Field menuKeyField = ViewConfiguration.class.getDeclaredField("sHasPermanentMenuKey");
+			if (menuKeyField != null) {
+				menuKeyField.setAccessible(true);
+				menuKeyField.setBoolean(config, false);
+			}
+		} catch (Exception ignored) {}
 	}
 	
 	@Override
@@ -449,15 +496,11 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		LayoutInflater inflater = MainActivity.my_activity.getLayoutInflater();
 		// Instantiate an AlertDialog.Builder with its constructor
 		AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.my_activity)
-			.setPositiveButton("OK", new DialogInterface.OnClickListener()
-			{
-				public void onClick(DialogInterface dialog, int id)
-				{
-					dialog.dismiss();
-					setTitle(ShowHashesStats(format_index, getScreenTitleWidth()));
-					my_activity.tab_main.LoadHashes();
-					refreshHashes();
-				}
+			.setPositiveButton("OK", (dialog, id) -> {
+				dialog.dismiss();
+				setTitle(ShowHashesStats(format_index, getScreenTitleWidth()));
+				my_activity.tab_main.LoadHashes();
+				refreshHashes();
 			})
 			.setCancelable(false)
 			.setTitle("Importing hashes...")
@@ -566,10 +609,16 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 
 			if (requestCode == MY_PERMISSIONS_WRITE_EXTERNAL_STORAGE && permissions[0].equals(Manifest.permission.WRITE_EXTERNAL_STORAGE))
 				onExportFile();
+
+			if (requestCode == MY_PERMISSIONS_READ_EXTERNAL_STORAGE_WP && permissions[0].equals(Manifest.permission.READ_EXTERNAL_STORAGE))
+				wp.onImportWordlistDialog();
+
+			if (requestCode == MY_PERMISSIONS_DOWNLOAD_WORDLISTS && permissions[0].equals(Manifest.permission.READ_EXTERNAL_STORAGE))
+				onBeginDownloadWordlists();
 		}
 	}
 	@TargetApi(23)
-	private void requestPermission(String permission, int requestCode)
+	public void requestPermission(String permission, int requestCode)
 	{
 		if (android.os.Build.VERSION.SDK_INT >= 23 && PackageManager.PERMISSION_GRANTED != this.checkSelfPermission(permission)) {
 			// No explanation needed, we can request the permission.
@@ -582,6 +631,12 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 
 			if(requestCode == MY_PERMISSIONS_WRITE_EXTERNAL_STORAGE)
 				onExportFile();
+
+			if(requestCode == MY_PERMISSIONS_READ_EXTERNAL_STORAGE_WP)
+				wp.onImportWordlistDialog();
+
+			if(requestCode == MY_PERMISSIONS_DOWNLOAD_WORDLISTS)
+				onBeginDownloadWordlists();
 		}
 	}
 	private void onExportFile()
@@ -792,13 +847,13 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			Toast.makeText(my_activity, "Battery over-voltages.", Toast.LENGTH_LONG).show();
 			return false;
 		}
-		if(health==BatteryManager.BATTERY_HEALTH_OVERHEAT || battery_temp > (ParamsFragment.getBatteryMaxTemperature()*10))
+		if(health == BatteryManager.BATTERY_HEALTH_OVERHEAT || battery_temp > (ParamsFragment.getBatteryMaxTemperature()*10))
 		{
 			StopAttack();
 			Toast.makeText(my_activity, "Battery overheats.", Toast.LENGTH_LONG).show();
 			return false;
 		}
-		if(health==BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE)
+		if(health == BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE)
 		{
 			StopAttack();
 			Toast.makeText(my_activity, "Battery has an unknow problem.", Toast.LENGTH_LONG).show();
@@ -959,6 +1014,50 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 //		});
 //	}
 	//-----------------------------------------------------------------------------------
+	private void onBeginDownloadWordlists()
+	{
+		final WordlistData[] wordlists2download = WordlistData.getWordlists2Download();
+		final ArrayList<Integer> mSelectedItems = new ArrayList<Integer>();
+		String[] wordlists_show = new String[wordlists2download.length];
+		for (int i = 0; i < wordlists_show.length; i++)
+			wordlists_show[i] = wordlists2download[i].name + " (" + wordlists2download[i].size + ")";
+
+		AlertDialog.Builder builder = new AlertDialog.Builder(my_activity);
+		builder.setTitle("Select wordlist to download")
+				.setMultiChoiceItems(wordlists_show, null, (dialog, which, isChecked) -> {
+					if (isChecked)// If the user checked the item, add it to the selected items
+						mSelectedItems.add(which);
+					else if (mSelectedItems.contains(which))// Else, if the item is already in the array, remove it
+						mSelectedItems.remove(Integer.valueOf(which));
+				})
+				.setPositiveButton(android.R.string.ok, (dialog, id) -> {
+					dialog.dismiss();
+
+					DownloadManager dm = (DownloadManager) my_activity.getSystemService(DOWNLOAD_SERVICE);
+					for (int i = 0; i < mSelectedItems.size(); i++)
+					{
+						int which = mSelectedItems.get(i);
+
+						Request request = new Request(Uri.parse(wordlists2download[which].url));
+						request.setTitle(wordlists2download[which].name);
+						request.setDescription("Downloading wordlist for Hash Suite");
+						request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, wordlists2download[which].name);
+						try {
+							long enqueue = dm.enqueue(request);
+
+							downloading_data.add(new WordlistDownloadingData(wordlists2download[which].id, enqueue));
+							WordlistData.setWordlistStateDownloading(wordlists2download[which].id);
+						}
+						catch (SecurityException ignored)
+						{
+							Toast.makeText(this, "Can't enqueue download", Toast.LENGTH_SHORT).show();
+						}
+					}
+				});
+		AlertDialog downloader = builder.create();
+		downloader.show();
+		downloader.getWindow().setLayout(calculateDialogWidth(520), WindowManager.LayoutParams.WRAP_CONTENT);
+	}
 	@Override
 	public boolean onOptionsItemSelected(MenuItem item)
 	{
@@ -1051,7 +1150,6 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			return true;
 		case R.id.export:
 			requestPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE, MY_PERMISSIONS_WRITE_EXTERNAL_STORAGE);
-		    
 			return true;
 		case R.id.resume_attack:
 			if(checkBattery("Battery low, can not resume an attack."))
@@ -1141,54 +1239,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			return true;
 			
 		case R.id.downloader:
-			final WordlistData[] wordlists2download = WordlistData.getWordlists2Download();
-			final ArrayList<Integer> mSelectedItems = new ArrayList<Integer>();
-			String[] wordlists_show = new String[wordlists2download.length];
-			for (int i = 0; i < wordlists_show.length; i++)
-				wordlists_show[i] = wordlists2download[i].name+" ("+wordlists2download[i].size+")";
-
-			builder = new AlertDialog.Builder(my_activity);
-		    builder.setTitle("Select wordlist to download").setMultiChoiceItems(wordlists_show, null, new DialogInterface.OnMultiChoiceClickListener()
-		    {
-		    	public void onClick(DialogInterface dialog, int which, boolean isChecked)
-		    	{
-            	   if (isChecked)// If the user checked the item, add it to the selected items
-                       mSelectedItems.add(which);
-                   else if (mSelectedItems.contains(which))// Else, if the item is already in the array, remove it 
-                       mSelectedItems.remove(Integer.valueOf(which));
-               }
-		    })
-		    .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener()
-		    {
-               @Override
-               public void onClick(DialogInterface dialog, int id)
-               {
-            	   dialog.dismiss();
-
-            	   DownloadManager dm = (DownloadManager) my_activity.getSystemService(DOWNLOAD_SERVICE);
-            	   for (int i = 0; i < mSelectedItems.size(); i++)
-            	   {
-            		   int which = mSelectedItems.get(i);
-            		   
-            	       Request request = new Request(Uri.parse(wordlists2download[which].url));
-            	       request.setTitle(wordlists2download[which].name);
-            	       request.setDescription("Downloading wordlist for Hash Suite");
-            	       request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, wordlists2download[which].name);
-            	       long enqueue = dm.enqueue(request);
-            	       
-            	       downloading_data.add(new WordlistDownloadingData(wordlists2download[which].id, enqueue));
-            	       WordlistData.setWordlistStateDownloading(wordlists2download[which].id);
-            	   }
-            	   
-            	   Intent show_downloader = new Intent();
-            	   show_downloader.setAction(DownloadManager.ACTION_VIEW_DOWNLOADS);
-        	       startActivity(show_downloader);
-               }
-           });
-		    AlertDialog downloader = builder.create();
-		    downloader.show();
-		    downloader.getWindow().setLayout(calculateDialogWidth(520), WindowManager.LayoutParams.WRAP_CONTENT);
-
+			requestPermission(Manifest.permission.READ_EXTERNAL_STORAGE, MY_PERMISSIONS_DOWNLOAD_WORDLISTS);
 			return true;
 		case R.id.benchmark:
 			if(checkBattery("Battery low, can not benchmark."))
@@ -1202,14 +1253,9 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 						.setTitle(title)
 						.setView(inflater.inflate(R.layout.benchmark, null))
 						//.setIcon(R.drawable.ic_action_alarms)
-						.setOnCancelListener(new OnCancelListener()
-						{
-							@Override
-							public void onCancel(DialogInterface dialog)
-							{
-								BenchmarkStop();
-								OnCompleteBenchmark();
-							}
+						.setOnCancelListener(dialog -> {
+							BenchmarkStop();
+							OnCompleteBenchmark();
 						});
 		
 					// Get the AlertDialog from create()
@@ -1217,9 +1263,9 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 					benchmark_dialog.show();
 					benchmark_dialog.getWindow().setLayout(calculateDialogWidth(560), WindowManager.LayoutParams.WRAP_CONTENT);
 					
-					bench_table = (TableLayout)benchmark_dialog.findViewById(R.id.benchmark_table);
+					bench_table = benchmark_dialog.findViewById(R.id.benchmark_table);
 					// Hardware
-					TableLayout hardware_table = (TableLayout)benchmark_dialog.findViewById(R.id.benchmark_hardware);
+					TableLayout hardware_table = benchmark_dialog.findViewById(R.id.benchmark_hardware);
 					TextView first_child = (TextView)((TableRow)hardware_table.getChildAt(0)).getChildAt(0);
 					
 					TableRow row_cpu = new TableRow(my_activity);
