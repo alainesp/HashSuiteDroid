@@ -4192,16 +4192,16 @@ PRIVATE LM_Instruction s8_code_lop3[] = {
 
 
 PRIVATE LM_SBox sboxs_std[]={
-	{LENGHT(s1_code_std), s1_code_std}, {LENGHT(s2_code_std), s2_code_std}, {LENGHT(s3_code_std), s3_code_std}, {LENGHT(s4_code_std), s4_code_std},
-	{LENGHT(s5_code_std), s5_code_std}, {LENGHT(s6_code_std), s6_code_std}, {LENGHT(s7_code_std), s7_code_std}, {LENGHT(s8_code_std), s8_code_std}
+	{LENGTH(s1_code_std), s1_code_std}, {LENGTH(s2_code_std), s2_code_std}, {LENGTH(s3_code_std), s3_code_std}, {LENGTH(s4_code_std), s4_code_std},
+	{LENGTH(s5_code_std), s5_code_std}, {LENGTH(s6_code_std), s6_code_std}, {LENGTH(s7_code_std), s7_code_std}, {LENGTH(s8_code_std), s8_code_std}
 };
 PRIVATE LM_SBox sboxs_bs[]={
-	{LENGHT(s1_code_bs), s1_code_bs}, {LENGHT(s2_code_bs), s2_code_bs}, {LENGHT(s3_code_bs), s3_code_bs}, {LENGHT(s4_code_bs), s4_code_bs},
-	{LENGHT(s5_code_bs), s5_code_bs}, {LENGHT(s6_code_bs), s6_code_bs}, {LENGHT(s7_code_bs), s7_code_bs}, {LENGHT(s8_code_bs), s8_code_bs}
+	{LENGTH(s1_code_bs), s1_code_bs}, {LENGTH(s2_code_bs), s2_code_bs}, {LENGTH(s3_code_bs), s3_code_bs}, {LENGTH(s4_code_bs), s4_code_bs},
+	{LENGTH(s5_code_bs), s5_code_bs}, {LENGTH(s6_code_bs), s6_code_bs}, {LENGTH(s7_code_bs), s7_code_bs}, {LENGTH(s8_code_bs), s8_code_bs}
 };
 PRIVATE LM_SBox sboxs_lop3[] = {
-	{ LENGHT(s1_code_lop3), s1_code_lop3 }, { LENGHT(s2_code_lop3), s2_code_lop3 }, { LENGHT(s3_code_lop3), s3_code_lop3 }, { LENGHT(s4_code_lop3), s4_code_lop3 },
-	{ LENGHT(s5_code_lop3), s5_code_lop3 }, { LENGHT(s6_code_lop3), s6_code_lop3 }, { LENGHT(s7_code_lop3), s7_code_lop3 }, { LENGHT(s8_code_lop3), s8_code_lop3 }
+	{ LENGTH(s1_code_lop3), s1_code_lop3 }, { LENGTH(s2_code_lop3), s2_code_lop3 }, { LENGTH(s3_code_lop3), s3_code_lop3 }, { LENGTH(s4_code_lop3), s4_code_lop3 },
+	{ LENGTH(s5_code_lop3), s5_code_lop3 }, { LENGTH(s6_code_lop3), s6_code_lop3 }, { LENGTH(s7_code_lop3), s7_code_lop3 }, { LENGTH(s8_code_lop3), s8_code_lop3 }
 };
 // Read only once
 //2 3 6 7 10 11 12 14 17 19 22 23 26 27 29 30

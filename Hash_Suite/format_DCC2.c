@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2013-2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2013-2015,2020 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
@@ -46,7 +46,7 @@ PRIVATE sqlite3_int64 add_hash_from_line(ImportParam* param, char* user_name, ch
 			strcpy(user, user_name + 12);
 			hex[0] = ':';
 			// Insert hash and account
-			return insert_hash_account1(param, _strlwr(user), user_name + 12, DCC2_INDEX);
+			return insert_hash_account1(param, /*_strlwr*/(user), user_name + 12, DCC2_INDEX);
 		}
 	}
 	return dcc_add_hash_from_line(param, user_name, dcc, DCC2_INDEX);
@@ -120,10 +120,7 @@ void hmac_sha1_init_simd(uint32_t* key, uint32_t* key_lenghts, uint32_t simd_wit
 // C Implementation
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void dcc_salt_part_c_code(uint32_t* salt_buffer, uint32_t* crypt_result);
-#ifndef HS_TESTING
-PRIVATE
-#endif
-void dcc2_body_c_code(uint32_t* salt_buffer, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
+PUBLIC void dcc2_body_c_code(uint32_t* salt_buffer, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
 {
 	uint32_t a = crypt_result[8 + 0];
 	uint32_t b = crypt_result[8 + 1];
@@ -846,17 +843,19 @@ PRIVATE void crypt_ntlm_protocol_avx2(CryptParam* param)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Common
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_work_body(OpenCL_Param* param, int num_keys_filled, void* buffer, ocl_get_key* get_key)
+PRIVATE void ocl_work_body(OpenCL_Param* param, int32_t num_keys_filled, void* buffer, ocl_get_key* get_key)
 {
-	int64_t total_ks = num_diff_salts * 10239;
 	size_t num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(num_keys_filled, param->max_work_group_size);
 	pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_NTLM_PART], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
-	int num_keys_reported = 0;
+	int32_t num_keys_reported = 0;
 
-	for (cl_uint current_salt_index = 0; continue_attack && current_salt_index < num_diff_salts; current_salt_index++)
+	uint32_t total_work_items = num_keys_filled * num_diff_salts;
+	int64_t total_ks = 10239ull*(((int64_t)total_work_items + param->NUM_KEYS_OPENCL - 1) / param->NUM_KEYS_OPENCL);
+	for (cl_uint offset = 0; continue_attack && offset < total_work_items; offset += param->NUM_KEYS_OPENCL)
 	{
+		num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(__min(param->NUM_KEYS_OPENCL, total_work_items - offset), param->max_work_group_size);
 		// Body
-		pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC_PART], 3, sizeof(current_salt_index), (void*)&current_salt_index);
+		pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC_PART], 3, sizeof(offset), (void*)&offset);
 		pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_DCC_PART], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 
 		// IPAD STATE
@@ -865,7 +864,7 @@ PRIVATE void ocl_work_body(OpenCL_Param* param, int num_keys_filled, void* buffe
 		pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_SHA1_PAD_MASK], 1, sizeof(state), (void*)&state);
 		pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_SHA1_PAD_MASK], 2, sizeof(flag), (void*)&flag);
 		pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_DCC2_SHA1_PAD_MASK], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
-		pclFinish(param->queue);
+		pclFinish(param->queue);// TODO: Why we used this here?
 
 		// OPAD STATE
 		state = OPAD_STATE;
@@ -875,7 +874,7 @@ PRIVATE void ocl_work_body(OpenCL_Param* param, int num_keys_filled, void* buffe
 		pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_DCC2_SHA1_PAD_MASK], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 
 		// Salt
-		pclSetKernelArg(param->kernels[KERNEL_INDEX_SHA1_PROCESS_SALT], 2, sizeof(current_salt_index), (void*)&current_salt_index);
+		pclSetKernelArg(param->kernels[KERNEL_INDEX_SHA1_PROCESS_SALT], 2, sizeof(offset), (void*)&offset);
 		pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_SHA1_PROCESS_SALT], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 
 		// Sha1 Opad
@@ -896,9 +895,9 @@ PRIVATE void ocl_work_body(OpenCL_Param* param, int num_keys_filled, void* buffe
 			if (!continue_attack)
 				break;
 
-			// Report keys processed from time to time to maintain good Rate
-			int64_t processed_ks = current_salt_index * 10239 + k*state;
-			int num_keys_reported_add = (int)(num_keys_filled*processed_ks / total_ks) - num_keys_reported;
+			// Report keys processed from time to time to maintain good rate
+			int64_t processed_ks = (int64_t)k * state + (offset/param->NUM_KEYS_OPENCL)*10239ull;
+			int32_t num_keys_reported_add = (int32_t)(num_keys_filled * processed_ks / total_ks) - num_keys_reported;
 			if (num_keys_reported_add > 0)
 			{
 				num_keys_reported += num_keys_reported_add;
@@ -912,7 +911,7 @@ PRIVATE void ocl_work_body(OpenCL_Param* param, int num_keys_filled, void* buffe
 			pclSetKernelArg(param->kernels[OCL_SLOW_GET_KERNEL_INDEX(param->param0)], 1, sizeof(state), (void*)&state);
 			pclEnqueueNDRangeKernel(param->queue, param->kernels[OCL_SLOW_GET_KERNEL_INDEX(param->param0)], 1, NULL, &cycle_num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 			// Compare results
-			pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_COMPARE_RESULT], 1, sizeof(current_salt_index), (void*)&current_salt_index);
+			pclSetKernelArg(param->kernels[KERNEL_INDEX_DCC2_COMPARE_RESULT], 1, sizeof(offset), (void*)&offset);
 			pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_DCC2_COMPARE_RESULT], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 
 			// Find matches
@@ -938,8 +937,9 @@ extern const char* sha1_array_body;
 extern const char* sha1_process_sha1_body;
 PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provider, OpenCL_Param* param, int multiplier)
 {
+	assert(multiplier > 0);
 	// Generate code
-	char* source = malloc(64 * 1024 * multiplier);
+	char* source = malloc(64 * 1024 * (size_t)multiplier);
 	source[0] = 0;
 	// Header definitions
 	//if(num_passwords_loaded > 1 )
@@ -1038,9 +1038,22 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provi
 "}", sha1_array_body);
 
 	sprintf(source+strlen(source),
-"\n__kernel void sha1_process_salt(__global uint* current_key,const __global uint* salt_values,uint current_salt_index)"
+"\n__kernel void sha1_process_salt(__global uint* current_key,const __global uint* salt_values,uint offset)"
 "{"
-		"uint idx=get_global_id(0);"
+		"uint idx=get_global_id(0);");
+
+	if (num_diff_salts > 1)
+	{
+		DivisionParams div_param = get_div_params(num_diff_salts);
+		// Perform division
+		sprintf(source + strlen(source), "uint max_number=offset+get_global_id(0);");
+		if (div_param.magic)sprintf(source + strlen(source), "uint current_salt_index=11*(max_number-(mul_hi(max_number+%iu,%uu)>>%uu)*%uu);", (int)div_param.sum_one, div_param.magic, div_param.shift, num_diff_salts);// Normal division
+		else				sprintf(source + strlen(source), "uint current_salt_index=11*(max_number-(max_number>>%uu)*%uu);", div_param.shift, num_diff_salts);// Power of two division
+	}
+	else
+		sprintf(source + strlen(source), "uint current_salt_index=0;");
+
+	sprintf(source + strlen(source),
 		"uint W[16];"
 
 		//memcpy(&sha1_hash, &ipad_state, 5*sizeof(uint32_t));
@@ -1057,14 +1070,14 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provi
 		"GET_DATA(SHA1_HASH,4)=E;"
 
 		// Process the salt
-		"uint salt_len=(salt_values[current_salt_index*11+10]>>3)-16;"
+		"uint salt_len=(salt_values[current_salt_index+10]>>3)-16;"
 		"for(uint i=0;i<16;i++)"
 			"W[i]=0;"
 				
 		//memcpy(W, salt_buffer, salt_len);
 		"uint i=0;"
 		"for(;i<salt_len/4;i++)"
-			"W[i]=salt_values[current_salt_index*11+i];"
+			"W[i]=salt_values[current_salt_index+i];"
 
 		//memcpy(((unsigned char*)W)+salt_len, "\x0\x0\x0\x1\x80", 5);
 		"if((salt_len&3)==0)"
@@ -1072,7 +1085,7 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provi
 			"W[i]=0x1000000;"
 			"W[i+1]=0x80;"
 		"}else{"
-			"W[i]=salt_values[current_salt_index*11+i] & 0x0000FFFF;"
+			"W[i]=salt_values[current_salt_index+i] & 0x0000FFFF;"
 			"W[i+1]=0x800100;"
 		"}"
 				
@@ -1190,9 +1203,26 @@ sprintf(source+strlen(source),	"ntlm_values[0*NUM_KEYS_OPENCL+idx]=a+%uU;"
 						"}", 0x67452300/*INIT_A+0xFFFFFFFF*/, INIT_B+INIT_D, 0x3175B9FC/*INIT_C+INIT_C*/, INIT_D+INIT_B);
 
 // Function definition
-sprintf(source + strlen(source), "\n__kernel void dcc_part(__global uint* current_key,const __global uint* ntlm_values,const __global uint* salt_values,uint current_salt_index)"
+sprintf(source + strlen(source), "\n__kernel void dcc_part(__global uint* current_key,const __global uint* ntlm_values,const __global uint* salt_values,uint offset)"
 	"{"
-		"uint idx=get_global_id(0);"
+		"uint max_number=offset+get_global_id(0);");
+
+if (num_diff_salts > 1)
+{
+	DivisionParams div_param = get_div_params(num_diff_salts);
+	// Perform division
+	if (div_param.magic)sprintf(source + strlen(source), "uint idx=mul_hi(max_number+%iu,%uu)>>%uu;", (int)div_param.sum_one, div_param.magic, div_param.shift);// Normal division
+	else				sprintf(source + strlen(source), "uint idx=max_number>>%uu;", div_param.shift);// Power of two division
+	sprintf(source + strlen(source), "uint current_salt_index=11*(max_number-idx*%uu);", num_diff_salts);
+}
+else
+	sprintf(source + strlen(source), 
+		"uint idx=max_number;"
+		"uint current_salt_index=0;"
+	);
+
+// Begin code
+sprintf(source + strlen(source),
 		"uint a,b,c,d,xx;"
 		
 		"uint crypt_a=ntlm_values[0*NUM_KEYS_OPENCL+idx];"
@@ -1208,41 +1238,41 @@ strcat(source,	"a=rotate(crypt_a,3u);"
 
 		/* Round 1 */
 sprintf(source+strlen(source),
-		"a+=bs(d,c,b)+salt_values[current_salt_index*11+0];a=rotate(a,3u);"
-		"d+=bs(c,b,a)+salt_values[current_salt_index*11+1];d=rotate(d,7u);"
-		"c+=bs(b,a,d)+salt_values[current_salt_index*11+2];c=rotate(c,11u);"
-		"b+=bs(a,d,c)+salt_values[current_salt_index*11+3];b=rotate(b,19u);"
+		"a+=bs(d,c,b)+salt_values[current_salt_index+0];a=rotate(a,3u);"
+		"d+=bs(c,b,a)+salt_values[current_salt_index+1];d=rotate(d,7u);"
+		"c+=bs(b,a,d)+salt_values[current_salt_index+2];c=rotate(c,11u);"
+		"b+=bs(a,d,c)+salt_values[current_salt_index+3];b=rotate(b,19u);"
 
-		"a+=bs(d,c,b)+salt_values[current_salt_index*11+4];a=rotate(a,3u);"
-		"d+=bs(c,b,a)+salt_values[current_salt_index*11+5];d=rotate(d,7u);"
-		"c+=bs(b,a,d)+salt_values[current_salt_index*11+6];c=rotate(c,11u);"
-		"b+=bs(a,d,c)+salt_values[current_salt_index*11+7];b=rotate(b,19u);"
+		"a+=bs(d,c,b)+salt_values[current_salt_index+4];a=rotate(a,3u);"
+		"d+=bs(c,b,a)+salt_values[current_salt_index+5];d=rotate(d,7u);"
+		"c+=bs(b,a,d)+salt_values[current_salt_index+6];c=rotate(c,11u);"
+		"b+=bs(a,d,c)+salt_values[current_salt_index+7];b=rotate(b,19u);"
 
-		"a+=bs(d,c,b)+salt_values[current_salt_index*11+8];a=rotate(a,3u);"
-		"d+=bs(c,b,a)+salt_values[current_salt_index*11+9];d=rotate(d,7u);"
-		"c+=bs(b,a,d)+salt_values[current_salt_index*11+10];c=rotate(c,11u);"
+		"a+=bs(d,c,b)+salt_values[current_salt_index+8];a=rotate(a,3u);"
+		"d+=bs(c,b,a)+salt_values[current_salt_index+9];d=rotate(d,7u);"
+		"c+=bs(b,a,d)+salt_values[current_salt_index+10];c=rotate(c,11u);"
 		"b+=bs(a,d,c);b=rotate(b,19u);");
 
 		/* Round 2 */
 sprintf(source+strlen(source),
 		"a+=MAJ(b,c,d)+crypt_a+%uU;a=rotate(a,3u);"
-		"d+=MAJ(a,b,c)+salt_values[current_salt_index*11+0]+SQRT_2;d=rotate(d,5u);"
-		"c+=MAJ(d,a,b)+salt_values[current_salt_index*11+4]+SQRT_2;c=rotate(c,9u);"
-		"b+=MAJ(c,d,a)+salt_values[current_salt_index*11+8]+SQRT_2;b=rotate(b,13u);"
+		"d+=MAJ(a,b,c)+salt_values[current_salt_index+0]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+salt_values[current_salt_index+4]+SQRT_2;c=rotate(c,9u);"
+		"b+=MAJ(c,d,a)+salt_values[current_salt_index+8]+SQRT_2;b=rotate(b,13u);"
 
 		"a+=MAJ(b,c,d)+crypt_b+%uU;a=rotate(a,3u);"
-		"d+=MAJ(a,b,c)+salt_values[current_salt_index*11+1]+SQRT_2;d=rotate(d,5u);"
-		"c+=MAJ(d,a,b)+salt_values[current_salt_index*11+5]+SQRT_2;c=rotate(c,9u);"
-		"b+=MAJ(c,d,a)+salt_values[current_salt_index*11+9]+SQRT_2;b=rotate(b,13u);"
+		"d+=MAJ(a,b,c)+salt_values[current_salt_index+1]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+salt_values[current_salt_index+5]+SQRT_2;c=rotate(c,9u);"
+		"b+=MAJ(c,d,a)+salt_values[current_salt_index+9]+SQRT_2;b=rotate(b,13u);"
 
 		"a+=MAJ(b,c,d)+crypt_c+%uU;a=rotate(a,3u);"
-		"d+=MAJ(a,b,c)+salt_values[current_salt_index*11+2]+SQRT_2;d=rotate(d,5u);"
-		"c+=MAJ(d,a,b)+salt_values[current_salt_index*11+6]+SQRT_2;c=rotate(c,9u);"
-		"b+=MAJ(c,d,a)+salt_values[current_salt_index*11+10]+SQRT_2;b=rotate(b,13u);"
+		"d+=MAJ(a,b,c)+salt_values[current_salt_index+2]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+salt_values[current_salt_index+6]+SQRT_2;c=rotate(c,9u);"
+		"b+=MAJ(c,d,a)+salt_values[current_salt_index+10]+SQRT_2;b=rotate(b,13u);"
 
 		"a+=MAJ(b,c,d)+crypt_d+%uU;a=rotate(a,3u);"
-		"d+=MAJ(a,b,c)+salt_values[current_salt_index*11+3]+SQRT_2;d=rotate(d,5u);"
-		"c+=MAJ(d,a,b)+salt_values[current_salt_index*11+7]+SQRT_2;c=rotate(c,9u);"
+		"d+=MAJ(a,b,c)+salt_values[current_salt_index+3]+SQRT_2;d=rotate(d,5u);"
+		"c+=MAJ(d,a,b)+salt_values[current_salt_index+7]+SQRT_2;c=rotate(c,9u);"
 		"b+=MAJ(c,d,a)+SQRT_2;b=rotate(b,13u);"
 		, SQRT_2-0xFFFFFFFF, SQRT_2-INIT_D, SQRT_2-INIT_C, SQRT_2-INIT_B);
 
@@ -1250,23 +1280,23 @@ sprintf(source+strlen(source),
 sprintf(source+strlen(source),
 		"xx=c^b;"
 		"a+=(xx^d)+crypt_a+%uU;a=rotate(a,3u);"
-		"d+=(a^xx)+salt_values[current_salt_index*11+4]+SQRT_3;d=rotate(d,9u);xx=a^d;"
-		"c+=(xx^b)+salt_values[current_salt_index*11+0]+SQRT_3;c=rotate(c,11u);"
-		"b+=(c^xx)+salt_values[current_salt_index*11+8]+SQRT_3;b=rotate(b,15u);xx=c^b;"
+		"d+=(a^xx)+salt_values[current_salt_index+4]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(xx^b)+salt_values[current_salt_index+0]+SQRT_3;c=rotate(c,11u);"
+		"b+=(c^xx)+salt_values[current_salt_index+8]+SQRT_3;b=rotate(b,15u);xx=c^b;"
 
 		"a+=(xx^d)+crypt_c+%uU;a=rotate(a,3u);"
-		"d+=(a^xx)+salt_values[current_salt_index*11+6]+SQRT_3;d=rotate(d,9u);xx=a^d;"
-		"c+=(xx^b)+salt_values[current_salt_index*11+2]+SQRT_3;c=rotate(c,11u);"
-		"b+=(c^xx)+salt_values[current_salt_index*11+10]+SQRT_3;b=rotate(b,15u);xx=c^b;"
+		"d+=(a^xx)+salt_values[current_salt_index+6]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(xx^b)+salt_values[current_salt_index+2]+SQRT_3;c=rotate(c,11u);"
+		"b+=(c^xx)+salt_values[current_salt_index+10]+SQRT_3;b=rotate(b,15u);xx=c^b;"
 
 		"a+=(xx^d)+crypt_b+%uU;a=rotate(a,3u);"
-		"d+=(a^xx)+salt_values[current_salt_index*11+5]+SQRT_3;d=rotate(d,9u);xx=a^d;"
-		"c+=(xx^b)+salt_values[current_salt_index*11+1]+SQRT_3;c=rotate(c,11u);"
-		"b+=(c^xx)+salt_values[current_salt_index*11+9]+SQRT_3;b=rotate(b,15u);xx=c^b;"
+		"d+=(a^xx)+salt_values[current_salt_index+5]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(xx^b)+salt_values[current_salt_index+1]+SQRT_3;c=rotate(c,11u);"
+		"b+=(c^xx)+salt_values[current_salt_index+9]+SQRT_3;b=rotate(b,15u);xx=c^b;"
 
 		"a+=(xx^d)+crypt_d+%uU;a=rotate(a,3u);"
-		"d+=(a^xx)+salt_values[current_salt_index*11+7]+SQRT_3;d=rotate(d,9u);xx=a^d;"
-		"c+=(xx^b)+salt_values[current_salt_index*11+3]+SQRT_3;c=rotate(c,11u);"
+		"d+=(a^xx)+salt_values[current_salt_index+7]+SQRT_3;d=rotate(d,9u);xx=a^d;"
+		"c+=(xx^b)+salt_values[current_salt_index+3]+SQRT_3;c=rotate(c,11u);"
 		"b+=(c^xx)+SQRT_3;b=rotate(b,15u);xx=c^b;"
 													
 		"a+=INIT_A;"
@@ -1280,7 +1310,9 @@ sprintf(source+strlen(source),
 		"LOAD_BIG_ENDIAN(b);"
 		"LOAD_BIG_ENDIAN(c);"
 		"LOAD_BIG_ENDIAN(d);"
-		
+
+		"idx=get_global_id(0);"
+
 		"GET_DATA(CRYPT_RESULT,0)=a;"
 		"GET_DATA(CRYPT_RESULT,1)=b;"
 		"GET_DATA(CRYPT_RESULT,2)=c;"
@@ -1485,32 +1517,68 @@ sprintf(source + strlen(source),
 #endif
 
 if (num_passwords_loaded == num_diff_salts)
-sprintf(source + strlen(source), "\n__kernel void dcc2_compare_result(__global uint* current_key,uint salt_index,__global uint* output,const __global uint* binary_values)"
-		"{"
+{
+	sprintf(source + strlen(source), "\n__kernel void dcc2_compare_result(__global uint* current_key,uint offset,__global uint* output,const __global uint* binary_values)"
+			"{"
 				"uint idx=get_global_id(0);"
-				"if(GET_DATA(CRYPT_RESULT,0)==binary_values[4*salt_index+0]&&GET_DATA(CRYPT_RESULT,1)==binary_values[4*salt_index+1]&&GET_DATA(CRYPT_RESULT,2)==binary_values[4*salt_index+2]&&GET_DATA(CRYPT_RESULT,3)==binary_values[4*salt_index+3])"
-				"{"
-						"uint found=atomic_inc(output);"
-						"output[2*found+1]=idx;"
-						"output[2*found+2]=salt_index;"
-				"}"
-		"}");
-else
-sprintf(source + strlen(source), "\n__kernel void dcc2_compare_result(__global uint* current_key,uint current_salt_index,__global uint* output,const __global uint* binary_values,const __global uint* salt_index,const __global uint* same_salt_next)"
-		"{\n"
-				"uint idx=get_global_id(0);"
-				"uint index=salt_index[current_salt_index];"
-				"while(index!=0xffffffff)"
-				"{"
-					"if(GET_DATA(CRYPT_RESULT,0)==binary_values[4*index+0]&&GET_DATA(CRYPT_RESULT,1)==binary_values[4*index+1]&&GET_DATA(CRYPT_RESULT,2)==binary_values[4*index+2]&&GET_DATA(CRYPT_RESULT,3)==binary_values[4*index+3])"
+				"uint max_number=offset+get_global_id(0);");
+	if (num_diff_salts > 1)
+	{
+		DivisionParams div_param = get_div_params(num_diff_salts);
+		// Perform division
+		if (div_param.magic)sprintf(source + strlen(source), "uint idx_key=mul_hi(max_number+%iu,%uu)>>%uu;", (int)div_param.sum_one, div_param.magic, div_param.shift);// Normal division
+		else				sprintf(source + strlen(source), "uint idx_key=max_number>>%uu;", div_param.shift);// Power of two division
+		sprintf(source + strlen(source), "uint salt_index=4*(max_number-idx_key*%uu);", num_diff_salts);
+	}
+	else
+	sprintf(source + strlen(source),
+		"uint idx_key=max_number;"
+		"uint salt_index=0;"
+	);
+
+	sprintf(source + strlen(source),
+					"if(GET_DATA(CRYPT_RESULT,0)==binary_values[salt_index+0]&&GET_DATA(CRYPT_RESULT,1)==binary_values[salt_index+1]&&"
+					   "GET_DATA(CRYPT_RESULT,2)==binary_values[salt_index+2]&&GET_DATA(CRYPT_RESULT,3)==binary_values[salt_index+3])"
 					"{"
 							"uint found=atomic_inc(output);"
-							"output[2*found+1]=idx;"
-							"output[2*found+2]=index;"
+							"output[2*found+1]=idx_key;"
+							"output[2*found+2]=salt_index/4;"
 					"}"
-					"index=same_salt_next[index];"
-				"}"
-		"}");
+			"}");
+}
+else
+{
+	sprintf(source + strlen(source), "\n__kernel void dcc2_compare_result(__global uint* current_key,uint offset,__global uint* output,const __global uint* binary_values,const __global uint* salt_index,const __global uint* same_salt_next)"
+			"{"
+					"uint idx=get_global_id(0);"
+					"uint max_number=offset+get_global_id(0);");
+	if (num_diff_salts > 1)
+	{
+		DivisionParams div_param = get_div_params(num_diff_salts);
+		// Perform division
+		if (div_param.magic)sprintf(source + strlen(source), "uint idx_key=mul_hi(max_number+%iu,%uu)>>%uu;", (int)div_param.sum_one, div_param.magic, div_param.shift);// Normal division
+		else				sprintf(source + strlen(source), "uint idx_key=max_number>>%uu;", div_param.shift);// Power of two division
+		sprintf(source + strlen(source), "uint current_salt_index=max_number-idx_key*%uu;", num_diff_salts);
+	}
+	else
+		sprintf(source + strlen(source),
+			"uint idx_key=max_number;"
+			"uint current_salt_index=0;"
+	);
+	sprintf(source + strlen(source),
+					"uint index=salt_index[current_salt_index];"
+					"while(index!=0xffffffff)"
+					"{"
+						"if(GET_DATA(CRYPT_RESULT,0)==binary_values[4*index+0]&&GET_DATA(CRYPT_RESULT,1)==binary_values[4*index+1]&&GET_DATA(CRYPT_RESULT,2)==binary_values[4*index+2]&&GET_DATA(CRYPT_RESULT,3)==binary_values[4*index+3])"
+						"{"
+								"uint found=atomic_inc(output);"
+								"output[2*found+1]=idx_key;"
+								"output[2*found+2]=index;"
+						"}"
+						"index=same_salt_next[index];"
+					"}"
+			"}");
+	}
 
 	return source;
 }
@@ -1686,7 +1754,7 @@ PRIVATE int ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_inde
 	int i, kernel2common_index;
 
 	// Find a compatible generate_key_funtion function for a given key_provider
-	for (i = 0; i < LENGHT(key_providers[provider_index].impls); i++)
+	for (i = 0; i < LENGTH(key_providers[provider_index].impls); i++)
 		for (kernel2common_index = 0; kernel2common_index < (int)num_kernels2common; kernel2common_index++)
 			if (key_providers[provider_index].impls[i].protocol == kernels2common[kernel2common_index].protocol)
 			{
@@ -1700,7 +1768,7 @@ out:
 
 Format dcc2_format = {
 	"DCC2"/*"MSCASH2"*/,
-	"Domain Cache Credentials 2 (also know as MSCASH2).",
+	"Domain Cache Credentials 2 (also known as MSCASH2).",
 	"$DCC2$10240#",
 	PLAINTEXT_LENGTH,
 	BINARY_SIZE,

@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2013-2015 by Alain Espinosa
+// Copyright (c) 2013-2020 by Alain Espinosa
 
 #include "common.h"
 
@@ -115,6 +115,42 @@ PUBLIC void sha1_process_block_simd(uint32_t* state, uint32_t* W, uint32_t simd_
 		state[i+3*simd_with] += D;
 		state[i+4*simd_with] += E;
 	}
+}
+
+PUBLIC void hash_sha1(const char* message, char* hash)
+{
+	uint32_t nt_buffer[8];
+	uint32_t W[16];
+	uint32_t sha1_state[5];
+
+	uint32_t len = (uint32_t)strlen(message);
+
+	memset(nt_buffer, 0, sizeof(nt_buffer));
+	memset(W, 0, sizeof(W));
+
+	strcpy((char*)nt_buffer, message);
+	((unsigned char*)nt_buffer)[len] = 0x80;
+
+	SWAP_ENDIANNESS(W[0], nt_buffer[0]);
+	SWAP_ENDIANNESS(W[1], nt_buffer[1]);
+	SWAP_ENDIANNESS(W[2], nt_buffer[2]);
+	SWAP_ENDIANNESS(W[3], nt_buffer[3]);
+	SWAP_ENDIANNESS(W[4], nt_buffer[4]);
+	SWAP_ENDIANNESS(W[5], nt_buffer[5]);
+	SWAP_ENDIANNESS(W[6], nt_buffer[6]);
+
+	W[15] = len << 3;
+
+	sha1_state[0] = INIT_A;
+	sha1_state[1] = INIT_B;
+	sha1_state[2] = INIT_C;
+	sha1_state[3] = INIT_D;
+	sha1_state[4] = INIT_E;
+	sha1_process_block_simd(sha1_state, W, 1);
+
+	hash[0] = 0;
+	for (uint32_t i = 0; i < 5; i++)
+		sprintf(hash + strlen(hash), "%08x", sha1_state[i]);
 }
 
 PUBLIC void hmac_sha1_init_simd(uint32_t* key, uint32_t* key_lenghts, uint32_t simd_with, uint32_t multiplier, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
@@ -445,7 +481,36 @@ PUBLIC void md5_process_block(uint32_t* state, const uint32_t* block)
 	state[2] += c;
 	state[3] += d;
 }
+PUBLIC void hash_md5(const char* message, char* hash)
+{
+	uint32_t md5_state[4];
+	uint32_t nt_buffer[16];
+	uint32_t len = (uint32_t)strlen(message);
+	if (len > 55)
+	{
+		strcpy(hash, "-- Unsupported: More than 55 chars --");
+		return;
+	}
 
+	memset(nt_buffer, 0, sizeof(nt_buffer));
+	strcpy((char*)nt_buffer, message);
+	((unsigned char*)nt_buffer)[len] = 0x80;
+	nt_buffer[14] = len << 3;
+
+	/* Round 1 */
+	md5_state[0] = INIT_A;
+	md5_state[1] = INIT_B;
+	md5_state[2] = INIT_C;
+	md5_state[3] = INIT_D;
+	md5_process_block(md5_state, nt_buffer);
+
+	hash[0] = 0;
+	for (uint32_t i = 0; i < 4; i++)
+	{
+		SWAP_ENDIANNESS(md5_state[i], md5_state[i]);
+		sprintf(hash + strlen(hash), "%08x", md5_state[i]);
+	}
+}
 // NTLM
 PUBLIC void hash_ntlm(const unsigned char* message, char* hash)
 {
@@ -478,7 +543,7 @@ PUBLIC void hash_ntlm(const unsigned char* message, char* hash)
 	for (uint32_t i = 0; i < 4; i++)
 	{
 		SWAP_ENDIANNESS(md4_state[i], md4_state[i]);
-		sprintf((char*)hash + strlen((char*)hash), "%08X", md4_state[i]);
+		sprintf(hash + strlen(hash), "%08X", md4_state[i]);
 	}
 }
 
@@ -575,6 +640,51 @@ PUBLIC void sha256_process_block(uint32_t* state, uint32_t* W)
 	state[5] += F;
 	state[6] += G;
 	state[7] += H;
+}
+PUBLIC void hash_sha256(const char* message, char* hash)
+{
+	uint32_t state[8];
+	uint32_t W[16];
+
+	state[0] = 0x6A09E667;
+	state[1] = 0xBB67AE85;
+	state[2] = 0x3C6EF372;
+	state[3] = 0xA54FF53A;
+	state[4] = 0x510E527F;
+	state[5] = 0x9B05688C;
+	state[6] = 0x1F83D9AB;
+	state[7] = 0x5BE0CD19;
+
+	// Cycle
+	uint64_t message_size = strlen(message);
+	for (size_t i = 0; i < message_size / 64; i++, message += 64)
+	{
+		memcpy(W, message, 64);
+		swap_endianness_array(W, 16);
+		sha256_process_block(state, W);
+	}
+
+	// Last block
+	memset(W, 0, 64);
+	size_t last_size = message_size - (message_size / 64) * 64;
+	memcpy(W, message, last_size);
+	((unsigned char*)W)[last_size] = 0x80;
+	if (last_size >= 56)
+	{
+		swap_endianness_array(W, 16);
+		sha256_process_block(state, W);
+
+		memset(W, 0, 56);
+	}
+	swap_endianness_array(W, 14);
+	W[14] = (uint32_t)((message_size * 8) >> 32);
+	W[15] = (uint32_t)((message_size * 8));
+	sha256_process_block(state, W);
+
+	// Convert to hexadecimal string
+	hash[0] = 0;
+	for (uint32_t i = 0; i < 8; i++)
+		sprintf(hash + strlen(hash), "%08X", state[i]);
 }
 
 // SHA512
@@ -691,6 +801,49 @@ PUBLIC void sha512_process_block(uint64_t* state, uint64_t* W)
 	state[5] += F;
 	state[6] += G;
 	state[7] += H;
+}
+PUBLIC void hash_sha512(const char* message, char* hash)
+{
+	uint32_t nt_buffer[8];
+	uint64_t W[16];
+	uint64_t sha512_state[8];
+	uint32_t tmp0, tmp1;
+
+	uint32_t len = (uint32_t)strlen(message);
+
+	memset(nt_buffer, 0, sizeof(nt_buffer));
+	memset(W, 0, sizeof(W));
+
+	strcpy((char*)nt_buffer, message);
+	((unsigned char*)nt_buffer)[len] = 0x80;
+
+	SWAP_ENDIANNESS(tmp0, nt_buffer[0]);
+	SWAP_ENDIANNESS(tmp1, nt_buffer[1]);
+	W[0] = (((uint64_t)tmp0) << 32) + tmp1;
+	SWAP_ENDIANNESS(tmp0, nt_buffer[2]);
+	SWAP_ENDIANNESS(tmp1, nt_buffer[3]);
+	W[1] = (((uint64_t)tmp0) << 32) + tmp1;
+	SWAP_ENDIANNESS(tmp0, nt_buffer[4]);
+	SWAP_ENDIANNESS(tmp1, nt_buffer[5]);
+	W[2] = (((uint64_t)tmp0) << 32) + tmp1;
+
+	SWAP_ENDIANNESS(tmp0, nt_buffer[6]);
+	W[3] = ((uint64_t)tmp0) << 32;
+	W[15] = len << 3;
+
+	sha512_state[0] = 0x6A09E667F3BCC908ULL;
+	sha512_state[1] = 0xBB67AE8584CAA73BULL;
+	sha512_state[2] = 0x3C6EF372FE94F82BULL;
+	sha512_state[3] = 0xA54FF53A5F1D36F1ULL;
+	sha512_state[4] = 0x510E527FADE682D1ULL;
+	sha512_state[5] = 0x9B05688C2B3E6C1FULL;
+	sha512_state[6] = 0x1F83D9ABFB41BD6BULL;
+	sha512_state[7] = 0x5BE0CD19137E2179ULL;
+	sha512_process_block(sha512_state, W);
+
+	hash[0] = 0;
+	for (uint32_t i = 0; i < 8; i++)
+		sprintf(hash + strlen(hash), "%016llx", sha512_state[i]);
 }
 
 // Hash a file
@@ -1118,4 +1271,868 @@ PUBLIC void hash_lm(const char* message, char* hash)
 	auth_DEShash(dst, key);
 	for (i = 0; i < sizeof(dst); i++)
 		sprintf(hash+16+2*i, "%02X", dst[7-i] & 0xFF);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Password hashing with salt
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#include <ctype.h>
+
+void dcc_ntlm_part_c_code(uint32_t* nt_buffer, uint32_t* crypt_result);
+void dcc_salt_part_c_code(uint32_t* salt_buffer, uint32_t* crypt_result);
+void dcc2_body_c_code(uint32_t* salt_buffer, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W);
+PRIVATE void generate_random_user(char* username)
+{
+	const char* name_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	size_t name_chars_size = strlen(name_chars);
+
+	uint32_t len = rand() % 19 + 1;// Lenght between [1, 19]
+	for (uint32_t i = 0; i < len; i++)
+		username[i] = name_chars[rand() % name_chars_size];
+
+	username[len] = 0;
+}
+
+PUBLIC void hash_dcc(const unsigned char* cleartext, char* hash)
+{
+	unsigned char username[32];
+	generate_random_user(username);
+
+	uint32_t crypt_result[12];
+	uint32_t i;
+	uint32_t nt_buffer[16 * 64];
+	uint32_t salt_buffer[11];
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
+
+	// nt_buffer
+	memset(nt_buffer, 0, sizeof(nt_buffer));
+	for (i = 0; i < len / 2; i++)
+		nt_buffer[i * 64] = cleartext[2 * i] + (cleartext[2 * i + 1] << 16);
+
+	nt_buffer[i * 64] = (len % 2) ? cleartext[2 * i] + 0x800000 : 0x80;
+	nt_buffer[14 * 64] = len << 4;
+
+	// Salt
+	len = (uint32_t)strlen((char*)username);
+	memset(salt_buffer, 0, sizeof(salt_buffer));
+	for (i = 0; i < len / 2; i++)
+		salt_buffer[i] = tolower(username[2 * i]) + (tolower(username[2 * i + 1]) << 16);
+
+	salt_buffer[i] = (len % 2) ? tolower(username[2 * i]) + 0x800000 : 0x80;
+	salt_buffer[10] = (8 + len) << 4;
+
+	dcc_ntlm_part_c_code(nt_buffer, crypt_result);
+	dcc_salt_part_c_code(salt_buffer, crypt_result);
+
+	// Finish
+	uint32_t a = crypt_result[8 + 0];
+	uint32_t b = crypt_result[8 + 1];
+	uint32_t c = crypt_result[8 + 2];
+	uint32_t d = crypt_result[8 + 3];
+
+	d = ROTATE(d + SQRT_3, 9);
+	c += (d ^ a ^ b) + salt_buffer[1] + SQRT_3; c = ROTATE(c, 11);
+	b += (c ^ d ^ a) + salt_buffer[9] + SQRT_3; b = ROTATE(b, 15);
+
+	a += (b ^ c ^ d) + crypt_result[3] + SQRT_3; a = ROTATE(a, 3);
+	d += (a ^ b ^ c) + salt_buffer[7] + SQRT_3; d = ROTATE(d, 9);
+	c += (d ^ a ^ b) + salt_buffer[3] + SQRT_3; c = ROTATE(c, 11);
+	b += (c ^ d ^ a) + SQRT_3; b = ROTATE(b, 15);
+
+	SWAP_ENDIANNESS(a, a + INIT_A);
+	SWAP_ENDIANNESS(b, b + INIT_B);
+	SWAP_ENDIANNESS(c, c + INIT_C);
+	SWAP_ENDIANNESS(d, d + INIT_D);
+
+	sprintf(hash, "%s:%08x%08x%08x%08x", username, a, b, c, d);
+}
+
+PUBLIC void hash_dcc2(const unsigned char* cleartext, char* hash)
+{
+	unsigned char username[32];
+	generate_random_user(username);
+
+	uint32_t crypt_result[12], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
+	uint32_t i;
+	uint32_t nt_buffer[16 * 64];
+	uint32_t salt_buffer[11];
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
+
+	// nt_buffer
+	memset(nt_buffer, 0, sizeof(nt_buffer));
+	for (i = 0; i < len / 2; i++)
+		nt_buffer[i * 64] = cleartext[2 * i] + (cleartext[2 * i + 1] << 16);
+
+	nt_buffer[i * 64] = (len % 2) ? cleartext[2 * i] + 0x800000 : 0x80;
+	nt_buffer[14 * 64] = len << 4;
+
+	// Salt
+	len = (uint32_t)strlen((char*)username);
+	memset(salt_buffer, 0, sizeof(salt_buffer));
+	for (i = 0; i < len / 2; i++)
+		salt_buffer[i] = tolower(username[2 * i]) + (tolower(username[2 * i + 1]) << 16);
+
+	salt_buffer[i] = (len % 2) ? tolower(username[2 * i]) + 0x800000 : 0x80;
+	salt_buffer[10] = (8 + len) << 4;
+
+	dcc_ntlm_part_c_code(nt_buffer, crypt_result);
+	dcc_salt_part_c_code(salt_buffer, crypt_result);
+	dcc2_body_c_code(salt_buffer, crypt_result, sha1_hash, opad_state, ipad_state, W);
+
+	uint32_t a = crypt_result[8 + 0];
+	uint32_t b = crypt_result[8 + 1];
+	uint32_t c = crypt_result[8 + 2];
+	uint32_t d = crypt_result[8 + 3];
+
+	sprintf(hash, "%s:%08x%08x%08x%08x", username, a, b, c, d);
+}
+
+PUBLIC void hash_ssha1(const char* cleartext, char* hash)
+{
+	uint32_t nt_buffer[14];
+	uint32_t W[16];
+	uint32_t sha1_state[5];
+	// Salt
+	unsigned char salt[16];
+	uint32_t salt_len = 4 + rand() % 5;// from 4 to 8
+	for (uint32_t i = 0; i < salt_len; i++)
+		salt[i] = rand() & 0xff;
+
+	uint32_t len = (uint32_t)strlen(cleartext);
+
+	memset(nt_buffer, 0, sizeof(nt_buffer));
+	strcpy((char*)nt_buffer, cleartext);
+	memcpy(((char*)nt_buffer) + len, salt, salt_len);
+	((unsigned char*)nt_buffer)[len + salt_len] = 0x80;
+
+	// Copy to W
+	for (uint32_t i = 0; i < 14; i++)
+	{
+		SWAP_ENDIANNESS(W[i], nt_buffer[i]);
+	}
+	W[14] = 0;
+	W[15] = (len + salt_len) << 3;
+
+	// Hash
+	sha1_state[0] = INIT_A;
+	sha1_state[1] = INIT_B;
+	sha1_state[2] = INIT_C;
+	sha1_state[3] = INIT_D;
+	sha1_state[4] = INIT_E;
+	sha1_process_block_simd(sha1_state, W, 1);
+
+	// Encode as base64
+	swap_endianness_array(sha1_state, 5);
+	memcpy(W, sha1_state, 5 * sizeof(uint32_t));
+	memcpy(W + 5, salt, salt_len);
+	base64_encode_mime((unsigned char*)W, 5 * sizeof(uint32_t) + salt_len, hash);
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// md5crypt
+//////////////////////////////////////////////////////////////////////////////////////////
+typedef struct {
+	uint8_t salt[8];
+	uint8_t saltlen;
+	uint8_t prefix;		/** 0 when $1$ or 1 when $apr1$ or 2 for {smd5} which uses no prefix. **/
+} crypt_md5_salt;
+PRIVATE char* prefixs[] = { "$1$", "$apr1$", "" };
+PRIVATE char* prefixs_show[] = { "$1$", "$apr1$", "{smd5}" };
+PRIVATE void md5_one_block_c_code(uint32_t* state, const void* block)
+{
+	state[0] = INIT_A;
+	state[1] = INIT_B;
+	state[2] = INIT_C;
+	state[3] = INIT_D;
+	md5_process_block(state, block);
+}
+#define TO_BASE64(b1, b2, b3) \
+	value = out[b3] | (out[b2] << 8) | (out[b1] << 16);\
+	\
+	pos[0] = itoa64[(value    ) & 63];\
+	pos[1] = itoa64[(value>>6 ) & 63];\
+	pos[2] = itoa64[(value>>12) & 63];\
+	pos[3] = itoa64[(value>>18) & 63];\
+	pos += 4;
+
+PUBLIC void hash_md5crypt(const unsigned char* cleartext, char* hash)
+{
+	uint32_t md5_state[4];
+	uint8_t buffer[64];
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
+
+	crypt_md5_salt salt;
+	salt.saltlen = 8;// rand() % 8;
+	salt.prefix = rand() % 3;
+	for (int i = 0; i < salt.saltlen; i++)
+	{
+		uint8_t salt_char = 1 + rand() % 255;
+		while (salt_char == '$')
+			salt_char = 1 + rand() % 255;
+		salt.salt[i] = salt_char;
+	}
+
+	// 1st digest
+	memset(buffer, 0, sizeof(buffer));
+	uint32_t buffer_len = 0;
+	memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+	memcpy(buffer + buffer_len, salt.salt, salt.saltlen); buffer_len += salt.saltlen;
+	memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+	buffer[buffer_len] = 0x80;
+	((uint32_t*)buffer)[14] = buffer_len << 3;
+	md5_one_block_c_code(md5_state, buffer);
+
+	// 2nd digest
+	memset(buffer, 0, sizeof(buffer));
+	buffer_len = 0;
+	memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+	memcpy(buffer + buffer_len, prefixs[salt.prefix], strlen(prefixs[salt.prefix])); buffer_len += (uint32_t)strlen(prefixs[salt.prefix]);
+	memcpy(buffer + buffer_len, salt.salt, salt.saltlen); buffer_len += salt.saltlen;
+	memcpy(buffer + buffer_len, md5_state, len); buffer_len += len;
+	for (uint32_t j = len; j > 0; j >>= 1, buffer_len++)
+		buffer[buffer_len] = (j & 1) ? 0 : cleartext[0];
+	buffer[buffer_len] = 0x80;
+	((uint32_t*)buffer)[14] = buffer_len << 3;
+	md5_one_block_c_code(md5_state, buffer);
+
+	// Big cycle
+	for (int i = 0; i < 1000; i++)
+	{
+		memset(buffer, 0, sizeof(buffer));
+		uint32_t buffer_len = 0;
+
+		if (i & 1)
+		{
+			memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+		}
+		else
+		{
+			memcpy(buffer + buffer_len, md5_state, 16); buffer_len += 16;
+		}
+		if (i % 3)
+		{
+			memcpy(buffer + buffer_len, salt.salt, salt.saltlen); buffer_len += salt.saltlen;
+		}
+		if (i % 7)
+		{
+			memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+		}
+		if (i & 1)
+		{
+			memcpy(buffer + buffer_len, md5_state, 16); buffer_len += 16;
+		}
+		else
+		{
+			memcpy(buffer + buffer_len, cleartext, len); buffer_len += len;
+		}
+
+		buffer[buffer_len] = 0x80;
+		((uint32_t*)buffer)[14] = buffer_len << 3;
+		md5_one_block_c_code(md5_state, buffer);
+	}
+
+	sprintf(hash, "%s", prefixs_show[salt.prefix]);
+	hash += strlen(hash);
+	memcpy(hash, salt.salt, salt.saltlen);
+	hash[salt.saltlen] = '$';
+
+	char* pos = hash + salt.saltlen + 1;
+	unsigned char* out = (unsigned char*)md5_state;
+	uint32_t value;
+
+	TO_BASE64(0, 6, 12);
+	TO_BASE64(1, 7, 13);
+	TO_BASE64(2, 8, 14);
+	TO_BASE64(3, 9, 15);
+	TO_BASE64(4, 10, 5);
+	pos[0] = itoa64[out[11] & 63];
+	pos[1] = itoa64[out[11] >> 6];
+	pos[2] = 0;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// sha256crypt
+//////////////////////////////////////////////////////////////////////////////////////////
+#define SHA256_INIT_STATE(state) \
+	buffer_len = 0, num_blocks = 0;\
+	state[0] = 0x6A09E667;\
+	state[1] = 0xBB67AE85;\
+	state[2] = 0x3C6EF372;\
+	state[3] = 0xA54FF53A;\
+	state[4] = 0x510E527F;\
+	state[5] = 0x9B05688C;\
+	state[6] = 0x1F83D9AB;\
+	state[7] = 0x5BE0CD19;
+
+#define SHA256_END_CTX(state) \
+	buffer[buffer_len] = 0x80;\
+	if (buffer_len >= 56)\
+	{\
+		memset(buffer + buffer_len + 1, 0, 128 - buffer_len - 1);\
+		((uint32_t*)buffer)[16 + 15] = (num_blocks*64+buffer_len) << 3;\
+		swap_endianness_array((uint32_t*)buffer, 16);\
+		sha256_process_block(state, (uint32_t*)buffer);\
+		swap_endianness_array((uint32_t*)(buffer + 64), 14);\
+		sha256_process_block(state, (uint32_t*)(buffer + 64));\
+	}\
+	else\
+	{\
+		memset(buffer + buffer_len + 1, 0, 64 - buffer_len - 1);\
+		((uint32_t*)buffer)[15] = (num_blocks*64+buffer_len) << 3;\
+		swap_endianness_array((uint32_t*)buffer, 14);\
+		sha256_process_block(state, (uint32_t*)buffer);\
+	}\
+	swap_endianness_array(state, 8);
+
+typedef struct {
+	uint32_t rounds;
+	uint8_t salt[16];
+	uint8_t saltlen;
+} crypt_sha256_salt;
+PUBLIC void hash_sha256crypt(const char* cleartext, char* hash)
+{
+	assert(strlen(cleartext) <= 32);
+
+	uint32_t sha256_state[8], alt_state[8];
+	HS_ALIGN(4) uint8_t buffer[64 + 64];
+	uint32_t buffer_len, num_blocks;
+	uint32_t key_len = (uint32_t)strlen(cleartext);
+
+	// Generate random salt
+	crypt_sha256_salt salt;
+	salt.saltlen = 1 + rand() % 16;// [1,16]
+	salt.rounds = 5000;// TODO: Manage this
+	for (uint8_t i = 0; i < salt.saltlen; i++)
+	{
+		uint8_t salt_char = 1 + rand() % 255;
+		while (salt_char == '$')
+			salt_char = 1 + rand() % 255;
+		salt.salt[i] = salt_char;
+	}
+
+	// 1st digest: Support buffer_len<=51
+	SHA256_INIT_STATE(sha256_state);
+	memcpy(buffer + buffer_len, cleartext, key_len); buffer_len += key_len;
+	memcpy(buffer + buffer_len, salt.salt, salt.saltlen); buffer_len += salt.saltlen;
+	memcpy(buffer + buffer_len, cleartext, key_len); buffer_len += key_len;
+	SHA256_END_CTX(sha256_state);
+
+	// 2nd digest: Support buffer_len<=37
+	SHA256_INIT_STATE(alt_state);
+	memcpy(buffer + buffer_len, cleartext, key_len); buffer_len += key_len;
+	memcpy(buffer + buffer_len, salt.salt, salt.saltlen); buffer_len += salt.saltlen;
+	memcpy(buffer + buffer_len, sha256_state, key_len); buffer_len += key_len;
+	for (uint32_t j = key_len; j > 0; j >>= 1)
+	{
+		if (j & 1)
+		{
+			memcpy(buffer + buffer_len, sha256_state, 32);
+			buffer_len += 32;
+		}
+		else
+		{
+			memcpy(buffer + buffer_len, cleartext, key_len);
+			buffer_len += key_len;
+		}
+		if (buffer_len >= 64)
+		{
+			swap_endianness_array((uint32_t*)buffer, 16);
+			sha256_process_block(alt_state, (uint32_t*)buffer);
+			buffer_len -= 64;
+			num_blocks++;
+			memcpy(buffer, buffer + 64, buffer_len);
+		}
+	}
+	SHA256_END_CTX(alt_state);
+
+	// Start computation of P byte sequence.
+	SHA256_INIT_STATE(sha256_state);
+	for (uint32_t i = 0; i < key_len; i++)
+	{
+		memcpy(buffer + buffer_len, cleartext, key_len);
+		buffer_len += key_len;
+		if (buffer_len >= 64)
+		{
+			swap_endianness_array((uint32_t*)buffer, 16);
+			sha256_process_block(sha256_state, (uint32_t*)buffer);
+			buffer_len -= 64;
+			num_blocks++;
+			memcpy(buffer, buffer + 64, buffer_len);
+		}
+	}
+	SHA256_END_CTX(sha256_state);
+	char p_bytes[32];
+	memcpy(p_bytes, sha256_state, key_len);
+	// Start computation of S byte sequence.
+	SHA256_INIT_STATE(sha256_state);
+	for (uint32_t i = 0; i < (16u + ((unsigned char*)alt_state)[0]); i++)
+	{
+		memcpy(buffer + buffer_len, salt.salt, salt.saltlen);
+		buffer_len += salt.saltlen;
+		if (buffer_len >= 64)
+		{
+			swap_endianness_array((uint32_t*)buffer, 16);
+			sha256_process_block(sha256_state, (uint32_t*)buffer);
+			buffer_len -= 64;
+			num_blocks++;
+			memcpy(buffer, buffer + 64, buffer_len);
+		}
+	}
+	SHA256_END_CTX(sha256_state);
+	char s_bytes[16];
+	memcpy(s_bytes, sha256_state, salt.saltlen);
+
+	// Big cycle: Support buffer_len<=35
+	for (uint32_t i = 0; i < salt.rounds; i++)
+	{
+		SHA256_INIT_STATE(sha256_state);
+
+		if (i & 1)
+		{
+			memcpy(buffer + buffer_len, p_bytes, key_len); buffer_len += key_len;
+		}
+		else
+		{
+			memcpy(buffer + buffer_len, alt_state, 32); buffer_len += 32;
+		}
+		if (i % 3)
+		{
+			memcpy(buffer + buffer_len, s_bytes, salt.saltlen); buffer_len += salt.saltlen;
+		}
+		if (i % 7)
+		{
+			memcpy(buffer + buffer_len, p_bytes, key_len); buffer_len += key_len;
+		}
+		if (i & 1)
+		{
+			memcpy(buffer + buffer_len, alt_state, 32); buffer_len += 32;
+		}
+		else
+		{
+			memcpy(buffer + buffer_len, p_bytes, key_len); buffer_len += key_len;
+		}
+
+		SHA256_END_CTX(sha256_state);
+		memcpy(alt_state, sha256_state, 32);
+	}
+
+	// Export hash
+	sprintf(hash, "$5$rounds=%i$%.*s$", salt.rounds, salt.saltlen, salt.salt);
+	char* pos = hash + strlen(hash);
+	unsigned char* out = (unsigned char*)sha256_state;
+	uint32_t value;
+
+	TO_BASE64(0, 10, 20);
+	TO_BASE64(21, 1, 11);
+	TO_BASE64(12, 22, 2);
+	TO_BASE64(3, 13, 23);
+	TO_BASE64(24, 4, 14);
+	TO_BASE64(15, 25, 5);
+	TO_BASE64(6, 16, 26);
+	TO_BASE64(27, 7, 17);
+	TO_BASE64(18, 28, 8);
+	TO_BASE64(9, 19, 29);
+	//TO_BASE64(-, 31, 30);
+	pos[0] = itoa64[out[30] & 63];
+	pos[1] = itoa64[((out[30] >> 6) | (out[31] << 2)) & 63];
+	pos[2] = itoa64[out[31] >> 4];
+	pos[3] = 0;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// WPA
+//////////////////////////////////////////////////////////////////////////////////////////
+typedef struct
+{
+	char          essid[36];
+	unsigned char mac1[6];
+	unsigned char mac2[6];
+	unsigned char nonce1[32];
+	unsigned char nonce2[32];
+	unsigned char eapol[256];
+	int           eapol_size;
+	int           keyver;
+	unsigned char keymic[16];
+} hccap_t;
+
+typedef struct
+{
+	uint32_t keymic[4];
+	unsigned char prf_buffer[128];
+	unsigned char eapol[256 + 64];
+	uint32_t  eapol_blocks;
+	int           keyver;
+} hccap_bin;
+
+extern uint32_t max_lenght;
+void wpa_body_c_code(uint32_t* nt_buffer, uint32_t* essid_block, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W);
+void wpa_postprocess_c_code(hccap_bin* salt, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W);
+void convert_utf8_2_coalesc(const unsigned char* key, uint32_t* nt_buffer, uint32_t max_number, uint32_t len);
+
+PRIVATE void convert2wpa_salt(hccap_t hccap, hccap_bin* salt)
+{
+	// Preproccess salt
+	salt->keyver = hccap.keyver;
+	// eapol
+	salt->eapol_blocks = 1 + (hccap.eapol_size + 8) / 64;
+	memcpy(salt->eapol, hccap.eapol, hccap.eapol_size);
+	salt->eapol[hccap.eapol_size] = 0x80;
+	memset(salt->eapol + hccap.eapol_size + 1, 0, sizeof(salt->eapol) - hccap.eapol_size - 1);
+	uint32_t* eapol_ptr = ((uint32_t*)salt->eapol);
+	if (hccap.keyver != 1)
+		for (uint32_t i = 0; i < (sizeof(salt->eapol) / 4 - 2); i++)
+		{
+			SWAP_ENDIANNESS(eapol_ptr[i], eapol_ptr[i]);
+		}
+	eapol_ptr[16 * (salt->eapol_blocks - 1) + ((hccap.keyver == 1) ? 14 : 15)] = (64 + hccap.eapol_size) << 3;
+
+	// prf_512 preprocess----------------------------------------------------
+	memcpy(salt->prf_buffer, "Pairwise key expansion", 23);
+
+	//insert_mac
+	int k = memcmp(hccap.mac1, hccap.mac2, 6);
+	if (k > 0) {
+		memcpy(salt->prf_buffer + 23, hccap.mac2, 6);
+		memcpy(salt->prf_buffer + 6 + 23, hccap.mac1, 6);
+	}
+	else {
+		memcpy(salt->prf_buffer + 23, hccap.mac1, 6);
+		memcpy(salt->prf_buffer + 6 + 23, hccap.mac2, 6);
+	}
+	//insert_nonce
+	k = memcmp(hccap.nonce1, hccap.nonce2, 32);
+	if (k > 0) {
+		memcpy(salt->prf_buffer + 12 + 23, hccap.nonce2, 32);
+		memcpy(salt->prf_buffer + 32 + 12 + 23, hccap.nonce1, 32);
+	}
+	else {
+		memcpy(salt->prf_buffer + 12 + 23, hccap.nonce1, 32);
+		memcpy(salt->prf_buffer + 32 + 12 + 23, hccap.nonce2, 32);
+	}
+	salt->prf_buffer[99] = 0;
+	salt->prf_buffer[100] = 0x80;
+	memset(salt->prf_buffer + 101, 0, sizeof(salt->prf_buffer) - 4 - 101);
+
+	uint32_t* prf_buffer_ptr = ((uint32_t*)salt->prf_buffer);
+	prf_buffer_ptr[16 + 15] = (64 + 100) << 3;
+
+	for (uint32_t i = 0; i < 104 / 4; i++)
+	{
+		SWAP_ENDIANNESS(prf_buffer_ptr[i], prf_buffer_ptr[i]);
+	}
+	//------------------------------------------------------------------------------
+}
+
+PUBLIC void hash_wpa(const unsigned char* cleartext, unsigned char* hash)
+{
+	unsigned char username[32];
+	generate_random_user(username);
+
+	uint32_t crypt_result[10], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
+	uint32_t nt_buffer[17 * 64];
+	uint32_t len = (uint32_t)strlen((char*)cleartext);
+
+	// nt_buffer
+	max_lenght = 63;
+	memset(nt_buffer, 0, sizeof(nt_buffer));
+	convert_utf8_2_coalesc(cleartext, nt_buffer, 64, len);
+	uint32_t _0x80_index = len / 4 * 64;
+	((unsigned char*)nt_buffer)[_0x80_index * 4 + (len & 3)] = 0;
+	nt_buffer[16 * 64] = len << 3;
+	len = (len + 3) / 4;
+	for (uint32_t j = 0; j < len; j++)
+	{
+		SWAP_ENDIANNESS(nt_buffer[j * 64], nt_buffer[j * 64]);
+	}
+
+	// Salt
+	hccap_t wpa_data;
+	hccap_bin salt;
+	strcpy(wpa_data.essid, (char*)username);
+	unsigned char* r_data = ((unsigned char*)&wpa_data) + 36;
+	for (uint32_t i = 0; i < (256 + 32 + 32 + 6 + 6); i++)
+		r_data[i] = rand() & 0xff;
+	wpa_data.eapol_size = rand() & 0x7f;
+	wpa_data.keyver = (rand() & 1) + 1;
+
+	convert2wpa_salt(wpa_data, &salt);
+	// Convert essid_block
+	uint32_t essid_block[16];
+	uint32_t essid_len = (uint32_t)strlen(wpa_data.essid);
+	strcpy((char*)essid_block, wpa_data.essid);
+	memcpy(((char*)essid_block) + essid_len, "\x0\x0\x0\x1\x80", 5);
+	memset(((char*)essid_block) + essid_len + 5, 0, 60 - (essid_len + 5));
+	essid_block[15] = (64 + essid_len + 4) << 3;
+	for (uint32_t k = 0; k < 14; k++)
+	{
+		SWAP_ENDIANNESS(essid_block[k], essid_block[k]);
+	}
+
+	// Execute the format
+	wpa_body_c_code(nt_buffer, essid_block, crypt_result, sha1_hash, opad_state, ipad_state, W);
+	wpa_postprocess_c_code(&salt, crypt_result, sha1_hash, opad_state, ipad_state, W);
+
+	if (wpa_data.keyver != 1)
+		for (uint32_t i = 0; i < 4; i++)
+		{
+			SWAP_ENDIANNESS(crypt_result[i], crypt_result[i]);
+		}
+
+	memcpy(wpa_data.keymic, crypt_result, 16);
+
+	// Write hash
+	sprintf((char*)hash, "%s#", username);
+	unsigned char* base64 = hash + strlen((char*)hash);
+	for (int i = 0; i < 118; i++)
+	{
+		base64[0] = itoa64[(r_data[0] >> 2)];
+		base64[1] = itoa64[((r_data[0] & 0x3) << 4) | (r_data[1] >> 4)];
+		base64[2] = itoa64[((r_data[1] & 0xf) << 2) | (r_data[2] >> 6)];
+		base64[3] = itoa64[r_data[2] & 0x3f];
+
+		r_data += 3;
+		base64 += 4;
+	}
+	base64[0] = itoa64[(r_data[0] >> 2)];
+	base64[1] = itoa64[((r_data[0] & 0x3) << 4) | (r_data[1] >> 4)];
+	base64[2] = itoa64[((r_data[1] & 0xf) << 2)];
+	base64[3] = 0;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// Bcrypt
+//////////////////////////////////////////////////////////////////////////////////////////
+// Binary salt type, also keeps the number of rounds and hash sub-type.
+typedef struct {
+	uint32_t salt[4];
+	uint32_t rounds;
+	uint32_t sign_extension_bug;
+} BF_salt;
+
+typedef struct {
+	uint32_t S[4][0x100];
+	uint32_t P[18];
+} BF_ctx;
+
+extern BF_ctx BF_init_state;
+void BF_decode(uint32_t* dst, const unsigned char* src, int size);
+
+// The string is "OrpheanBeholderScryDoubt" on big-endian.
+PRIVATE uint32_t BF_magic_w[6] = { 0x4F727068, 0x65616E42, 0x65686F6C, 0x64657253, 0x63727944, 0x6F756274 };
+
+PRIVATE unsigned char BF_itoa64[64 + 1] =
+"./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+PRIVATE unsigned char BF_atoi64[0x60] = {
+	64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 0, 1,
+	54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 64, 64, 64, 64, 64,
+	64, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+	17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 64, 64, 64, 64, 64,
+	64, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,
+	43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 64, 64, 64, 64, 64
+};
+PRIVATE void BF_encode(unsigned char* dst, const uint32_t* src, int size)
+{
+	const unsigned char* sptr = (const unsigned char*)src;
+	const unsigned char* end = sptr + size;
+	unsigned char* dptr = (unsigned char*)dst;
+	uint32_t c1, c2;
+
+	do {
+		c1 = *sptr++;
+		*dptr++ = BF_itoa64[c1 >> 2];
+		c1 = (c1 & 0x03) << 4;
+		if (sptr >= end) {
+			*dptr++ = BF_itoa64[c1];
+			break;
+		}
+
+		c2 = *sptr++;
+		c1 |= c2 >> 4;
+		*dptr++ = BF_itoa64[c1];
+		c1 = (c2 & 0x0f) << 2;
+		if (sptr >= end) {
+			*dptr++ = BF_itoa64[c1];
+			break;
+		}
+
+		c2 = *sptr++;
+		c1 |= c2 >> 6;
+		*dptr++ = BF_itoa64[c1];
+		*dptr++ = BF_itoa64[c2 & 0x3f];
+	} while (sptr < end);
+}
+
+#define BYTE_0(word)	((word & 0xFF))
+#define BYTE_1(word)	((word >> 8 ) & 0xFF)
+#define BYTE_2(word)	((word >> 16) & 0xFF)
+#define BYTE_3(word)	((word >> 24))
+
+#define BF_ENCRYPT \
+	L ^= subkeys[0 ]; \
+	R ^= subkeys[1 ] ^ (((sboxs[BYTE_3(L)] + sboxs[BYTE_2(L)+256]) ^ sboxs[BYTE_1(L)+512]) + sboxs[BYTE_0(L)+768]);\
+	L ^= subkeys[2 ] ^ (((sboxs[BYTE_3(R)] + sboxs[BYTE_2(R)+256]) ^ sboxs[BYTE_1(R)+512]) + sboxs[BYTE_0(R)+768]);\
+	R ^= subkeys[3 ] ^ (((sboxs[BYTE_3(L)] + sboxs[BYTE_2(L)+256]) ^ sboxs[BYTE_1(L)+512]) + sboxs[BYTE_0(L)+768]);\
+	L ^= subkeys[4 ] ^ (((sboxs[BYTE_3(R)] + sboxs[BYTE_2(R)+256]) ^ sboxs[BYTE_1(R)+512]) + sboxs[BYTE_0(R)+768]);\
+	R ^= subkeys[5 ] ^ (((sboxs[BYTE_3(L)] + sboxs[BYTE_2(L)+256]) ^ sboxs[BYTE_1(L)+512]) + sboxs[BYTE_0(L)+768]);\
+	L ^= subkeys[6 ] ^ (((sboxs[BYTE_3(R)] + sboxs[BYTE_2(R)+256]) ^ sboxs[BYTE_1(R)+512]) + sboxs[BYTE_0(R)+768]);\
+	R ^= subkeys[7 ] ^ (((sboxs[BYTE_3(L)] + sboxs[BYTE_2(L)+256]) ^ sboxs[BYTE_1(L)+512]) + sboxs[BYTE_0(L)+768]);\
+	L ^= subkeys[8 ] ^ (((sboxs[BYTE_3(R)] + sboxs[BYTE_2(R)+256]) ^ sboxs[BYTE_1(R)+512]) + sboxs[BYTE_0(R)+768]);\
+	R ^= subkeys[9 ] ^ (((sboxs[BYTE_3(L)] + sboxs[BYTE_2(L)+256]) ^ sboxs[BYTE_1(L)+512]) + sboxs[BYTE_0(L)+768]);\
+	L ^= subkeys[10] ^ (((sboxs[BYTE_3(R)] + sboxs[BYTE_2(R)+256]) ^ sboxs[BYTE_1(R)+512]) + sboxs[BYTE_0(R)+768]);\
+	R ^= subkeys[11] ^ (((sboxs[BYTE_3(L)] + sboxs[BYTE_2(L)+256]) ^ sboxs[BYTE_1(L)+512]) + sboxs[BYTE_0(L)+768]);\
+	L ^= subkeys[12] ^ (((sboxs[BYTE_3(R)] + sboxs[BYTE_2(R)+256]) ^ sboxs[BYTE_1(R)+512]) + sboxs[BYTE_0(R)+768]);\
+	R ^= subkeys[13] ^ (((sboxs[BYTE_3(L)] + sboxs[BYTE_2(L)+256]) ^ sboxs[BYTE_1(L)+512]) + sboxs[BYTE_0(L)+768]);\
+	L ^= subkeys[14] ^ (((sboxs[BYTE_3(R)] + sboxs[BYTE_2(R)+256]) ^ sboxs[BYTE_1(R)+512]) + sboxs[BYTE_0(R)+768]);\
+	R ^= subkeys[15] ^ (((sboxs[BYTE_3(L)] + sboxs[BYTE_2(L)+256]) ^ sboxs[BYTE_1(L)+512]) + sboxs[BYTE_0(L)+768]);\
+	L ^= subkeys[16] ^ (((sboxs[BYTE_3(R)] + sboxs[BYTE_2(R)+256]) ^ sboxs[BYTE_1(R)+512]) + sboxs[BYTE_0(R)+768]);\
+	tmp_swap = R;\
+	R = L;\
+	L = tmp_swap ^ subkeys[17];
+
+PRIVATE void blowfish_body_c_code(uint32_t* subkeys, uint32_t* sboxs)
+{
+	uint32_t L = 0, R = 0, tmp_swap;
+	for (int i = 0; i < 18; i += 2)
+	{
+		BF_ENCRYPT;
+		subkeys[i] = L;
+		subkeys[i + 1] = R;
+	}
+	for (int i = 0; i < 256 * 4; i += 2)
+	{
+		BF_ENCRYPT;
+		sboxs[i] = L;
+		sboxs[i + 1] = R;
+	}
+}
+PRIVATE void bf_key(const char* key, BF_salt* salt, uint32_t* crypt_result)
+{
+	uint32_t* sboxs = (uint32_t*)malloc((4 * 256 + 18 + 18) * sizeof(uint32_t));
+
+	uint32_t* subkeys = sboxs + 4 * 256;
+	uint32_t* expanded_key = subkeys + 18;
+
+	uint32_t L, R, tmp_swap;
+
+	//blowfish_set_key(buffer, subkeys, expanded_key, NT_NUM_KEYS, salt->sign_extension_bug, NT_NUM_KEYS);
+	const char* ptr = key;
+	for (int i = 0; i < 18; i++)
+	{
+		uint32_t tmp = 0;
+		for (int j = 0; j < 4; j++)
+		{
+			tmp <<= 8;
+			if (salt->sign_extension_bug)
+				tmp |= (int)(signed char)*ptr;
+			else
+				tmp |= (unsigned char)*ptr;
+
+			if (!*ptr) ptr = key; else ptr++;
+		}
+
+		expanded_key[i] = tmp;
+		subkeys[i] = BF_init_state.P[i] ^ tmp;
+	}
+	memcpy(sboxs, BF_init_state.S, sizeof(BF_init_state.S));
+
+	L = R = 0;
+	for (int i = 0; i < 18; i += 2)
+	{
+		L ^= salt->salt[(i & 2)];
+		R ^= salt->salt[(i & 2) + 1];
+		BF_ENCRYPT;
+		subkeys[i] = L;
+		subkeys[i + 1] = R;
+	}
+	for (int i = 0; i < 256 * 4; i += 2)
+	{
+		L ^= salt->salt[(i + 2) & 3];
+		R ^= salt->salt[(i + 3) & 3];
+		BF_ENCRYPT;
+		sboxs[i] = L;
+		sboxs[i + 1] = R;
+	}
+
+	// Expensive key schedule
+	for (uint32_t round = 0; round < salt->rounds; round++)
+	{
+		// Key part
+		for (int i = 0; i < 18; i++)
+			subkeys[i] ^= expanded_key[i];
+
+		blowfish_body_c_code(subkeys, sboxs);
+
+		// Salt part
+		for (int i = 0; i < 18; i++)
+			subkeys[i] ^= salt->salt[i & 3];
+
+		blowfish_body_c_code(subkeys, sboxs);
+	}
+
+	// Final part: Encrypt
+	for (int i = 0; i < 6; i += 2)
+	{
+		L = BF_magic_w[i];
+		R = BF_magic_w[i + 1];
+
+		for (int j = 0; j < 64; j++)
+		{
+			BF_ENCRYPT;
+		}
+
+		crypt_result[i] = L;
+		crypt_result[i + 1] = R;
+	}
+	/* This has to be bug-compatible with the original implementation, so only encode 23 of the 24 bytes. :-) */
+	crypt_result[5] &= 0xFFFFFF00;
+
+	free(sboxs);
+}
+PUBLIC void hash_bcrypt(const char* cleartext, unsigned char* hash)
+{
+	uint32_t crypt_result[6];
+	BF_salt salt;
+	int exponent = 5;
+
+	salt.rounds = 1 << exponent;
+	salt.sign_extension_bug = ((rand() & 3) == 3);
+	for (uint32_t i = 0; i < 4 * 4; i++)
+		((unsigned char*)&salt.salt)[i] = rand() & 0xff;
+
+	bf_key(cleartext, &salt, crypt_result);
+
+	sprintf((char*)hash, "$2%s$%02i$", salt.sign_extension_bug ? "x" : "y", exponent);
+	swap_endianness_array(salt.salt, 6);
+	BF_encode(hash + 7, salt.salt, 16);
+	hash[7 + 22 - 1] = BF_itoa64[(int)BF_atoi64[(int)hash[7 + 22 - 1] - 0x20] & 0x30];
+
+	/* This has to be bug-compatible with the original implementation, so
+	 * only encode 23 of the 24 bytes. :-) */
+	swap_endianness_array(crypt_result, 6);
+	BF_encode(&hash[7 + 22], crypt_result, 23);
+	hash[7 + 22 + 31] = '\0';
+}
+PRIVATE void apply_bcrypt_bug(const char* cleartext, unsigned char* hash, uint32_t* given_salt)
+{
+	uint32_t crypt_result[6];
+	BF_salt salt;
+	int exponent = 5;
+
+	salt.rounds = 1 << exponent;
+	salt.sign_extension_bug = 1;
+	memcpy(salt.salt, given_salt, sizeof(salt.salt));
+
+	bf_key(cleartext, &salt, crypt_result);
+
+	sprintf((char*)hash, "$2%s$%02i$", salt.sign_extension_bug ? "x" : "y", exponent);
+	swap_endianness_array(salt.salt, 6);
+	BF_encode(hash + 7, salt.salt, 16);
+	hash[7 + 22 - 1] = BF_itoa64[(int)BF_atoi64[(int)hash[7 + 22 - 1] - 0x20] & 0x30];
+
+	/* This has to be bug-compatible with the original implementation, so
+	* only encode 23 of the 24 bytes. :-) */
+	swap_endianness_array(crypt_result, 6);
+	BF_encode(&hash[7 + 22], crypt_result, 23);
+	hash[7 + 22 + 31] = '\0';
 }

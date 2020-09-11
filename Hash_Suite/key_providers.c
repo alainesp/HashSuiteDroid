@@ -118,7 +118,7 @@ PRIVATE __forceinline void COPY_GENERATE_KEY_PROTOCOL_NTLM_KEY(uint32_t* nt_buff
 	for(j++; j < 14; j++)						
 		nt_buffer[j*NUM_KEYS+index] = 0;
 }
-PUBLIC void convert_utf8_2_coalesc(unsigned char* key, uint32_t* nt_buffer, uint32_t max_number, uint32_t len)
+PUBLIC void convert_utf8_2_coalesc(const unsigned char* key, uint32_t* nt_buffer, uint32_t max_number, uint32_t len)
 {
 	// Copy key to nt_buffer
 	for (uint32_t j = 0; j < len / 4; j++)
@@ -671,24 +671,26 @@ PRIVATE int charset_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number
 		}
 	}
 	else
-		for (uint32_t i = 0; i < max_number; i++)
+	{
+		uint32_t i = 0;
+		for (i = 0; i < max_number && current_key_lenght1 <= max_lenght; i++)
 		{
 			// Copy key to nt_buffer
 			for (uint32_t j = 0; j < current_key_lenght1 / 4; j++)
 			{
 				uint32_t val = charset[current_key1[4 * j]];
-				val |= ((uint32_t)charset[current_key1[4 * j + 1]]) << 8 ;
+				val |= ((uint32_t)charset[current_key1[4 * j + 1]]) << 8;
 				val |= ((uint32_t)charset[current_key1[4 * j + 2]]) << 16;
 				val |= ((uint32_t)charset[current_key1[4 * j + 3]]) << 24;
 
-				nt_buffer[j*max_number + i] = val;
+				nt_buffer[j * max_number + i] = val;
 			}
 
 			uint32_t val = 0x80 << (8 * (current_key_lenght1 & 3));
-			for (uint32_t k = 0; k < (current_key_lenght1&3); k++)
+			for (uint32_t k = 0; k < (current_key_lenght1 & 3); k++)
 				val |= ((uint32_t)charset[current_key1[4 * (current_key_lenght1 / 4) + k]]) << (8 * k);
 
-			nt_buffer[(current_key_lenght1 / 4)*max_number + i] = val;
+			nt_buffer[(current_key_lenght1 / 4) * max_number + i] = val;
 			nt_buffer[7 * max_number + i] = current_key_lenght1 << 3;
 
 			// Next key
@@ -710,7 +712,10 @@ PRIVATE int charset_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number
 				current_key_lenght1++;
 		}
 
-	return 1;
+		return i;
+	}
+
+	return max_number;
 }
 // count the number of bits set in v
 PRIVATE uint32_t count_set_bits(uint32_t v)
@@ -821,7 +826,7 @@ PRIVATE void fill_keyboard_context()
 	memset(keyboard_context, 0, sizeof(keyboard_context));
 
 	// Rows
-	for(i = 0; i < LENGHT(keyboard_context); i++)
+	for(i = 0; i < LENGTH(keyboard_context); i++)
 	{
 		add_near_key(i, i);        // Key are near same key
 		if(i != 12 && i != 25 && i != 36 && i != 47)
@@ -873,7 +878,7 @@ PRIVATE void keyboard_resume(int pmin_lenght, int pmax_lenght, char* param, cons
 		current_key_lenght = (uint32_t)strlen(resume_arg);
 
 		for(i = 0; i < current_key_lenght; i++)
-			for(j = 0; j < LENGHT(keyboard_context); j++)
+			for(j = 0; j < LENGTH(keyboard_context); j++)
 				if(resume_arg[i] == charset[j])
 				{
 					current_key[i] = j;
@@ -890,7 +895,7 @@ PRIVATE void keyboard_resume(int pmin_lenght, int pmax_lenght, char* param, cons
 	}
 
 	// Fill key-space from pre-calculate table
-	if(max_lenght >= LENGHT(num_key_space_by_lenght))
+	if(max_lenght >= LENGTH(num_key_space_by_lenght))
 		num_key_space = KEY_SPACE_UNKNOW;
 	else
 	{
@@ -912,7 +917,7 @@ PRIVATE __forceinline void NEXT_KEY_KEYBOARD()
 
 		if(index < 0)
 		{
-			if(++current_key[0] == LENGHT(keyboard_context))
+			if(++current_key[0] == LENGTH(keyboard_context))
 			{
 				current_key_lenght++;
 				current_key[0] = 0;
@@ -1091,23 +1096,19 @@ PRIVATE void db_resume(int pmin_lenght, int pmax_lenght, char* param, const char
 }
 PRIVATE int db_gen_ntlm(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
-	int result = 1;
-	uint32_t i;
+	uint32_t i = 0;
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
-	for (i = 0; i < max_number; i++)
+	for (; i < max_number; i++)
 	{
-		const unsigned char* key;
-
 		// All keys generated
 		if (!more_rows || sqlite3_step(select_info) != SQLITE_ROW)
 		{
-			result = i;
 			more_rows = FALSE;
 			break;
 		}
-		key = sqlite3_column_text(select_info, 0);
+		const unsigned char* key = sqlite3_column_text(select_info, 0);
 		current_key_lenght = (uint32_t)strlen(key);
 
 		// Skip short or long keys
@@ -1121,36 +1122,38 @@ PRIVATE int db_gen_ntlm(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 	}
 
 	HS_LEAVE_MUTEX(&key_provider_mutex);
-	return result;
+	return i;
 }
 PRIVATE int db_gen_utf8_lm(unsigned char* keys, uint32_t max_number, int thread_id)
 {
 	uint32_t i = 0;
-	int result = 1;
-	unsigned char key[8];
 
 	memset(keys, 0, max_number*8);
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
-	for(; i < max_number; i++, keys+=8)
+	for(; i < max_number; i++)
 	{
 		// All keys generated
 		if(!more_rows || sqlite3_step(select_info) != SQLITE_ROW)
 		{
-			result = i;
 			more_rows = FALSE;
 			break;
 		}
-		strncpy(key, sqlite3_column_text(select_info, 0), 7);
-		key[7] = 0;
+		const unsigned char* key = sqlite3_column_text(select_info, 0);
 		current_key_lenght = (uint32_t)strlen(key);
 
-		strncpy(keys, _strupr(key), max_lenght);
+		// Skip short or long keys
+		if (current_key_lenght < min_lenght || current_key_lenght > max_lenght)
+		{
+			i--;
+			continue;
+		}
+		_strupr(strcpy(keys + i * 8, key));
 	}
 
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
-	return result;
+	return i;
 }
 PRIVATE int db_gen_utf8(unsigned char* keys, uint32_t max_number, int thread_id)
 {
@@ -1158,7 +1161,7 @@ PRIVATE int db_gen_utf8(unsigned char* keys, uint32_t max_number, int thread_id)
 
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
-	for(; i < max_number; i++, keys+=MAX_KEY_LENGHT_SMALL)
+	for(; i < max_number; i++)
 	{
 		// All keys generated
 		if(!more_rows || sqlite3_step(select_info) != SQLITE_ROW)
@@ -1166,8 +1169,16 @@ PRIVATE int db_gen_utf8(unsigned char* keys, uint32_t max_number, int thread_id)
 			more_rows = FALSE;
 			break;
 		}
-		strcpy(keys, sqlite3_column_text(select_info, 0));
-		keys[MAX_KEY_LENGHT_SMALL-1] = 0;
+		const unsigned char* key = sqlite3_column_text(select_info, 0);
+		current_key_lenght = (uint32_t)strlen(key);
+
+		// Skip short or long keys
+		if (current_key_lenght < min_lenght || current_key_lenght > max_lenght)
+		{
+			i--;
+			continue;
+		}
+		strcpy(keys + i * MAX_KEY_LENGHT_SMALL, key);
 	}
 
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
@@ -1187,9 +1198,17 @@ PRIVATE int db_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number, int
 			more_rows = FALSE;
 			break;
 		}
-		strcpy(current_key, sqlite3_column_text(select_info, 0));
+		const unsigned char* key = sqlite3_column_text(select_info, 0);
+		current_key_lenght = (uint32_t)strlen(key);
+
+		// Skip short or long keys
+		if (current_key_lenght < min_lenght || current_key_lenght > max_lenght)
+		{
+			i--;
+			continue;
+		}
 		// Copy key to nt_buffer
-		convert_utf8_2_coalesc(current_key, nt_buffer+i, max_number, (uint32_t)strlen(current_key));
+		convert_utf8_2_coalesc(key, nt_buffer+i, max_number, current_key_lenght);
 	}
 
 	HS_LEAVE_MUTEX(&key_provider_mutex);
@@ -1648,7 +1667,7 @@ PRIVATE int fast_lm_opencl_generate(uint32_t* lm_param, uint32_t max_number, int
 
 PUBLIC void introduce_fast_lm(AttackData** batch, int* num_attack_in_batch)
 {
-	int i, lenght, num_keys_not_try;
+	int i, num_keys_not_try;
 	AttackData data = (*batch)[0];
 
 	if (current_cpu.capabilites[CPU_CAP_V128] && data.format_index == LM_INDEX && data.provider_index == CHARSET_INDEX && data.max_lenght >= key_providers[FAST_LM_INDEX].min_size)
@@ -1688,7 +1707,7 @@ PUBLIC void introduce_fast_lm(AttackData** batch, int* num_attack_in_batch)
 		i++;
 		// Charset Rest
 		if(num_keys_not_try)
-			for(lenght = __max(data.min_lenght, key_providers[FAST_LM_INDEX].min_size); lenght <= data.max_lenght; lenght++, i++)
+			for(uint32_t lenght = __max(data.min_lenght, key_providers[FAST_LM_INDEX].min_size); lenght <= data.max_lenght; lenght++, i++)
 			{
 				(*batch)[i].min_lenght = lenght;
 				(*batch)[i].max_lenght = lenght;
@@ -1769,7 +1788,7 @@ PUBLIC KeyProvider key_providers[] = {
 		do_nothing_save_resume_arg, lm2ntlm_resume, lm2ntlm_finish, do_nothing_description, 0, MAX_KEY_LENGHT_SMALL, TRUE, FALSE, 0
 	},
 	//////////////////////////////////////////////////////////////////////////////////////////////
-	// Down are the 'private' key_providers: This key_providers do not show to user directly
+	// Down are the 'private' key_providers: These key_providers don't show to the user directly
 	//////////////////////////////////////////////////////////////////////////////////////////////
 	{
 		"FastLM" , "Very fast generation of LM keys.", 7, 
@@ -1783,7 +1802,7 @@ PUBLIC KeyProvider key_providers[] = {
 	}
 	// TODO: Mask or KnowForce, characters Added, Subset, From STDIN, Distributed, ...
 };
-PUBLIC int num_key_providers = LENGHT(key_providers);
+PUBLIC int num_key_providers = LENGTH(key_providers);
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2417,5 +2436,5 @@ PUBLIC oclKernel2Common kernels2common[] = {
 	{PROTOCOL_PHRASES_OPENCL		, ocl_gen_kernel_phrases_2_common, ocl_phrases_setup_proccessed_keys_params , ocl_phrases_process_buffer, ocl_phrases_get_key, ocl_phrases_get_buffer_size},
 	{PROTOCOL_UTF8					, ocl_gen_kernel_UTF8_2_common	 , ocl_utf8_setup_proccessed_keys_params	, ocl_utf8_process_buffer	, ocl_utf8_get_key	 , ocl_utf8_get_buffer_size}
 };
-PUBLIC uint32_t num_kernels2common = LENGHT(kernels2common);
+PUBLIC uint32_t num_kernels2common = LENGTH(kernels2common);
 #endif

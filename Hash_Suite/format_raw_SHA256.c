@@ -611,6 +611,20 @@ PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uin
 	ocl_charset_load_buffer_be(source, key_lenght, &vector_size, div_param, nt_buffer);
 
 	sprintf(source + strlen(source), "uint A,B,C,D,E,F,G,H,W0,W1,W2,W3,W4,W5,W6,W7,W8,W9,W10,W11,W12,W13,W14,W15;");
+	// Generate less repeated keys
+	uint64_t max_work_item_index = 1;
+	int is_max_work_item_index_needed = TRUE;
+	for (cl_uint i = 1; i < key_lenght; i++)
+	{
+		max_work_item_index *= num_char_in_charset;
+		if (max_work_item_index > UINT32_MAX)
+		{
+			is_max_work_item_index_needed = FALSE;
+			break;
+		}
+	}
+	if (is_max_work_item_index_needed)// Only 'CALCULATED' work-items
+		sprintf(source + strlen(source), "if(get_global_id(0)>=%uu) return;", (uint32_t)max_work_item_index);
 
 	if (is_charset_consecutive(charset))
 		sprintf(source + strlen(source), "nt_buffer0+=%uu;", is_charset_consecutive(charset) << 24u);

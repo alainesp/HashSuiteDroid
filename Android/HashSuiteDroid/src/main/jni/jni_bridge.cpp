@@ -26,17 +26,19 @@ PRIVATE jclass cls = NULL;
 PRIVATE jmethodID mid_finish_attack = NULL;
 PRIVATE jmethodID mid_finish_batch = NULL;
 PRIVATE jmethodID mid_attack_begin = NULL;
+PRIVATE jmethodID mid_send_message = NULL;
 PRIVATE int benchmark_init_complete = FALSE;
 extern "C" void flush_fam();
 PRIVATE void receive_message(int message)
 {
+    JNIEnv *env = NULL;
+
 	switch(message)
 	{
 	case MESSAGE_ATTACK_INIT_COMPLETE:
 		benchmark_init_complete = TRUE;
 		if(!is_benchmark)
 		{
-			JNIEnv *env = NULL;
 			cached_jvm->AttachCurrentThread(&env, NULL);
 			env->CallStaticVoidMethod(cls, mid_attack_begin);
 			cached_jvm->DetachCurrentThread();
@@ -48,7 +50,6 @@ PRIVATE void receive_message(int message)
             flush_fam();
             save_num_hashes_cache();
 
-			JNIEnv *env = NULL;
 			cached_jvm->AttachCurrentThread(&env, NULL);
 			env->CallStaticVoidMethod(cls, mid_finish_batch);
 			env->DeleteGlobalRef(cls);
@@ -65,12 +66,27 @@ PRIVATE void receive_message(int message)
 	case MESSAGE_FINISH_ATTACK:
 		if(!is_benchmark)
 		{
-			JNIEnv *env = NULL;
 			cached_jvm->AttachCurrentThread(&env, NULL);
 			env->CallStaticVoidMethod(cls, mid_finish_attack);
 			cached_jvm->DetachCurrentThread();
 		}
 		break;
+
+    case MESSAGE_TESTING_INIT_COMPLETE:
+        cached_jvm->AttachCurrentThread(&env, NULL);
+        env->CallStaticVoidMethod(cls, mid_send_message, message);
+        cached_jvm->DetachCurrentThread();
+        break;
+    case MESSAGE_TESTING_SUCCEED:
+        cached_jvm->AttachCurrentThread(&env, NULL);
+        env->CallStaticVoidMethod(cls, mid_send_message, message);
+        cached_jvm->DetachCurrentThread();
+        break;
+    case MESSAGE_TESTING_FAIL:
+        cached_jvm->AttachCurrentThread(&env, NULL);
+        env->CallStaticVoidMethod(cls, mid_send_message, message);
+        cached_jvm->DetachCurrentThread();
+        break;
 	}
 }
 
@@ -649,6 +665,7 @@ PRIVATE void start_attack_cache(JNIEnv* env, int num_threads, jint gpus_used)
 	mid_finish_attack = env->GetStaticMethodID(cls, "ChangeCurrentAttackCallBack", "()V");
 	mid_finish_batch = env->GetStaticMethodID(cls, "FinishBatchCallBack", "()V");
 	mid_attack_begin = env->GetStaticMethodID(cls, "AttackBeginCallBack", "()V");
+    mid_send_message = env->GetStaticMethodID(cls, "AttackReceiveMessage", "(I)V");
 }
 #include "../../../../../Hash_Suite/gui_utils.h"
 JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_StartAttack(JNIEnv* env, jclass, jint format_index, jint provider_index, jint num_threads, jint min_size, jint max_size, jstring param, jint use_rules, jint rules_on, jint gpus_used)
@@ -663,7 +680,7 @@ JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_StartAttack(JNIEnv*
 			rules[i].checked = (rules_on >> i) & 1;
 #else
 	if(use_rules)
-		for (int i = 0;  i < num_rules; ++i)
+		for (uint32_t i = 0;  i < num_rules; ++i)
 			rules[i].checked = (rules_on >> i) & 1;
 #endif
 
@@ -737,22 +754,23 @@ JNIEXPORT jint JNICALL Java_com_hashsuite_droid_MainActivity_GetRulesGPUStatus(J
 	int current_compiled_at = 0;
 	int in_use_devices = 0;
 
-	if(ocl_crypt_ptr_params)
-		for (int i = 0;  i < num_gpu_devices; ++i)
-			if(ocl_crypt_ptr_params[i])
-			{
-				in_use_devices++;
-				for (int j = 0; j <= 27; ++j)
-				{
-					if(ocl_crypt_ptr_params[i]->rules.binaries_size[j])
-					{
-						kernel_sizes += (int)(ocl_crypt_ptr_params[i]->rules.binaries_size[j]/1024);
-						current_compiled_at++;
-					}
-					else
-						break;
-				}
-			}
+	// NOTE: Not supported with compile option "OCL_RULES_ALL_IN_GPU" active
+//	if(ocl_crypt_ptr_params)
+//		for (int i = 0;  i < num_gpu_devices; ++i)
+//			if(ocl_crypt_ptr_params[i])
+//			{
+//				in_use_devices++;
+//				for (int j = 0; j <= 27; ++j)
+//				{
+//					if(ocl_crypt_ptr_params[i]->rules.binaries_size[j])
+//					{
+//						kernel_sizes += (int)(ocl_crypt_ptr_params[i]->rules.binaries_size[j]/1024);
+//						current_compiled_at++;
+//					}
+//					else
+//						break;
+//				}
+//			}
 
 	int percent = in_use_devices ? (current_compiled_at*100/(in_use_devices*28)) : 0;
 	return kernel_sizes + (percent<<24);

@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2015,2020 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "sqlite3.h"
@@ -23,7 +23,7 @@
 	PRIVATE sqlite3_stmt* insert_account;
 #endif
 PUBLIC sqlite3_stmt* insert_account_lm;
-PRIVATE sqlite3_stmt* insert_tag_account;
+PUBLIC sqlite3_stmt* insert_tag_account;
 PRIVATE sqlite3_stmt* insert_hash;
 PUBLIC sqlite3_stmt* select_hash1;
 
@@ -59,14 +59,14 @@ PUBLIC sqlite3_int64 insert_when_necesary_tag(const char* tag)
 // Insert a new account and tag it
 PRIVATE sqlite3_int64 insert_tagged_account(const char* user_name, sqlite3_int64 hash_id, ImportResult* stat, int format_index)
 {
-	sqlite3_int64 account_id;
+	sqlite3_int64 account_id = -1;
 
 	// Insert account
 	sqlite3_reset(insert_account);
 	sqlite3_bind_text (insert_account, 1, user_name, -1, SQLITE_STATIC);
 	sqlite3_bind_int64(insert_account, 2, hash_id);
 
-	if(sqlite3_step(insert_account) == SQLITE_DONE)// account inserted
+	if (sqlite3_step(insert_account) == SQLITE_DONE)// account inserted
 	{
 		account_id = sqlite3_last_insert_rowid(db);
 		stat->num_users_added++;
@@ -213,7 +213,7 @@ PRIVATE void import_file_general(ImportParam* param)
 
 			pos_in_file += strlen(buffer);
 			strcpy(line, buffer);
-			my_strtok_s(buffer, tokens, LENGHT(tokens));
+			my_strtok_s(buffer, tokens, LENGTH(tokens));
 
 			// Check if format support this line
 			memset(is_valid_line, 0, sizeof(is_valid_line));
@@ -290,7 +290,7 @@ PRIVATE void import_file_general(ImportParam* param)
 ////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_IMPORT_FROM_SYSTEM
 // Exit codes
-#define EXIT_NORMAL				0
+#define EXIT_SUCCESS			0
 #define EXIT_BAD_PARAM			1
 #define EXIT_NO_OPEN_LSASS		2
 #define EXIT_NO_ALLOC			3
@@ -545,7 +545,7 @@ PRIVATE DWORD named_pipe_thread(char* pipe_name, char* machine_name, ImportResul
 	END_TRANSACTION;
 	CloseHandle(hFile);
 
-	return EXIT_NORMAL;
+	return EXIT_SUCCESS;
 }
 PRIVATE void import_hash_dump(ImportParam* param, BOOL is_local)
 {
@@ -608,7 +608,7 @@ PRIVATE void import_hash_dump(ImportParam* param, BOOL is_local)
 		sprintf(buffer, "\\\\%s\\pipe\\%s", param->tag, hex_public_key);
 	exit_code = named_pipe_thread(buffer, param->tag, &param->result);
 
-	if(exit_code != EXIT_NORMAL)
+	if(exit_code != EXIT_SUCCESS)
 	{
 		sprintf(buffer, "Cause: ");
 		switch(exit_code)
@@ -629,7 +629,7 @@ PRIVATE void import_hash_dump(ImportParam* param, BOOL is_local)
 			strcat(buffer, "Start thread in LSASS process fails.");
 			break;
 		case EXIT_NO_DEBUG:
-			strcat(buffer, "Can not enable the debug privilege (do you have administrator privilege?).");
+			strcat(buffer, "Cannot enable the debug privilege (do you have administrator privilege?).");
 			break;
 		case EXIT_NO_SCMANAGER:
 			strcat(buffer, "Access to Service Manager fails.");
@@ -641,26 +641,27 @@ PRIVATE void import_hash_dump(ImportParam* param, BOOL is_local)
 			strcat(buffer, "Start Hash Dump service fails.");
 			break;
 		case EXIT_NO_RANDOM:
-			strcat(buffer, "Can not access random generator.");
+			strcat(buffer, "Cannot access random generator.");
 			break;
 		case EXIT_NO_SHARE_FOUND:
-			strcat(buffer, "Can not find a writable share on the remote machine.");
+			strcat(buffer, "Cannot find a writable share on the remote machine.");
 			break;
 		case EXIT_NO_PIPE:
-			strcat(buffer, "Can not connect to pipe to read data.");
+			strcat(buffer, "Cannot connect to pipe to read data.");
 			break;
 		case EXIT_BAD_PATH:
-			strcat(buffer, "Remote machine can not be found.");
+			strcat(buffer, "Remote machine cannot be found.");
 			break;
 		default:
 			strcat(buffer, "Unknown.");
 			break;
 		}
-		MessageBox(NULL, buffer, "Import accounts failed", MB_OK|MB_ICONERROR);
+		MessageBox(param->hWnd, buffer, "Importing accounts from remote machine failed", MB_OK|MB_ICONERROR);
 	}
 
 	CloseHandle(shell_info.hProcess);
-	update_account_status(param->tag);
+	if (exit_code == EXIT_SUCCESS && (param->result.formats_stat[LM_INDEX].num_hash_added || param->result.formats_stat[NTLM_INDEX].num_hash_added))
+		update_account_status(param->tag);
 exit:
 	param->completition = 100;
 	param->isEnded = TRUE;
@@ -670,9 +671,14 @@ PRIVATE void import_hashes_from_localhost(ImportParam* param)
 {
 	import_hash_dump(param, TRUE);
 }
+void import_from_dc(ImportParam* param);
 PRIVATE void import_hashes_from_remote(ImportParam* param)
 {
-	import_hash_dump(param, FALSE);
+	// If there is a server parameter
+	if(param->tag[0])
+		import_hash_dump(param, FALSE);
+	else// Import from Domain Controller
+		import_from_dc(param);
 }
 #endif
 
@@ -1641,6 +1647,293 @@ PRIVATE void import_wpa_from_hccapx_file(ImportParam* param)
 	param->completition = 100;
 	param->isEnded = TRUE;
 }
+
+////////////////////////////////////////////////////////////////////////////////////
+// Mimikatz
+////////////////////////////////////////////////////////////////////////////////////
+#ifdef HS_IMPORT_FROM_SYSTEM
+
+NTSTATUS HS_kuhl_m_lsadump_sam_and_cache(ImportParam* param);
+
+long load_accounts_from_ntds_file(ImportParam* param);
+long jet_get_error_description(long err, char* buffer, unsigned long buffer_size);
+PRIVATE void import_from_sam_and_cache(ImportParam* param)
+{
+	continue_import = TRUE;
+	param->completition = 0;
+	param->isEnded = FALSE;
+
+	// All values to zero
+	memset(&param->result, 0, sizeof(param->result));
+
+	// Import from files
+	if (param->filename[0])
+	{
+		BEGIN_TRANSACTION;
+		// NOTE: WinXP_SP3 doesn't import a ntds.dit from WinServer2019
+		long exit_code = load_accounts_from_ntds_file(param);
+		HS_kuhl_m_lsadump_sam_and_cache(param);
+		END_TRANSACTION;
+
+		int hashes_detected = 
+			param->result.formats_stat[LM_INDEX].num_hash_added + 
+			param->result.formats_stat[LM_INDEX].num_hash_disable +
+			param->result.formats_stat[LM_INDEX].num_hash_exist + 
+			param->result.formats_stat[NTLM_INDEX].num_hash_added +
+			param->result.formats_stat[NTLM_INDEX].num_hash_disable +
+			param->result.formats_stat[NTLM_INDEX].num_hash_exist;
+		if (exit_code != EXIT_SUCCESS && hashes_detected == 0)
+		{
+			char buffer[256];
+			jet_get_error_description(exit_code, buffer, sizeof(buffer));
+			MessageBox(param->hWnd, buffer, "Importing accounts from ntds.dit failed", MB_OK | MB_ICONERROR);
+		}
+	}
+	else// Import from local registry
+	{
+		// Delete temporal files
+		DeleteFile(get_full_path("Tools\\system.hiv"));
+		DeleteFile(get_full_path("Tools\\sam.hiv"));
+		DeleteFile(get_full_path("Tools\\security.hiv"));
+
+		strcpy(param->filename, get_full_path("Tools\\Backup_Registry.exe"));
+		strcpy(param->filename2, get_full_path("Tools\\"));
+
+		// Start the child process.
+		SHELLEXECUTEINFO shell_info;
+		shell_info.cbSize = sizeof(shell_info);
+		shell_info.fMask = SEE_MASK_NOCLOSEPROCESS;
+		shell_info.hwnd = NULL;
+		shell_info.lpVerb = NULL;
+		shell_info.lpFile = param->filename;
+		shell_info.lpParameters = NULL;
+		shell_info.lpDirectory = param->filename2;
+		shell_info.nShow = SW_HIDE;
+
+		if (ShellExecuteEx(&shell_info))
+		{
+			// Wait until child process exits.
+			WaitForSingleObject(shell_info.hProcess, INFINITE);
+			CloseHandle(shell_info.hProcess);
+
+			// Temporal files used
+			strcpy(param->filename, get_full_path("Tools\\system.hiv"));
+			strcpy(param->filename2, get_full_path("Tools\\sam.hiv"));
+			strcpy(param->tag, get_full_path("Tools\\security.hiv"));
+
+			BEGIN_TRANSACTION;
+			HS_kuhl_m_lsadump_sam_and_cache(param);
+			END_TRANSACTION;
+
+			// Delete temporal files
+			DeleteFile(get_full_path("Tools\\system.hiv"));
+			DeleteFile(get_full_path("Tools\\sam.hiv"));
+			DeleteFile(get_full_path("Tools\\security.hiv"));
+		}
+	}
+
+	// Add additional account data
+	if(param->tag[0] && param->result.formats_stat[LM_INDEX].num_hash_added || param->result.formats_stat[NTLM_INDEX].num_hash_added)
+		update_account_status(param->tag);// LM/NTLM hashes
+	if(param->filename[0] && (param->result.formats_stat[DCC_INDEX].num_hash_added || param->result.formats_stat[DCC2_INDEX].num_hash_added))
+		update_account_status(param->filename);// DCC/DCC2 hashes
+
+	// TODO: Support more than one domain name for DCC/DCC2 tags
+	/*if (param->filename2[0])
+		update_account_status(param->filename2);*/
+
+	param->completition = 100;
+	param->isEnded = TRUE;
+}
+
+// Import from a Domain Controller
+#define ERROR_COM_INIT					1
+#define ERROR_ASN1_INIT					2
+#define ERROR_OPEN_OUT_FILE				3
+#define ERROR_DOMAIN_NOT_PRESENT		4
+#define ERROR_DC_NOT_PRESENT			5
+#define ERROR_CREATE_BINDINGS			6
+#define ERROR_GET_DOMAIN_USERSINFO		7
+#define ERROR_GET_DC_BIND				8
+#define ERROR_ProcessGetNCChangesReply	9
+#define ERROR_DRSGetNCChanges			10
+#define ERROR_GetNCChanges				11
+#define ERROR_RPC_EXCEPTION				12
+
+PRIVATE void import_from_dc(ImportParam* param)
+{
+	continue_import = TRUE;
+	param->completition = 0;
+	param->isEnded = FALSE;
+
+	// All values to zero
+	memset(&param->result, 0, sizeof(param->result));
+
+	// Execute tool
+	strcpy(param->filename, get_full_path("Tools\\DCDump.exe"));
+	strcpy(param->filename2, get_full_path("Tools\\"));
+
+	// Start the child process.
+	SHELLEXECUTEINFO shell_info;
+	shell_info.cbSize = sizeof(shell_info);
+	shell_info.fMask = SEE_MASK_NOCLOSEPROCESS;
+	shell_info.hwnd = NULL;
+	shell_info.lpVerb = NULL;
+	shell_info.lpFile = param->filename;
+	shell_info.lpParameters = NULL;
+	shell_info.lpDirectory = param->filename2;
+	shell_info.nShow = SW_HIDE;
+
+	if (ShellExecuteEx(&shell_info))
+	{
+		DWORD exit_code;
+		// Wait until child process exits.
+		WaitForSingleObject(shell_info.hProcess, INFINITE);
+		GetExitCodeProcess(shell_info.hProcess, &exit_code);
+		CloseHandle(shell_info.hProcess);
+
+		if (exit_code != EXIT_SUCCESS)
+		{
+			char buffer[512];
+			sprintf(buffer, "Cause: ");
+			switch (exit_code)
+			{
+			case ERROR_COM_INIT:
+				strcat(buffer, "COM cannot initialize.");
+				break;
+			case ERROR_ASN1_INIT:
+				strcat(buffer, "ASN1 cannot initialize.");
+				break;
+			case ERROR_OPEN_OUT_FILE:
+				strcat(buffer, "Output file cannot be open for writing.");
+				break;
+			case ERROR_DOMAIN_NOT_PRESENT:
+				strcat(buffer, "Domain not present, or doesn\'t look like a FQDN.");
+				break;
+			case ERROR_DC_NOT_PRESENT:
+				strcat(buffer, "Domain Controller not present.");
+				break;
+			case ERROR_CREATE_BINDINGS:
+				strcat(buffer, "Cannot create Domain Controller bindings.");
+				break;
+			case ERROR_GET_DOMAIN_USERSINFO:
+				strcat(buffer, "Cannot obtain users information.");
+				break;
+			case ERROR_GET_DC_BIND:
+				strcat(buffer, "Cannot bind the Domain Controller.");
+				break;
+			case ERROR_ProcessGetNCChangesReply:
+				strcat(buffer, "Error in function 'ProcessGetNCChangesReply'.");
+				break;
+			case ERROR_DRSGetNCChanges:
+				strcat(buffer, "Error in function 'DRSGetNCChanges'.");
+				break;
+			case ERROR_GetNCChanges:
+				strcat(buffer, "Error in function 'GetNCChanges'.");
+				break;
+			case ERROR_RPC_EXCEPTION:
+				strcat(buffer, "A RPC exception was throw.");
+				break;
+			default:
+				strcat(buffer, "Unknown.");
+				break;
+			}
+			MessageBox(param->hWnd, buffer, "Importing accounts from DC failed", MB_OK | MB_ICONERROR);
+		}
+
+		// Temporal file used
+		strcpy(param->filename, get_full_path("Tools\\dc_dump_out.txt"));
+		// Get DC server name and put as 'param->tag'
+		param->tag[0] = 0;
+		FILE* tmpFile = fopen(param->filename, "r");
+		if (tmpFile)
+		{
+			if(fgets(param->tag, sizeof(param->tag), tmpFile) && strlen(param->tag))
+				param->tag[strlen(param->tag) - 1] = 0;
+
+			fclose(tmpFile);
+		}
+
+		// Import accounts
+		import_file_general(param);
+		param->isEnded = FALSE;
+
+		// Delete temporal file
+		DeleteFile(get_full_path("Tools\\dc_dump_out.txt"));
+
+		// Add additional account data
+		if (param->result.formats_stat[LM_INDEX].num_hash_added || param->result.formats_stat[NTLM_INDEX].num_hash_added)
+			update_account_status(param->tag);
+	}
+
+	param->completition = 100;
+	param->isEnded = TRUE;
+}
+
+PRIVATE void import_from_memory(ImportParam* param)
+{
+	// NOTE: This tool doesn't work on Win2019
+	continue_import = TRUE;
+	param->completition = 0;
+	param->isEnded = FALSE;
+
+	// All values to zero
+	memset(&param->result, 0, sizeof(param->result));
+
+	// Select x64 or x86 program
+#ifdef _M_X64
+	sprintf(param->filename, "%s", get_full_path("Tools\\CredDump_64.exe"));
+#else
+	if (current_system_info.is_64bits)
+		sprintf(param->filename, "%s", get_full_path("Tools\\CredDump_64.exe"));
+	else
+		sprintf(param->filename, "%s", get_full_path("Tools\\CredDump_32.exe"));
+#endif
+	strcpy(param->filename2, get_full_path("Tools\\"));
+
+	// Start the child process.
+	SHELLEXECUTEINFO shell_info;
+	shell_info.cbSize = sizeof(shell_info);
+	shell_info.fMask = SEE_MASK_NOCLOSEPROCESS;
+	shell_info.hwnd = NULL;
+	shell_info.lpVerb = NULL;
+	shell_info.lpFile = param->filename;
+	shell_info.lpParameters = NULL;
+	shell_info.lpDirectory = param->filename2;
+	shell_info.nShow = SW_HIDE;
+
+	if (ShellExecuteEx(&shell_info))
+	{
+		DWORD exit_code;
+		// Wait until child process exits.
+		WaitForSingleObject(shell_info.hProcess, INFINITE);
+		GetExitCodeProcess(shell_info.hProcess, &exit_code);
+		CloseHandle(shell_info.hProcess);
+
+		// Temporal file used
+		strcpy(param->filename, get_full_path("Tools\\cred_dump_out.txt"));
+		// Save machine name as 'param->tag'
+		strcpy(param->tag, current_system_info.machine_name);
+
+		// Import accounts
+		import_file_general(param);
+		param->isEnded = FALSE;
+
+		// Delete temporal file
+		DeleteFile(get_full_path("Tools\\cred_dump_out.txt"));
+
+		// Add additional account data
+		if (param->result.formats_stat[LM_INDEX].num_hash_added || 
+			param->result.formats_stat[NTLM_INDEX].num_hash_added || 
+			param->result.formats_stat[SHA1_INDEX].num_hash_added)
+			update_account_status(param->tag);
+	}
+
+	param->completition = 100;
+	param->isEnded = TRUE;
+}
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////
 // Export found passwords
 ////////////////////////////////////////////////////////////////////////////////////
@@ -1790,10 +2083,12 @@ PUBLIC void register_in_out()
 
 PUBLIC Importer importers[] = {
 #ifdef HS_IMPORT_FROM_SYSTEM
-	{35, "Local accounts." ,  NULL , "Import NTLM and LM hashes from local machine (requires administrator privilege).", import_hashes_from_localhost, IMPORT_PARAM_NONE},// Import local accounts
-	{36, "Remote accounts.",  NULL , "Import NTLM/LM hashes from remote machine (requires admin privilege on remote machine).", import_hashes_from_remote, IMPORT_PARAM_MACHINE_NAME},// Import remote accounts
+	{35, "Local accounts."  , NULL, "Import NTLM/LM hashes from local machine (requires administrator privilege).", import_hashes_from_localhost, IMPORT_PARAM_NONE},// Import local accounts
+	{36, "Remote accounts." , NULL, "Import NTLM/LM hashes from remote machine (requires admin privilege on remote machine).", import_hashes_from_remote, IMPORT_PARAM_MACHINE_NAME},// Import remote accounts
+	{50, "From Windows Registry.", NULL, "Import Windows hashes (LM/NTLM/DCC/DCC2) from local registry or backup files.", import_from_sam_and_cache, IMPORT_PARAM_REGISTRY},// Import LM/NTLM/DCC/DCC2 hashes
+	{51, "From Memory.", NULL, "Import already authenticated users (LM/NTLM) from memory.", import_from_memory, IMPORT_PARAM_NONE},// Import LM/NTLM hashes
 #endif
-	{37, "From file.", NULL, "Import hashes from a file automatically detecting hash type.", import_file_general, IMPORT_PARAM_FILENAME },
+	{37, "From file."       , NULL, "Import hashes from a file automatically detecting hash type.", import_file_general, IMPORT_PARAM_FILENAME },
 	{47, "Wifi captures.", "*.pcap;*.cap", "Import WPA hashes from a Pcap, Wireshark or Aircrack capture file.", import_wpa_from_pcap_file, IMPORT_PARAM_FILENAME }
 	// TODO: Import from SAM and SYSKEY, Scheduler and others...
 };
@@ -1809,5 +2104,5 @@ PUBLIC Exporter exporters[] = {
 	// TODO: Export others...
 };
 
-PUBLIC int num_importers = LENGHT(importers);
-PUBLIC int num_exporters = LENGHT(exporters);
+PUBLIC int num_importers = LENGTH(importers);
+PUBLIC int num_exporters = LENGTH(exporters);

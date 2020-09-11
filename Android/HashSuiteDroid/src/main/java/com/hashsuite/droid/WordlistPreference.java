@@ -19,6 +19,8 @@ import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
+import android.widget.Toast;
+
 import ar.com.daidalos.afiledialog.FileChooserDialog;
 
 class WordlistData
@@ -232,12 +234,19 @@ public class WordlistPreference extends DialogPreference implements OnItemClickL
 
                 data.id = MainActivity.SaveWordlist(file_path, data.name, word_info.length());
 
-                wordlist.add(wordlist.size()-1, data);
-
-                int position = wordlist.size()-2;
-                if (callChangeListener(position))
+                if(data.id < 0)
                 {
-                    setValue(position);
+                    Toast.makeText(MainActivity.my_activity, "Failed to import wordlist", Toast.LENGTH_SHORT).show();
+                }
+                else
+                {
+                    wordlist.add(wordlist.size()-1, data);
+
+                    int position = wordlist.size()-2;
+                    if (callChangeListener(position))
+                    {
+                        setValue(position);
+                    }
                 }
             }
 

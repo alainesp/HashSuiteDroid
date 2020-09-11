@@ -14,7 +14,7 @@ LOCAL_MODULE := HashSuiteNative
 
 # Hash Suite 'core' files
 LOCAL_SRC_FILES := jni_bridge.cpp $(HS_DIR)common.c $(HS_DIR)sqlite3.c $(HS_DIR)attack.c $(HS_DIR)key_providers.c $(HS_DIR)rules.c $(HS_DIR)hardware.c $(HS_DIR)in_out.c  $(HS_DIR)opencl_code.c $(HS_DIR)hash.c
-LOCAL_SRC_FILES += $(HS_DIR)cbg_table.cpp $(HS_DIR)in_hashtable.cpp
+LOCAL_SRC_FILES += $(HS_DIR)cbg_table.cpp $(HS_DIR)in_hashtable.cpp $(HS_DIR)attack_load_found.cpp $(HS_DIR)xxhash.c
 
 # Formats
 LOCAL_SRC_FILES += $(HS_DIR)format_LM.c $(HS_DIR)format_NTLM.c $(HS_DIR)format_MD5.c $(HS_DIR)format_SHA1.c $(HS_DIR)format_DCC.c $(HS_DIR)format_DCC2.c $(HS_DIR)format_raw_SHA256.c $(HS_DIR)format_raw_SHA512.c

@@ -35,9 +35,17 @@
 
 void remove_str(char* data, const char* pattern);
 
-extern sqlite3_stmt* insert_account_lm;
-sqlite3_int64 insert_hash_account1(ImportParam* param, const char* user_name, const char* ciphertext, int db_index);
-sqlite3_int64 insert_hash_if_necesary(const char* hex, sqlite3_int64 format_index, ImportResultFormat* hash_stat);
+#ifdef __cplusplus
+extern "C" {  // only need to export C interface if used by C++ source code
+#endif
+	extern sqlite3_stmt* insert_account_lm;
+	sqlite3_int64 insert_hash_account1(ImportParam* param, const char* user_name, const char* ciphertext, int db_index);
+	sqlite3_int64 insert_hash_if_necesary(const char* hex, sqlite3_int64 format_index, ImportResultFormat* hash_stat);
+	extern sqlite3_stmt* insert_tag_account;
+	sqlite3_int64 insert_when_necesary_tag(const char* tag);
+#ifdef __cplusplus
+}  // only need to export C interface if used by C++ source code
+#endif
 
 void swap_endianness_array(uint32_t* data, int count);
 

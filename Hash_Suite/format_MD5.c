@@ -134,11 +134,11 @@ PRIVATE uint32_t compare_elem(uint32_t i, uint32_t cbg_table_pos, uint32_t* nt_b
 	if (unpacked_cs[i] != bin[2] || unpacked_bs[i] != bin[1]) return FALSE;
 	uint32_t cc = unpacked_cs[i] - nt_buffer[2 * NT_NUM_KEYS + i];
 
-	uint32_t aa = unpacked_as[i] + (cc ^ (unpacked_bs[i] | ~unpacked_ds[i])) + nt_buffer[4 * NT_NUM_KEYS + i] +0xf7537e82; aa = ROTATE(aa, 6) + unpacked_bs[i];
+	uint32_t aa = unpacked_as[i] + (cc ^ (unpacked_bs[i] | ~unpacked_ds[i])) + nt_buffer[4 * NT_NUM_KEYS + i] + 0xf7537e82; aa = ROTATE(aa, 6) + unpacked_bs[i];
 	if (aa != bin[0])  return FALSE;
 
 	uint32_t dd = unpacked_ds[i] + (unpacked_bs[i] ^ (aa | ~cc));
-	if (cc != bin[2])  return FALSE;
+	if (dd != bin[3])  return FALSE;
 
 	return TRUE;
 }
@@ -707,6 +707,20 @@ PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uin
 
 	// Begin function code
 	sprintf(source + strlen(source), "uint%s a,b,c,d,nt_buffer0=0,xx;uint indx;", buffer);
+	// Generate less repeated keys
+	uint64_t max_work_item_index = 1;
+	int is_max_work_item_index_needed = TRUE;
+	for (cl_uint i = 1; i < key_lenght; i++)
+	{
+		max_work_item_index *= num_char_in_charset;
+		if (max_work_item_index > UINT32_MAX)
+		{
+			is_max_work_item_index_needed = FALSE;
+			break;
+		}
+	}
+	if (is_max_work_item_index_needed)// Only 'CALCULATED' work-items
+		sprintf(source + strlen(source), "if(get_global_id(0)>=%uu) return;", (uint32_t)max_work_item_index);
 
 #ifdef HS_OCL_CURRENT_KEY_AS_REGISTERS
 	cl_uint bits_by_char;

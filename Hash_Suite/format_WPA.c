@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2015,2020 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
@@ -252,10 +252,7 @@ PRIVATE void convert2be(uint32_t* nt_buffer, uint32_t NUM_KEYS)
 		}
 	}
 }
-#ifndef HS_TESTING
-PRIVATE
-#endif
-void wpa_body_c_code(uint32_t* nt_buffer, uint32_t* essid_block, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
+PUBLIC void wpa_body_c_code(uint32_t* nt_buffer, uint32_t* essid_block, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
 {
 	uint32_t len = nt_buffer[7 * NT_NUM_KEYS] >> 3;
 	len = (len + 3) / 4;
@@ -294,10 +291,7 @@ void wpa_body_c_code(uint32_t* nt_buffer, uint32_t* essid_block, uint32_t* crypt
 		}
 	}
 }
-#ifndef HS_TESTING
-PRIVATE
-#endif
-void wpa_postprocess_c_code(hccap_bin* salt, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
+PUBLIC void wpa_postprocess_c_code(hccap_bin* salt, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
 {
 	uint32_t len = 8;
 	// prf_512------------------------------------------------------------------
@@ -1005,8 +999,9 @@ extern const char* sha1_array_body;
 extern const char* sha1_process_sha1_body;
 PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provider, OpenCL_Param* param, int multiplier)
 {
+	assert(multiplier > 0);
 	// Generate code
-	char* source = malloc(128 * 1024 * multiplier);
+	char* source = malloc(128 * 1024 * (size_t)multiplier);
 	source[0] = 0;
 	// Header definitions
 	//if(num_passwords_loaded > 1 )
@@ -1643,7 +1638,7 @@ PRIVATE int ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_inde
 	int i, kernel2common_index;
 
 	// Find a compatible generate_key_funtion function for a given key_provider
-	for (i = 0; i < LENGHT(key_providers[provider_index].impls); i++)
+	for (i = 0; i < LENGTH(key_providers[provider_index].impls); i++)
 		for (kernel2common_index = 0; kernel2common_index < (int)num_kernels2common; kernel2common_index++)
 			if (key_providers[provider_index].impls[i].protocol == kernels2common[kernel2common_index].protocol)
 			{

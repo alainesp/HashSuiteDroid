@@ -448,7 +448,7 @@ int enable_large_page_support()
 PUBLIC void detect_hardware()
 {
 	int CPUInfo[4] = {-1};
-	int nIds = LENGHT(current_system_info.machine_name);
+	int nIds = LENGTH(current_system_info.machine_name);
 
 	// Initialize
 	memset(&current_cpu, 0, sizeof(CPUHardware));

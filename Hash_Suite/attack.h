@@ -165,7 +165,7 @@ typedef void ocl_slow_ordered_work_body_func(OpenCL_Param* param, cl_uint lenght
 int ocl_init_slow_hashes(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules, cl_uint size_big_chunk, int BINARY_SIZE, int SALT_SIZE,
 	ocl_gen_kernels_func* ocl_gen_kernels, ocl_slow_work_body_func* ocl_work_body, cl_uint num_keys_divider);
 int ocl_init_slow_hashes_ordered(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules, cl_uint size_big_chunk, int BINARY_SIZE, int SALT_SIZE,
-	ocl_gen_kernels_func* ocl_gen_kernels, ocl_slow_ordered_work_body_func* ocl_work_body, cl_uint num_keys_divider, cl_uint MAX_KEY_LENGHT);
+	ocl_gen_kernels_func* ocl_gen_kernels, ocl_slow_ordered_work_body_func* ocl_work_body, cl_uint num_keys_divider, cl_uint MAX_KEY_LENGHT, BOOL is_simple);
 void ocl_best_workgroup_pbkdf2(OpenCL_Param* param, int KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE, int KERNEL_INDEX_PBKDF2_HMAC_SHA1_CYCLE_VEC);
 
 void ocl_slow_ordered_found(OpenCL_Param* param, cl_uint* num_found, cl_uint gpu_max_num_keys, cl_uint gpu_base_pos, cl_uint lenght);

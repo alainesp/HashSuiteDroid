@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2020 by Alain Espinosa. See LICENSE.
 
 #ifndef HS_INTERFACE
 #define HS_INTERFACE
@@ -19,7 +19,7 @@
 
 #define MAX_KEY_LENGHT_SMALL	32
 #define MAX_KEY_LENGHT_BIG		32
-#define LENGHT(x) (sizeof(x)/sizeof(x[0]))
+#define LENGTH(x) (sizeof(x)/sizeof(x[0]))
 
 #define ROTATE32(x,shift)	_rotl(x,shift)
 #define ROTATE64(x,shift)	_rotl64(x,shift)
@@ -51,6 +51,11 @@ typedef struct
 	char filename[1024];
 }
 HASH_FILE_DATA;
+
+extern int is_test;
+extern uint32_t test_sleep_time;
+extern int test_rules_on_gpu;
+extern uint32_t hash_count_to_test[];
 
 // DB related----------------------------------------------------------------------
 #define DB_FILE "config.db"
@@ -115,7 +120,7 @@ typedef struct OpenCL_Param
 	};
 
 	union{// Support OpenCL/Cuda driver API
-		cl_kernel kernels[MAX_KEY_LENGHT_SMALL];
+		cl_kernel kernels[MAX_KEY_LENGHT_SMALL+4];
 		CUfunction cu_kernels[MAX_KEY_LENGHT_SMALL];
 	};
 
@@ -130,6 +135,8 @@ typedef struct OpenCL_Param
 	cl_uint param1;
 	void* additional_param;
 	void* additional_param1;
+	cl_kernel* additional_kernels;
+	cl_uint additional_kernels_size;
 	// Needed by rules
 	OCL_Rules rules;
 }
@@ -142,27 +149,31 @@ typedef int create_gpu_crypt_funtion(OpenCL_Param*, cl_uint, generate_key_funtio
 #define MESSAGE_FINISH_ATTACK			2
 #define MESSAGE_ATTACK_INIT_COMPLETE	3
 #define MESSAGE_ATTACK_GPU_FAIL	        4
+#define MESSAGE_TESTING_INIT_COMPLETE	5
+#define MESSAGE_TESTING_FAIL			6
+#define MESSAGE_TESTING_SUCCEED			7
 typedef void callback_funtion(int message);
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Formats
 ////////////////////////////////////////////////////////////////////////////////////
 #ifndef INCLUDE_DEVELOPING_FORMAT
-#define MAX_NUM_FORMATS 12
+#define MAX_NUM_FORMATS 13
 #endif
 
-#define LM_INDEX        0
-#define NTLM_INDEX      1
-#define MD5_INDEX		2
-#define SHA1_INDEX		3
-#define SHA256_INDEX	4
-#define SHA512_INDEX	5
-#define DCC_INDEX		6
-#define SSHA_INDEX		7
-#define MD5CRYPT_INDEX	8
-#define DCC2_INDEX		9
-#define WPA_INDEX		10
-#define BCRYPT_INDEX	11
+#define LM_INDEX			0
+#define NTLM_INDEX			1
+#define MD5_INDEX			2
+#define SHA1_INDEX			3
+#define SHA256_INDEX		4
+#define SHA512_INDEX		5
+#define DCC_INDEX			6
+#define SSHA_INDEX			7
+#define MD5CRYPT_INDEX		8
+#define DCC2_INDEX			9
+#define WPA_INDEX			10
+#define BCRYPT_INDEX		11
+#define SHA256CRYPT_INDEX	12
 
 
 // Protocols
@@ -201,6 +212,7 @@ typedef struct ImportResult
 typedef struct ImportParam
 {
 	char filename[FILENAME_MAX];
+	char filename2[FILENAME_MAX];
 	char tag[FILENAME_MAX];
 	int (*select_format)(char* line, int* valid_formats);
 
@@ -208,12 +220,16 @@ typedef struct ImportParam
 
 	int isEnded;
 	int completition;
+#ifdef _WIN32
+	void* hWnd;// main window
+#endif
 }ImportParam;
 
 // Data needed by importers to application
 #define IMPORT_PARAM_NONE			0
 #define IMPORT_PARAM_FILENAME		1
 #define IMPORT_PARAM_MACHINE_NAME	2
+#define IMPORT_PARAM_REGISTRY		3
 
 typedef struct Importer
 {
@@ -276,7 +292,7 @@ typedef struct Format
 	char* name;
 	char* description;
 	char* prefix;
-	int max_plaintext_lenght;
+	uint32_t max_plaintext_lenght;
 	uint32_t binary_size;
 	uint32_t salt_size;
 	sqlite3_int64 db_id;
@@ -352,8 +368,8 @@ typedef struct KeyProvider
 	// From the param get a short description
 	void (*get_param_description)(const char*, char*, int, int);
 
-	int min_size;
-	int recommend_max_size;
+	uint32_t min_size;
+	uint32_t recommend_max_size;
 	int show_to_user;
 	int use_rules;
 	int per_thread_data_size;
@@ -442,6 +458,7 @@ void resume_crack(sqlite3_int64 db_id, callback_funtion psend_message_gui);
 int save_attack_state();
 int is_wordlist_supported(const char* file_path, char* error_message);
 uint32_t load_fam(uint64_t pos);
+void save_fam(uint64_t pos, uint32_t value);
 void resize_fam();
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -485,8 +502,8 @@ typedef struct AttackData
 	sqlite3_int64 attack_db_id;
 	int format_index;
 	int provider_index;
-	int min_lenght;
-	int max_lenght;
+	uint32_t min_lenght;
+	uint32_t max_lenght;
 	char params[256];
 	char resume_arg[64];
 	int is_ended;
@@ -518,8 +535,19 @@ extern int continue_attack;
 extern int save_needed;
 
 // Hashing
-void hash_ntlm(const unsigned char* message, char* hash);
 void hash_lm(const char* message, char* hash);
+void hash_ntlm(const unsigned char* message, char* hash);
+void hash_md5(const char* message, char* hash);
+void hash_sha1(const char* message, char* hash);
+void hash_sha256(const char* message, char* hash);
+void hash_sha512(const char* message, char* hash);
+void hash_dcc(const unsigned char* cleartext, char* hash);
+void hash_dcc2(const unsigned char* cleartext, char* hash);
+void hash_ssha1(const char* cleartext, char* hash);
+void hash_md5crypt(const unsigned char* cleartext, char* hash);
+void hash_sha256crypt(const char* cleartext, char* hash);
+void hash_wpa(const unsigned char* cleartext, unsigned char* hash);
+void hash_bcrypt(const char* cleartext, unsigned char* hash);
 void hash_file(void* void_data);
 
 // Hardware Capabilities
@@ -652,6 +680,7 @@ typedef struct GPUDevice
 	size_t lm_work_group_size;
 	cl_uint major_cc;
 	cl_uint NUM_KEYS_OPENCL_DIVIDER;
+	cl_uint device_vendor_id;
 	char vendor_string[64];
 	char driver_version[32];
 }
@@ -659,6 +688,7 @@ GPUDevice;
 
 extern GPUDevice gpu_devices[MAX_NUMBER_GPUS_SUPPORTED];
 extern cl_uint num_gpu_devices;
+cl_uint get_num_gpus_used();
 
 // Get status
 int gpu_get_updated_status(uint32_t gpu_index, GPUStatus* status);

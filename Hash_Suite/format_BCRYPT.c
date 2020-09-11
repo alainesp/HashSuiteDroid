@@ -177,10 +177,7 @@ typedef struct {
 PRIVATE uint32_t BF_magic_w[6] = { 0x4F727068, 0x65616E42, 0x65686F6C, 0x64657253, 0x63727944, 0x6F756274 };
 
 // P-box and S-box tables initialized with digits of Pi.
-#ifndef HS_TESTING
-PRIVATE 
-#endif
-BF_ctx BF_init_state = {
+PUBLIC BF_ctx BF_init_state = {
 	{
 		{
 			0xd1310ba6, 0x98dfb5ac, 0x2ffd72db, 0xd01adfb7,
@@ -1414,8 +1411,14 @@ PRIVATE int log2_of_power2(uint32_t v)
 
 PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provider, OpenCL_Param* param, int multiplier)
 {
+	// Because bug in HS implementation or Intel OpenCL driver
+	char backup_vendor = gpu->vendor;
+	if(gpu->vendor == OCL_VENDOR_INTEL)
+		gpu->vendor = OCL_VENDOR_AMD;
+
+	assert(multiplier > 0);
 	// Generate code
-	char* source = malloc(64 * 1024 * multiplier);
+	char* source = malloc(64 * 1024 * (size_t)multiplier);
 	source[0] = 0;
 	// Header definitions
 	//if(num_passwords_loaded > 1 )
@@ -2253,6 +2256,8 @@ sprintf(source+strlen(source),"#define GET_DATA(STATE,index) data_ptr[(STATE+ind
 		"}"
 	"}");
 
+	if(backup_vendor == OCL_VENDOR_INTEL)
+		gpu->vendor = OCL_VENDOR_INTEL;
 	return source;
 }
 PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules)
@@ -2482,7 +2487,7 @@ PRIVATE int ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_inde
 	int i, kernel2common_index;
 
 	// Find a compatible generate_key_funtion function for a given key_provider
-	for (i = 0; i < LENGHT(key_providers[provider_index].impls); i++)
+	for (i = 0; i < LENGTH(key_providers[provider_index].impls); i++)
 		for (kernel2common_index = 0; kernel2common_index < (int)num_kernels2common; kernel2common_index++)
 			if (key_providers[provider_index].impls[i].protocol == kernels2common[kernel2common_index].protocol)
 			{

@@ -183,14 +183,22 @@ PRIVATE void crypt_utf8_coalesc_protocol_body(CryptParam* param, process_block_a
 	uint8_t* simple_buffer = (uint8_t*)(state + 4 * keys_in_parallel);
 
 	unsigned char key[MAX_KEY_LENGHT_SMALL];
-	memset(buffer, 0, 8 * sizeof(uint32_t) * keys_in_parallel);
+	memset(buffer, 0, (8 + 16 * 8 + 4) * sizeof(uint32_t) * keys_in_parallel + 64);
 
 	while (continue_attack && param->gen(buffer, keys_in_parallel, param->thread_id))
 	{
 		// Only accept valid keys
 		for (uint32_t i = 7 * keys_in_parallel; i < (8*keys_in_parallel); i++)
 			if (buffer[i] > (MD5_MAX_KEY_LENGHT << 3))
+			{
 				buffer[i] = MD5_MAX_KEY_LENGHT << 3;
+				// Clear overflown length
+				uint32_t key_index = i - 4 * keys_in_parallel;
+				buffer[key_index] = (buffer[key_index] & 0x00FFFFFF) | (0x80 << 24);// pos=3
+				buffer[key_index + 1*keys_in_parallel] = 0;// pos=4
+				buffer[key_index + 2*keys_in_parallel] = 0;// pos=5
+				buffer[key_index + 3*keys_in_parallel] = 0;// pos=6
+			}
 
 		for (uint32_t current_salt_index = 0; current_salt_index < num_diff_salts; current_salt_index++)
 		{
@@ -411,7 +419,7 @@ PRIVATE void copy_pattern_c_code_1(uint32_t* pattern, const uint32_t* state)
 	for (uint32_t j = 0; j < 4; j++, pattern++)
 	{
 		uint32_t state_value = state[j];
-		pattern[0] = buffer_value| (state_value << 8);
+		pattern[0] = buffer_value | (state_value << 8);
 		buffer_value = state_value >> 24;
 	}
 	pattern[0] = buffer_value | 0x8000;
@@ -1809,7 +1817,8 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 	// oclHashcat: 2.46M
 	// Teoretical: 5.24M
 	// HS by len : 4.50M
-	if (!ocl_init_slow_hashes_ordered(param, gpu_index, gen, gpu_crypt, ocl_kernel_provider, use_rules, (use_rules ? 8 : 0) + 4, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, all_salt_lenght_8 ? 2 : 4, MD5_MAX_KEY_LENGHT))
+	if (!ocl_init_slow_hashes_ordered(param, gpu_index, gen, gpu_crypt, ocl_kernel_provider, use_rules, (use_rules ? 8 : 0) + 4, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 
+		all_salt_lenght_8 ? 2 : 4, MD5_MAX_KEY_LENGHT, FALSE))
 		return FALSE;
 	// Now With Intel HD 4600 y wordlist_small.lst: 7m:42s
 	// New--------------------------------------->: 1m:38s
@@ -2001,7 +2010,7 @@ PRIVATE int ocl_protocol_rules_init(OpenCL_Param* param, cl_uint gpu_device_inde
 	int i, kernel2common_index;
 
 	// Find a compatible generate_key_funtion function for a given key_provider
-	for (i = 0; i < LENGHT(key_providers[provider_index].impls); i++)
+	for (i = 0; i < LENGTH(key_providers[provider_index].impls); i++)
 		for (kernel2common_index = 0; kernel2common_index < (int)num_kernels2common; kernel2common_index++)
 			if (key_providers[provider_index].impls[i].protocol == kernels2common[kernel2common_index].protocol)
 			{

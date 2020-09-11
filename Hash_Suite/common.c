@@ -40,6 +40,8 @@ extern Format wpa_format;
 extern Format bcrypt_format;
 extern Format ssha_format;
 extern Format md5crypt_format;
+
+extern Format sha256crypt_format;
 #ifdef INCLUDE_DEVELOPING_FORMAT
 extern Format <name>_format;
 #endif
@@ -314,7 +316,6 @@ PUBLIC unsigned char* utf8_coalesc2utf8_key(uint32_t* nt_buffer, unsigned char* 
 	key[len] = 0;
 	return key;
 }
-extern uint32_t max_lenght;
 PUBLIC unsigned char* utf8_be_coalesc2utf8_key(uint32_t* nt_buffer, unsigned char* key, uint32_t NUM_KEYS, uint32_t index)
 {
 	uint32_t len = nt_buffer[7 * NUM_KEYS + index] >> 3;
@@ -622,8 +623,6 @@ PRIVATE void hex_init()
 }
 PRIVATE void formats_init(int db_already_initialize)
 {
-	int i;
-
 	formats[LM_INDEX] = lm_format;
 	formats[NTLM_INDEX] = ntlm_format;
 	formats[MD5_INDEX] = raw_md5_format;
@@ -639,24 +638,26 @@ PRIVATE void formats_init(int db_already_initialize)
 	formats[BCRYPT_INDEX] = bcrypt_format;
 	formats[SSHA_INDEX] = ssha_format;
 	formats[MD5CRYPT_INDEX] = md5crypt_format;
-	num_formats = 12;
+
+	formats[SHA256CRYPT_INDEX] = sha256crypt_format;
+	num_formats = 13;
 #ifdef INCLUDE_DEVELOPING_FORMAT
 	formats[<name>_INDEX] = <name>_format;
 	num_formats++;
 #endif
 
 	// Initialize bench data
-	for (i = 0; i < num_formats; i++)
+	for (int i = 0; i < num_formats; i++)
 	{
 		if (formats[i].salt_size)
 		{
 			formats[i].bench_values = bench_values_salt;
-			formats[i].lenght_bench_values = LENGHT(bench_values_salt);
+			formats[i].lenght_bench_values = LENGTH(bench_values_salt);
 		}
 		else
 		{
 			formats[i].bench_values = bench_values_raw;
-			formats[i].lenght_bench_values = LENGHT(bench_values_raw);
+			formats[i].lenght_bench_values = LENGTH(bench_values_raw);
 		}
 	}
 
@@ -666,7 +667,7 @@ PRIVATE void formats_init(int db_already_initialize)
 		// Formats in database
 		sqlite3_prepare_v2(db, "INSERT OR IGNORE INTO FORMAT (ID, Name, Description) VALUES (?, ?, ?);", -1, &insert, NULL);
 
-		for (i = 0; i < num_formats; i++)
+		for (int i = 0; i < num_formats; i++)
 		{
 			// Ensures all formats are in the db
 			sqlite3_reset(insert);
@@ -685,7 +686,7 @@ PRIVATE void ciphertext(sqlite3_context* context, int nArgs, sqlite3_value** val
 	Format* format = find_format(sqlite3_value_int(values[1]));
 
 	const void* binary = sqlite3_value_blob(values[0]);
-	unsigned char* result = (unsigned char*)malloc((format->binary_size + format->salt_size) * 2 + 1);
+	unsigned char* result = (unsigned char*)malloc(((size_t)format->binary_size + format->salt_size) * 2 + 1);
 
 	format->convert_to_string(binary, ((const char*)binary) + format->binary_size, result);
 

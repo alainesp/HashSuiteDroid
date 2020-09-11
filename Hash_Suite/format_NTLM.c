@@ -651,6 +651,20 @@ PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uin
 
 	// Begin function code
 	sprintf(source+strlen(source),	"uint%s a,b,c,d,nt_buffer0=0;uint indx;", buffer);
+	// Generate less repeated keys
+	uint64_t max_work_item_index = 1;
+	int is_max_work_item_index_needed = TRUE;
+	for (cl_uint i = 1; i < key_lenght; i++)
+	{
+		max_work_item_index *= num_char_in_charset;
+		if (max_work_item_index > UINT32_MAX)
+		{
+			is_max_work_item_index_needed = FALSE;
+			break;
+		}
+	}
+	if (is_max_work_item_index_needed)// Only 'CALCULATED' work-items
+		sprintf(source + strlen(source), "if(get_global_id(0)>=%uu) return;", (uint32_t)max_work_item_index);
 
 	// Prefetch in local memory
 	//if ((ntlm_size_bit_table/32+1) <= 1024 && num_passwords_loaded > 1)

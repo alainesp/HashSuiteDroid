@@ -350,7 +350,7 @@ PUBLIC void dcc_salt_part_c_code(uint32_t* salt_buffer, uint32_t* crypt_result)
 	crypt_result[8+2] = c;
 	crypt_result[8+3] = d;
 }
-#if !defined(_M_X64) || defined(HS_TESTING)
+
 PUBLIC void dcc_ntlm_part_c_code(uint32_t* nt_buffer, uint32_t* crypt_result)
 {
 	uint32_t a,b,c,d;
@@ -436,6 +436,7 @@ PUBLIC void dcc_ntlm_part_c_code(uint32_t* nt_buffer, uint32_t* crypt_result)
 	crypt_result[4+3] = d;
 }
 
+#if !defined(_M_X64) || defined(HS_TESTING)
 PRIVATE void crypt_ntlm_protocol_c_code(CryptParam* param)
 {
 	dcc_salt_part_func* dcc_salt_parts[28];
@@ -458,7 +459,7 @@ PRIVATE void crypt_ntlm_protocol_avx(CryptParam* param)
 {
 	dcc_salt_part_func* dcc_salt_parts[28];
 
-	for (int i = 0; i < LENGHT(dcc_salt_parts); i++)
+	for (int i = 0; i < LENGTH(dcc_salt_parts); i++)
 		dcc_salt_parts[i] = dcc_salt_part_avx;
 
 	crypt_ntlm_protocol_body(param, NT_NUM_KEYS_AVX, 8, dcc_ntlm_part_avx, dcc_salt_parts);
@@ -475,7 +476,7 @@ PRIVATE void crypt_ntlm_protocol_avx2(CryptParam* param)
 {
 	dcc_salt_part_func* dcc_salt_parts[28];
 
-	for (int i = 0; i < LENGHT(dcc_salt_parts); i++)
+	for (int i = 0; i < LENGTH(dcc_salt_parts); i++)
 		dcc_salt_parts[i] = dcc_salt_part_avx2;
 
 	crypt_ntlm_protocol_body(param, NT_NUM_KEYS_AVX, 16, dcc_ntlm_part_avx2, dcc_salt_parts);
@@ -688,7 +689,7 @@ PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
 {
 	dcc_salt_part_func* dcc_salt_parts[28];
 
-	for (int i = 0; i < LENGHT(dcc_salt_parts); i++)
+	for (int i = 0; i < LENGTH(dcc_salt_parts); i++)
 		dcc_salt_parts[i] = (dcc_salt_part_func*)dcc_salt_part_sse2;
 
 	crypt_ntlm_protocol_body(param, NT_NUM_KEYS, 4, (dcc_ntlm_part_func*)dcc_ntlm_part_sse2, dcc_salt_parts);
@@ -913,6 +914,20 @@ PRIVATE void ocl_gen_kernel_with_lenght(char* source, cl_uint key_lenght, cl_uin
 									"uint max_number=get_global_id(0);"
 									"uint%s a,b,c,d,nt_buffer0=0,xx;"
 									"uint indx;", buffer);
+	// Generate less repeated keys
+	uint64_t max_work_item_index = 1;
+	int is_max_work_item_index_needed = TRUE;
+	for (cl_uint i = 1; i < key_lenght; i++)
+	{
+		max_work_item_index *= num_char_in_charset;
+		if (max_work_item_index > UINT32_MAX)
+		{
+			is_max_work_item_index_needed = FALSE;
+			break;
+		}
+	}
+	if (is_max_work_item_index_needed)// Only 'CALCULATED' work-items
+		sprintf(source + strlen(source), "if(get_global_id(0)>=%uu) return;", (uint32_t)max_work_item_index);
 
 	// Load salt values into local_memory
 	//if (num_diff_salts > 1 && num_salt_diff_parts*num_diff_salts*sizeof(cl_uint) < local_memory_size)

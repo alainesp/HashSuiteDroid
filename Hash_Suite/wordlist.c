@@ -822,7 +822,7 @@ PUBLIC int is_wordlist_supported(const char* file_path, char* error_message)
 		free(wordlist_buffer);
 
 		if(error_message && !result)
-			strcpy(error_message, "Hash Suite only support .zip, .gz, .tgz, .bz2, .7z and plaintext wordlists files.");
+			strcpy(error_message, "Hash Suite only supports .zip, .gz, .tgz, .bz2, .7z and plaintext wordlists files.");
 
 		return result;
 	}
@@ -960,7 +960,6 @@ PUBLIC int wordlist_gen_ntlm(uint32_t* nt_buffer, uint32_t max_number, int threa
 }
 PUBLIC int wordlist_gen_utf8_lm(unsigned char* keys, uint32_t max_number, int thread_id)
 {
-	uint32_t i = 0;
 	int result = max_number;
 
 	memset(keys, 0, max_number*8);
@@ -969,7 +968,7 @@ PUBLIC int wordlist_gen_utf8_lm(unsigned char* keys, uint32_t max_number, int th
 
 	thread_params[thread_id] = wordlist_func.get_position();
 
-	for(; i < max_number; i++, keys += 8)
+	for(uint32_t i = 0; i < max_number; i++, keys += 8)
 	{
 		int line_lenght = wordlist_func.getline(current_key, max_lenght);
 		// All keys generated
@@ -985,7 +984,7 @@ PUBLIC int wordlist_gen_utf8_lm(unsigned char* keys, uint32_t max_number, int th
 	wordlist_func.calculate_completition();
 	num_key_space = (int64_t)((get_num_keys_served() + result) * wordlist_completition);
 
-	HS_LEAVE_MUTEX(&key_provider_mutex);	
+	HS_LEAVE_MUTEX(&key_provider_mutex);
 	return result;
 }
 PUBLIC int wordlist_gen_utf8(unsigned char* keys, uint32_t max_number, int thread_id)
@@ -1009,6 +1008,7 @@ PUBLIC int wordlist_gen_utf8(unsigned char* keys, uint32_t max_number, int threa
 PUBLIC int wordlist_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number, int thread_id)
 {
 	uint32_t i = 0;
+	int last_max_length = FALSE;
 	HS_ENTER_MUTEX(&key_provider_mutex);
 
 	thread_params[thread_id] = wordlist_func.get_position();
@@ -1019,9 +1019,13 @@ PUBLIC int wordlist_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number
 		// All keys generated
 		if (line_lenght < 0)
 			break;
+		// Eliminate false "" keys
+		if (line_lenght == 0 && last_max_length)
+			i--;
+		else// Copy key to nt_buffer
+			convert_utf8_2_coalesc(current_key, nt_buffer + i, max_number, line_lenght);
 
-		// Copy key to nt_buffer
-		convert_utf8_2_coalesc(current_key, nt_buffer + i, max_number, line_lenght);
+		last_max_length = line_lenght == max_lenght;
 	}
 
 	// Getting approximate key-space
@@ -1035,14 +1039,16 @@ PUBLIC int wordlist_gen_utf8_coalesc_le(uint32_t* nt_buffer, uint32_t max_number
 PUBLIC void wordlist_get_description(const char* provider_param, char* description, int min_lenght, int max_lenght)
 {
 	// Get the wordlist filename
-	const char* filename;
 	sqlite3_stmt* _select_wordlists;
 	sqlite3_prepare_v2(db, "SELECT Name FROM WordList WHERE ID=?;", -1, &_select_wordlists, NULL);
 	sqlite3_bind_int(_select_wordlists, 1, atoi(provider_param));
 	sqlite3_step(_select_wordlists);
 
-	filename = (const char*)sqlite3_column_text(_select_wordlists, 0);
-	sprintf(description, " [%.20s%s]", filename, strlen(filename) > 20 ? "...": "");
+	const char* filename = (const char*)sqlite3_column_text(_select_wordlists, 0);
+	if (filename)
+		sprintf(description, " [%.20s%s]", filename, strlen(filename) > 20 ? "..." : "");
+	else
+		description[0] = 0;
 
 	sqlite3_finalize(_select_wordlists);
 }

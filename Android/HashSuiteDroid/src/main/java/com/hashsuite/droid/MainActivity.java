@@ -882,27 +882,22 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 					SaveAttackState();
 
 				// Update the UI
-				my_activity.runOnUiThread(new Runnable()
-				{
-					@Override
-					public void run()
-					{
-						// Check battery status
-						if((attack_counter % 8) == 7)
-							checkBattery("Battery limit reached, stopping attack.");
-						
-						tab_status.UpdateStatus(status);
-						my_activity.setTitle(ShowHashesStats(format_index, getScreenTitleWidth()));
+				my_activity.runOnUiThread(() -> {
+					// Check battery status
+					if((attack_counter % 8) == 7)
+						checkBattery("Battery limit reached, stopping attack.");
 
-						if (!my_activity.is_cracking && my_activity.action_menu != null)
-						{
-							my_activity.action_menu.setIcon(R.drawable.ic_action_play);
-							my_activity.action_menu.setTitle("Start");
-							my_activity.tab_main.LoadHashes();
-						}
-						
-						attack_counter++;
+					tab_status.UpdateStatus(status);
+					my_activity.setTitle(ShowHashesStats(format_index, getScreenTitleWidth()));
+
+					if (!my_activity.is_cracking && my_activity.action_menu != null)
+					{
+						my_activity.action_menu.setIcon(R.drawable.ic_action_play);
+						my_activity.action_menu.setTitle("Start");
+						my_activity.tab_main.LoadHashes();
 					}
+
+					attack_counter++;
 				});
 			}
 		};
@@ -950,27 +945,49 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			}
 		});
 	}
-	private static void AttackBeginCallBack()
-	{
-		my_activity.runOnUiThread(new Runnable()
-		{
-			@Override
-			public void run()
+	private static void AttackBeginCallBack() {
+		my_activity.runOnUiThread(() -> {
+			if (rules_dialog != null)
 			{
-				if(rules_dialog != null)
-				{
-					rules_dialog.dismiss();
-					rules_dialog = null;
-					
-					if(attack_timer != null)
-					{
-						attack_timer.cancel();
-						attack_timer = null;
-					}
-					if(timer_update_gui != null)
-						timer_update_gui = null;
+				if (attack_timer != null) {
+					attack_timer.cancel();
+					attack_timer = null;
 				}
-				my_activity.onStartAttackCommon();
+				if (timer_update_gui != null)
+					timer_update_gui = null;
+
+				rules_dialog.dismiss();
+				rules_dialog = null;
+			}
+			my_activity.onStartAttackCommon();
+		});
+	}
+
+	private static final int MESSAGE_FINISH_BATCH		  =	1;
+	private static final int MESSAGE_FINISH_ATTACK		  =	2;
+	private static final int MESSAGE_ATTACK_INIT_COMPLETE =	3;
+	private static final int MESSAGE_ATTACK_GPU_FAIL      =	4;
+	private static final int MESSAGE_TESTING_INIT_COMPLETE=	5;
+	private static final int MESSAGE_TESTING_FAIL		  =	6;
+	private static final int MESSAGE_TESTING_SUCCEED	  = 7;
+	private static void AttackReceiveMessage(int message) {
+		my_activity.runOnUiThread(() -> {
+			switch(message)
+			{
+//				case MESSAGE_TESTING_INIT_COMPLETE:
+//					Toast.makeText(my_activity, "Testing hardware...", Toast.LENGTH_SHORT).show();
+//					break;
+//				case MESSAGE_TESTING_SUCCEED:
+//					Toast.makeText(my_activity, "Testing succeed.", Toast.LENGTH_SHORT).show();
+//					break;
+				case MESSAGE_TESTING_FAIL:
+					if(ParamsFragment.getGPUsUsed() == 0)
+						Toast.makeText(my_activity, "A problem was detected testing the cracking process. This means there is a bug in Hash Suite. " +
+								"Hash Suite can't ensure reliable cracking results.", Toast.LENGTH_LONG).show();
+					else
+						Toast.makeText(my_activity, "A problem was detected testing the cracking process. This means there is a bug in Hash Suite or the OpenCL driver. " +
+							"Hash Suite can't ensure reliable cracking results.", Toast.LENGTH_LONG).show();
+					break;
 			}
 		});
 	}
@@ -1086,7 +1103,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 								StartAttack(format_index, key_provider_index, num_threads, ParamsFragment.getMin(format_index, key_provider_index), ParamsFragment.getMax(format_index, key_provider_index),
 									ParamsFragment.getParam(key_provider_index), use_rules, rules_mask_on, gpus_used);
 								//onStartAttackCommon();
-								if(gpus_used!=0 && use_rules!=0)
+								if(gpus_used != 0 && use_rules != 0)
 								{
 									LayoutInflater inflater = my_activity.getLayoutInflater();
 									builder = new AlertDialog.Builder(my_activity)
@@ -1094,31 +1111,33 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 										.setView(inflater.inflate(R.layout.rules_compilation, null))
 										//.setIcon(R.drawable.ic_action_alarms)
 										.setCancelable(false);
-						
+
 									// Get the AlertDialog from create()
 									rules_dialog = builder.create();
 									rules_dialog.show();
 									//rules_dialog.getWindow().setLayout(calculateDialogWidth(560), WindowManager.LayoutParams.WRAP_CONTENT);
-									
+
 									timer_update_gui = new TimerTask()
 									{
+										int gpu_rules_compilation_timer = 0;
 										@Override
 										public void run()
 										{
 											// Update the UI
-											my_activity.runOnUiThread(new Runnable()
-											{
-												@Override
-												public void run()
-												{
-													TextView kernel_memory = (TextView) rules_dialog.findViewById(R.id.rules_compilation_memory);
-													ProgressBar rules_compilation_status = (ProgressBar) rules_dialog.findViewById(R.id.rules_compilation_status);
-													
-													int status = GetRulesGPUStatus();
-													
-													kernel_memory.setText("Using "+(status&0xffffff)+" KB for kernels");
-													rules_compilation_status.setProgress(status>>24);
-												}
+											my_activity.runOnUiThread(() -> {
+												if(rules_dialog == null) return;
+
+												TextView kernel_memory = rules_dialog.findViewById(R.id.rules_compilation_memory);
+												ProgressBar rules_compilation_status = rules_dialog.findViewById(R.id.rules_compilation_status);
+
+												// NOTE: Not supported with compile option "OCL_RULES_ALL_IN_GPU" active
+												//int status = GetRulesGPUStatus();
+												//kernel_memory.setText("Using " + (status & 0xffffff) + " KB for kernels");
+												//rules_compilation_status.setProgress(status>>24);
+
+												gpu_rules_compilation_timer++;
+												kernel_memory.setText("Time: " + gpu_rules_compilation_timer + " second" + (gpu_rules_compilation_timer==1 ? "" : "s"));
+												rules_compilation_status.setIndeterminate(true);
 											});
 										}
 									};

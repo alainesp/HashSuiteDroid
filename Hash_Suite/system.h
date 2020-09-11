@@ -23,6 +23,9 @@
 	#define OCL_NORMAL_KERNEL_TIME		40
 	#define HS_OCL_REDUCE_REGISTER_USE
 	#define OCL_MIN_WORKGROUP_SIZE		32
+	#define OCL_RULES_ALL_IN_GPU
+
+	#define Sleep(ms) usleep((ms)*((useconds_t)1000))
 	// Log support------------------------------------------
 	#include <android/log.h>
 

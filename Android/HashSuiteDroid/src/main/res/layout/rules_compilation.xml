@@ -13,7 +13,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textAppearance='?android:attr/textAppearanceMedium'
-            android:text="Using 0 KB for kernels" />
+            android:text="" />
      
     <ProgressBar
             android:id="@+id/rules_compilation_status"

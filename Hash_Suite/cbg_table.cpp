@@ -597,3 +597,34 @@ PUBLIC extern "C" void generate_random(uint8_t* values, size_t size)
 		}
 	}
 }
+
+// Support for a set of strings in C
+#include <unordered_set>
+#include "xxhash.h"
+struct MyStringView {
+	const char* ptr;
+
+	// Hash
+	std::size_t operator()(MyStringView const& s) const noexcept
+	{
+		return XXH64(s.ptr, strlen(s.ptr), 0);
+	}
+	// Equal_to
+	bool operator()(const MyStringView& lhs, const MyStringView& rhs) const
+	{
+		return 0 == strcmp(lhs.ptr, rhs.ptr);
+	}
+};
+PRIVATE std::unordered_set<MyStringView, MyStringView, MyStringView> strings;
+PUBLIC extern "C" void strings_clear_collection()
+{
+	strings.clear();
+}
+PUBLIC extern "C" int string_exist_in_collection(const char* s)
+{
+	if (strings.count({ s }))
+		return TRUE;
+
+	strings.insert({ s });
+	return FALSE;
+}

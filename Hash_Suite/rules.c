@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2014,2016 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2014,2016,2020 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include <ctype.h>
@@ -3964,7 +3964,7 @@ PRIVATE void oclru_cap_plus_2dig_common(char* source, char* rule_name, cl_uint i
 }
 #endif
 
-// Append a year between 1900-2019
+// Append a year between 1900-2029
 PRIVATE void ru_lower_plus_year_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	uint32_t year = rules_data_buffer[YEAR_INDEX];
@@ -3973,7 +3973,7 @@ PRIVATE void ru_lower_plus_year_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint
 	{
 		uint32_t i,j;
 		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
-		int num_to_copy = __min(120-year, __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
+		int num_to_copy = __min(130-year, __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
 		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if(lenght >= 24)
@@ -4042,7 +4042,7 @@ PRIVATE void ru_lower_plus_year_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint
 		for(j = 14*NUM_KEYS+nt_buffer_index; j < MAX; j++)
 			nt_buffer[j] =  lenght;
 
-		if (year>=120)
+		if (year>=130)
 		{
 			year = 0;
 			rules_nt_buffer_index++;
@@ -4061,7 +4061,7 @@ PRIVATE void r_low_plus_year_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32
 	{
 		uint32_t i, j;
 		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		int num_to_copy = __min(120-year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
+		int num_to_copy = __min(130-year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
 		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 24)
@@ -4151,7 +4151,7 @@ PRIVATE void r_low_plus_year_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32
 		for (j = 7 * NUM_KEYS + nt_buffer_index; j < MAX; j++)
 			nt_buffer[j] = lenght;
 
-		if (year >= 120)
+		if (year >= 130)
 		{
 			year = 0;
 			rules_nt_buffer_index++;
@@ -4170,7 +4170,7 @@ PRIVATE void rule_cap_plus_year_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint
 	{
 		uint32_t i, j;
 		uint32_t lenght = rules_nt_buffer[14 * NUM_KEYS + rules_nt_buffer_index] >> 4;
-		int num_to_copy = __min(120 - year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
+		int num_to_copy = __min(130 - year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
 		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 24)
@@ -4255,7 +4255,7 @@ PRIVATE void rule_cap_plus_year_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint
 		for (j = 14 * NUM_KEYS + nt_buffer_index; j < MAX; j++)
 			nt_buffer[j] = lenght;
 
-		if (year >= 120)
+		if (year >= 130)
 		{
 			year = 0;
 			rules_nt_buffer_index++;
@@ -4274,7 +4274,7 @@ PRIVATE void r_cap_plus_year_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32
 	{
 		uint32_t i, j;
 		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		int num_to_copy = __min(120 - year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
+		int num_to_copy = __min(130 - year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
 		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 24)
@@ -4396,7 +4396,7 @@ PRIVATE void r_cap_plus_year_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32
 		for (j = 7 * NUM_KEYS + nt_buffer_index; j < MAX; j++)
 			nt_buffer[j] = lenght;
 
-		if (year >= 120)
+		if (year >= 130)
 		{
 			year = 0;
 			rules_nt_buffer_index++;
@@ -4425,7 +4425,7 @@ PRIVATE cl_uint oclru_plus_year_ucs(char* source, char nt_buffer[16][16], char n
 	sprintf(nt_buffer[14], "+%uu", (lenght + 4) << 4);
 	// Lenght and begin cycle
 	sprintf(source + strlen(source),
-		"for(uint i=0;i<120u;i+=%uu)"
+		"for(uint i=0;i<130u;i+=%uu)"
 		"{"
 			// Divide by 10
 			"uint dec=mul_hi(i,429496730u);"
@@ -4482,7 +4482,7 @@ PRIVATE cl_uint oclru_plus_year_utf8(char* source, char nt_buffer[16][16], char 
 	sprintf(nt_buffer[7], "+%uu", (lenght + 4) << 3);
 	// Lenght and begin cycle
 	sprintf(source + strlen(source),
-		"for(uint i=0;i<120u;i+=%uu)"
+		"for(uint i=0;i<130u;i+=%uu)"
 		"{"
 			// Divide by 10
 			"uint dec=mul_hi(i,429496730u);"
@@ -4685,7 +4685,7 @@ PRIVATE void oclru_cap_plus_year_common(char* source, char* rule_name, cl_uint i
 }
 #endif
 
-// Prefix a year between 1900-2019
+// Prefix a year between 1900-2029
 PRIVATE void rule_prefix_year_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t* rules_data_buffer)
 {
 	uint32_t year = rules_data_buffer[YEAR_INDEX];
@@ -4694,7 +4694,7 @@ PRIVATE void rule_prefix_year_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32
 	{
 		uint32_t i,j;
 		uint32_t lenght = rules_nt_buffer[14*NUM_KEYS+rules_nt_buffer_index] >> 4;
-		int num_to_copy = __min(120-year, __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
+		int num_to_copy = __min(130-year, __min(NUM_KEYS-nt_buffer_index, NUM_KEYS-rules_nt_buffer_index));
 		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if(lenght >= 24)
@@ -4730,7 +4730,7 @@ PRIVATE void rule_prefix_year_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32
 		for (j = 14 * NUM_KEYS + nt_buffer_index; j < MAX; j++)
 			nt_buffer[j] = lenght;
 
-		if(year >= 120)
+		if(year >= 130)
 		{
 			year = 0;
 			rules_nt_buffer_index++;
@@ -4749,7 +4749,7 @@ PRIVATE void rul_prefix_year_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32
 	{
 		uint32_t i, j;
 		uint32_t lenght = rules_nt_buffer[7 * NUM_KEYS + rules_nt_buffer_index] >> 3;
-		int num_to_copy = __min(120 - year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
+		int num_to_copy = __min(130 - year, __min(NUM_KEYS - nt_buffer_index, NUM_KEYS - rules_nt_buffer_index));
 		uint32_t MAX = nt_buffer_index + num_to_copy;
 
 		if (lenght >= 24)
@@ -4782,7 +4782,7 @@ PRIVATE void rul_prefix_year_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32
 		for (j = 7 * NUM_KEYS + nt_buffer_index; j < MAX; j++)
 			nt_buffer[j] = lenght;
 
-		if (year >= 120)
+		if (year >= 130)
 		{
 			year = 0;
 			rules_nt_buffer_index++;
@@ -4826,7 +4826,7 @@ PRIVATE cl_uint oclru_prefix_year_ucs(char* source, char nt_buffer[16][16], char
 
 	// Lenght and begin cycle
 	sprintf(source + strlen(source),
-		"for(uint i=0;i<120u;i+=%uu)"
+		"for(uint i=0;i<130u;i+=%uu)"
 		"{"
 			// "20" and "19" transformed to Unicode
 			"uint century=(i>=100u)?3145778u:3735601u;"
@@ -4864,7 +4864,7 @@ PRIVATE cl_uint oclru_prefix_year_utf8(char* source, char nt_buffer[16][16], cha
 
 	// Begin cycle
 	sprintf(source + strlen(source),
-		"for(uint i=0;i<120u;i+=%uu)"
+		"for(uint i=0;i<130u;i+=%uu)"
 		"{"
 			// Divide by 10
 			"uint dec=mul_hi(i,429496730u);"
@@ -6288,7 +6288,7 @@ PRIVATE void rule_lower_leet_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_
 		else
 			nt_buffer[14 * NUM_KEYS + nt_buffer_index] = __max(nt_buffer[14 * NUM_KEYS + nt_buffer_index], lenght << 4);
 
-		if(leet_index >= LENGHT(leet_orig) - 2)// -2 and not -1 because LENGHT take into account the null terminator
+		if(leet_index >= LENGTH(leet_orig) - 2)// -2 and not -1 because LENGHT take into account the null terminator
 		{
 			leet_index = -1;
 			rules_nt_buffer_index++;
@@ -6358,7 +6358,7 @@ PRIVATE void rule_lower_leet_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32
 			nt_buffer_index++;
 		}
 
-		if (leet_index >= LENGHT(leet_orig) - 2)// -2 and not -1 because LENGHT take into account the null terminator
+		if (leet_index >= LENGTH(leet_orig) - 2)// -2 and not -1 because LENGHT take into account the null terminator
 		{
 			leet_index = -1;
 			rules_nt_buffer_index++;
@@ -6424,7 +6424,7 @@ PRIVATE void rule_cap_leet_ucs(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t*
 		else
 			nt_buffer[14 * NUM_KEYS + nt_buffer_index] = __max(nt_buffer[14 * NUM_KEYS + nt_buffer_index], lenght << 4);
 
-		if(leet_index >= LENGHT(leet_orig) - 2)// -2 and not -1 because LENGHT take into account the null terminator
+		if(leet_index >= LENGTH(leet_orig) - 2)// -2 and not -1 because LENGHT take into account the null terminator
 		{
 			leet_index = -1;
 			rules_nt_buffer_index++;
@@ -6502,7 +6502,7 @@ PRIVATE void rule_cap_leet_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t
 			nt_buffer_index++;
 		}
 
-		if (leet_index >= LENGHT(leet_orig) - 2)// -2 and not -1 because LENGHT take into account the null terminator
+		if (leet_index >= LENGTH(leet_orig) - 2)// -2 and not -1 because LENGHT take into account the null terminator
 		{
 			leet_index = -1;
 			rules_nt_buffer_index++;
@@ -6755,9 +6755,9 @@ PRIVATE void oclru_cap_leet_common(char* source, char* rule_name, cl_uint in_NUM
 
 #define DESC_9		"Lowercase word and append all printable characters. (word -> word#)"
 #define DESC_10		"Prefix word with all printable characters. (word -> #word)"
-#define DESC_11		"Lowercase word and append a year. Years range from 1900 to 2019. (word -> word1985)"
+#define DESC_11		"Lowercase word and append a year. Years range from 1900 to 2029. (word -> word1985)"
 
-#define DESC_12		"Capitalize word and append a year. Years range from 1900 to 2019. (word -> Word1985)"
+#define DESC_12		"Capitalize word and append a year. Years range from 1900 to 2029. (word -> Word1985)"
 #define DESC_13		"Lowercase word and append two digits. (word -> word37)"
 #define DESC_14		"Capitalize word and append two digits. (word -> Word37)"
 
@@ -6765,7 +6765,7 @@ PRIVATE void oclru_cap_leet_common(char* source, char* rule_name, cl_uint in_NUM
 #define DESC_16		"Remove each characters of the word. (word -> wod)"
 #define DESC_17		"Overstrike each characters of the word with all printable characters. (word -> wo#d)"
 
-#define DESC_18		"Prefix word with a year. Years range from 1900 to 2019. (word -> 1992word)"
+#define DESC_18		"Prefix word with a year. Years range from 1900 to 2029. (word -> 1992word)"
 #define DESC_19		"Prefix word with two characters (all printable characters). (word -> ;!word)"
 #define DESC_20		"Append two characters to the word (all printable characters). (word -> word;!)"
 
@@ -6886,17 +6886,17 @@ PUBLIC Rule rules[] = {
 														  	 											     												  
  {"Capitalize"			, DESC_3 , {rule_capitalize_ucs	  , rule_capitalize_utf8}, TRUE,			1			, FALSE, 0, {oclru_capitalize_common	  , {oclru_capitalize_ucs	   , oclru_capitalize_utf8		}, NULL		, ocl_capitalize_get_key		, "0", 0, NULL}},
  {"Duplicate"			, DESC_4 , {rule_duplicate_ucs	  , rule_duplicate_utf8	}, TRUE,			1			, FALSE, 0, {oclru_duplicate_common		  , {oclru_duplicate_ucs	   , oclru_duplicate_utf8		}, NULL		, ocl_duplicate_get_key			, "0", 0, NULL}},
- {"Lower+Leet"			, DESC_5 , {rule_lower_leet_ucs	  , rule_lower_leet_utf8}, TRUE, LENGHT(leet_orig)-1	, FALSE, 0, {oclru_lower_leet_common	  , {oclru_lower_leet_ucs	   , oclru_lower_leet_utf8		}, end_brace, ocl_lower_leet_get_key		, "i", 0, ocl_write_leet_consts}},
+ {"Lower+Leet"			, DESC_5 , {rule_lower_leet_ucs	  , rule_lower_leet_utf8}, TRUE, LENGTH(leet_orig)-1	, FALSE, 0, {oclru_lower_leet_common	  , {oclru_lower_leet_ucs	   , oclru_lower_leet_utf8		}, end_brace, ocl_lower_leet_get_key		, "i", 0, ocl_write_leet_consts}},
 															 														    
- {"Capitalize+Leet"		, DESC_6 , {rule_cap_leet_ucs	  , rule_cap_leet_utf8	}, TRUE, LENGHT(leet_orig)-1	, FALSE, 0, {oclru_cap_leet_common		  , {oclru_capitalize_leet_ucs , oclru_capitalize_leet_utf8	}, end_brace, ocl_capitalize_leet_get_key	, "i", 0, ocl_write_leet_consts}},
+ {"Capitalize+Leet"		, DESC_6 , {rule_cap_leet_ucs	  , rule_cap_leet_utf8	}, TRUE, LENGTH(leet_orig)-1	, FALSE, 0, {oclru_cap_leet_common		  , {oclru_capitalize_leet_ucs , oclru_capitalize_leet_utf8	}, end_brace, ocl_capitalize_leet_get_key	, "i", 0, ocl_write_leet_consts}},
  {"Lower+Upper Last"	, DESC_7 , {ru_lower_upperlast_ucs, ru_low_upperlas_utf8}, TRUE,			1			, FALSE, 0, {oclru_lower_upper_last_common, {oclru_lower_upper_last_ucs, oclru_lower_upper_last_utf8}, NULL		, ocl_lower_upper_last_get_key	, "0", 0, NULL}},
  {"Capitalize+char"		, DESC_8 , {rule_cap_append_ucs	  , rule_cap_append_utf8}, TRUE, LENGHT_CHAR_ADDED		, FALSE, 0, {oclru_capitalize_plus_common , {oclru_capitalize_plus_ucs , oclru_capitalize_plus_utf8	}, end_brace, ocl_capitalize_append_get_key	, "i", 0, NULL}},
 															 									    
  {"Lower+char"			, DESC_9 , {rule_lower_append_ucs , rule_lower_plus_utf8}, TRUE, LENGHT_CHAR_ADDED		, FALSE, 0, {oclru_lower_plus_common	  , {oclru_lower_append_ucs	   , oclru_lower_plus_utf8		}, end_brace, ocl_lower_append_get_key	    , "i", 0, NULL}},
  {"char+Word"			, DESC_10, {rule_prefix_ucs		  , rule_prefix_utf8	}, TRUE, LENGHT_CHAR_ADDED		, FALSE, 0, {oclru_prefix_common		  , {oclru_prefix_ucs		   , oclru_prefix_utf8			}, end_brace, ocl_prefix_get_key			, "i", 0, NULL}},
- {"Lower+Year"			, DESC_11, {ru_lower_plus_year_ucs, r_low_plus_year_utf8}, TRUE,			120			, FALSE, 0, {oclru_lower_plus_year_common , {oclru_lower_plus_year_ucs , oclru_lower_plus_year_utf8	}, end_brace, ocl_lower_plus_year_get_key	, "i", 0, NULL}},
+ {"Lower+Year"			, DESC_11, {ru_lower_plus_year_ucs, r_low_plus_year_utf8}, TRUE,			130			, FALSE, 0, {oclru_lower_plus_year_common , {oclru_lower_plus_year_ucs , oclru_lower_plus_year_utf8	}, end_brace, ocl_lower_plus_year_get_key	, "i", 0, NULL}},
 															 									    
- {"Capitalize+Year"		, DESC_12, {rule_cap_plus_year_ucs, r_cap_plus_year_utf8}, TRUE,			120			, FALSE, 0, {oclru_cap_plus_year_common	  , {oclru_cap_plus_year_ucs   , oclru_cap_plus_year_utf8	}, end_brace, ocl_cap_plus_year_get_key		, "i", 0, NULL}},
+ {"Capitalize+Year"		, DESC_12, {rule_cap_plus_year_ucs, r_cap_plus_year_utf8}, TRUE,			130			, FALSE, 0, {oclru_cap_plus_year_common	  , {oclru_cap_plus_year_ucs   , oclru_cap_plus_year_utf8	}, end_brace, ocl_cap_plus_year_get_key		, "i", 0, NULL}},
  {"Lower+2 Digits"		, DESC_13, {ru_lower_plus_2dig_ucs, ru_lo_plus_2dig_utf8}, TRUE,			100			, FALSE, 0, {oclru_lower_plus_2dig_common , {oclru_lower_plus_2dig_ucs , oclru_lower_plus_2dig_utf8	}, end_brace, ocl_lower_plus_2dig_get_key	, "i", 0, NULL}},
  {"Capitalize+2 Digits" , DESC_14, {rule_cap_plus_2dig_ucs, r_cap_plus_2dig_utf8}, TRUE,			100			, FALSE, 0, {oclru_cap_plus_2dig_common   , {oclru_cap_plus_2digits_ucs, oclru_cap_plus_2dig_utf8	}, end_brace, ocl_cap_plus_2digits_get_key	, "i", 0, NULL}},
 															 										    
@@ -6904,7 +6904,7 @@ PUBLIC Rule rules[] = {
  {"Remove"				, DESC_16, {rule_remove_ucs		  , rule_remove_utf8	}, FALSE, RULE_LENGHT_COMMON	, TRUE,  0, {oclru_remove_common		  , {oclru_remove_ucs		   , oclru_remove_utf8			}, end_brace, ocl_remove_get_key			, OCL_REMOVE_PARAM    , 0, NULL}},
  {"Overstrike"			, DESC_17, {rule_overstrike_ucs	  , rule_overstrike_utf8}, FALSE, INSERT_MULTIPLIER		, TRUE,  0, {oclru_overstrike_common	  , {oclru_overstrike_ucs	   , oclru_overstrike_utf8		}, end_brace, ocl_overstrike_get_key		, OCL_OVERSTRIKE_PARAM, RULE_LENGHT_COMMON, NULL}},
 														  	 							  																							   
- {"Year+Word"			, DESC_18, {rule_prefix_year_ucs  , rul_prefix_year_utf8}, FALSE,			120			, FALSE, 0, {oclru_prefix_year_common	  , {oclru_prefix_year_ucs	   , oclru_prefix_year_utf8		}, end_brace, ocl_prefix_year_get_key		, "i"	     , 0, NULL}},
+ {"Year+Word"			, DESC_18, {rule_prefix_year_ucs  , rul_prefix_year_utf8}, FALSE,			130			, FALSE, 0, {oclru_prefix_year_common	  , {oclru_prefix_year_ucs	   , oclru_prefix_year_utf8		}, end_brace, ocl_prefix_year_get_key		, "i"	     , 0, NULL}},
  {"2 chars+Word"		, DESC_19, {rule_prefix_2char_ucs , ru_prefix_2char_utf8}, FALSE,POW2(LENGHT_CHAR_ADDED), FALSE, 0, {oclru_prefix_2char_common	  , {oclru_prefix_2char_ucs	   , oclru_prefix_2char_utf8	}, end_brace, ocl_prefix_2char_get_key		, OCL_2_CHARS, LENGHT_CHAR_ADDED, NULL}},
  {"Word+2 chars"		, DESC_20, {rule_append_2char_ucs , rule_plus_2char_utf8}, FALSE,POW2(LENGHT_CHAR_ADDED), FALSE, 0, {oclru_plus_2char_common	  , {oclru_append_2char_ucs	   , oclru_append_2char_utf8	}, end_brace, ocl_append_2char_get_key		, OCL_2_CHARS, LENGHT_CHAR_ADDED, NULL}},
 														  	 									 																					   
@@ -6912,7 +6912,7 @@ PUBLIC Rule rules[] = {
  {"3 chars+Word"		, DESC_22, {rule_prefix_3char_ucs , ru_prefix_3char_utf8}, FALSE,POW3(LENGHT_CHAR_ADDED), FALSE, 0, {oclru_prefix_3char_common	  , {oclru_prefix_3char_ucs	   , oclru_prefix_3char_utf8	}, end_brace, ocl_prefix_3char_get_key		, OCL_3_CHARS, POW2(LENGHT_CHAR_ADDED), NULL}}
 };
 // TODO: If greater than 31, rules need to change code in opencl implementation
-PUBLIC int num_rules = LENGHT(rules);
+PUBLIC int num_rules = LENGTH(rules);
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Common
@@ -6985,7 +6985,7 @@ PUBLIC void rules_resume(int pmin_lenght, int pmax_lenght, char* param, const ch
 
 	provider_index = RULE_GET_KEY_PROV_INDEX(param);
 
-	for(int i = 0; i < LENGHT(key_providers[provider_index].impls); i++)
+	for(int i = 0; i < LENGTH(key_providers[provider_index].impls); i++)
 		if (key_providers[provider_index].impls[i].protocol == USED_PROTOCOL)
 		{
 			gen_keys_principal = key_providers[provider_index].impls[i].generate;
@@ -7066,6 +7066,8 @@ PUBLIC void rules_report_remain_key_space(int64_t pnum_keys_in_memory, uint32_t 
 
 PUBLIC int rules_gen_common(uint32_t* nt_buffer, uint32_t NUM_KEYS, int thread_id)
 {
+	assert(NUM_KEYS <= 256);// 512 for ut8
+
 	uint32_t* rules_data_buffer = ((uint32_t*)(thread_params + num_thread_params*key_providers[provider_index].per_thread_data_size)) + RULES_THREAD_DATA_SIZE*thread_id;
 	nt_buffer_index = 0;
 	uint32_t num_orig_keys_processed = 0;

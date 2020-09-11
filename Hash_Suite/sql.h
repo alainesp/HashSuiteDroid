@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2013, 2015, 2016 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2020 by Alain Espinosa. See LICENSE.
 
 #define CREATE_ACCOUNT_HASH									\
 "CREATE TABLE IF NOT EXISTS Account (						\
@@ -9,6 +9,7 @@
 	Fixed INTEGER NOT NULL DEFAULT 0,						\
 	Privilege INTEGER NOT NULL DEFAULT 1					\
 );															\
+CREATE UNIQUE INDEX AccountUser ON Account(UserName,Hash);	\
 															\
 CREATE TABLE IF NOT EXISTS Hash (							\
 	ID INTEGER PRIMARY KEY,									\
@@ -163,6 +164,14 @@ CREATE TABLE IF NOT EXISTS Queries (							\
 	ID INTEGER PRIMARY KEY,										\
 	Name TEXT NOT NULL,											\
 	Query TEXT NOT NULL											\
+);																\
+																\
+CREATE TABLE IF NOT EXISTS CachedKernels (						\
+	ID INTEGER PRIMARY KEY,										\
+	GPUID INTEGER NOT NULL,									    \
+	Driver TEXT NOT NULL,										\
+	SourceHash TEXT NOT NULL,									\
+	Bin BLOB NOT NULL											\
 );																\
 																\
 INSERT OR IGNORE INTO Queries(Name, Query) VALUES('DB Schema', 'SELECT tbl_name,sql FROM sqlite_master WHERE type==''table''');\
