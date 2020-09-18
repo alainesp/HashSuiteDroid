@@ -42,6 +42,7 @@ extern Format ssha_format;
 extern Format md5crypt_format;
 
 extern Format sha256crypt_format;
+extern Format sha512crypt_format;
 #ifdef INCLUDE_DEVELOPING_FORMAT
 extern Format <name>_format;
 #endif
@@ -289,11 +290,12 @@ PUBLIC int find_key_provider_index(sqlite3_int64 db_id)
 PUBLIC void swap_endianness_array(uint32_t* data, int count)
 {
 	for (int i = 0; i < count; i++)
-	{
-		uint32_t tmp = data[i];
-		SWAP_ENDIANNESS(tmp, tmp);
-		data[i] = tmp;
-	}
+		data[i] = _byteswap_ulong(data[i]);
+}
+PUBLIC void swap_endianness_array64(uint64_t* data, int count)
+{
+	for (int i = 0; i < count; i++)
+		data[i] = _byteswap_uint64(data[i]);
 }
 PUBLIC unsigned char* ntlm2utf8_key(uint32_t* nt_buffer, unsigned char* key,uint32_t NUM_KEYS, uint32_t index)
 {
@@ -320,11 +322,7 @@ PUBLIC unsigned char* utf8_be_coalesc2utf8_key(uint32_t* nt_buffer, unsigned cha
 {
 	uint32_t len = nt_buffer[7 * NUM_KEYS + index] >> 3;
 	for (uint32_t j = 0; j < (len / 4 + 1); j++)
-	{
-		uint32_t data = nt_buffer[j * NUM_KEYS + index];
-		SWAP_ENDIANNESS(data, data);
-		((uint32_t*)key)[j] = data;
-	}
+		((uint32_t*)key)[j] = _byteswap_ulong(nt_buffer[j * NUM_KEYS + index]);
 
 	key[len] = 0;
 	return key;
@@ -375,16 +373,9 @@ PUBLIC int src_contained_in(const char* src, const char* container)
 }
 PUBLIC void binary_to_hex(const uint32_t* binary, unsigned char* ciphertext, uint32_t num_dwords, int is_big_endian)
 {
-	uint32_t val;
 	for (uint32_t i = 0; i < num_dwords; i++)
 	{
-		if (is_big_endian)
-		{
-			SWAP_ENDIANNESS(val, binary[i]);
-		}
-		else
-			val = binary[i];
-
+		uint32_t val = is_big_endian ? _byteswap_ulong(binary[i]) : binary[i];
 		sprintf((char*)ciphertext + i * 8, "%08X", val);
 	}
 
@@ -640,7 +631,8 @@ PRIVATE void formats_init(int db_already_initialize)
 	formats[MD5CRYPT_INDEX] = md5crypt_format;
 
 	formats[SHA256CRYPT_INDEX] = sha256crypt_format;
-	num_formats = 13;
+	formats[SHA512CRYPT_INDEX] = sha512crypt_format;
+	num_formats = 14;
 #ifdef INCLUDE_DEVELOPING_FORMAT
 	formats[<name>_INDEX] = <name>_format;
 	num_formats++;
@@ -729,15 +721,7 @@ PUBLIC void init_all(const char* program_exe_path)
 	}
 
 	// Database
-#ifdef __ANDROID__
 	sqlite3_open(db_path, &db);
-#else
-	#ifdef HS_TESTING
-		sqlite3_open(":memory:", &db);
-	#else
-		sqlite3_open(db_path, &db);
-	#endif
-#endif
 
 	BEGIN_TRANSACTION;
 
@@ -1057,7 +1041,7 @@ PUBLIC uint32_t has_hashes(int format_index)
 // All hashes was found for a specific format?
 PUBLIC int is_found_all_hashes(int format_index)
 {
-	return num_hashes_found_by_format1[format_index] < num_hashes_by_formats1[format_index];
+	return num_hashes_found_by_format1[format_index] >= num_hashes_by_formats1[format_index];
 }
 
 PUBLIC void clear_db_accounts()
@@ -1086,7 +1070,7 @@ PUBLIC void hs_log(int priority, const char* tag, char* format_message, ...)
 	va_list ap;
 	char log_buffer[128];
 
-	//if (priority == HS_LOG_ERROR)
+	if (priority == HS_LOG_ERROR)
 	{
 		//char* captions[] = { "DEBUG", "INFO", "WARNING", "ERROR" };
 		int icons[] = { MB_ICONINFORMATION, MB_ICONINFORMATION, MB_ICONWARNING, MB_ICONERROR };

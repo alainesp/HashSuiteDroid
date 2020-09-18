@@ -247,9 +247,7 @@ PRIVATE void convert2be(uint32_t* nt_buffer, uint32_t NUM_KEYS)
 		len = (len + 3) / 4;
 
 		for (uint32_t j = 0; j < len; j++)
-		{
-			SWAP_ENDIANNESS(nt_buffer[j * NUM_KEYS], nt_buffer[j * NUM_KEYS]);
-		}
+			nt_buffer[j * NUM_KEYS] = _byteswap_ulong(nt_buffer[j * NUM_KEYS]);
 	}
 }
 PUBLIC void wpa_body_c_code(uint32_t* nt_buffer, uint32_t* essid_block, uint32_t* crypt_result, uint32_t* sha1_hash, uint32_t* opad_state, uint32_t* ipad_state, uint32_t* W)
@@ -507,7 +505,9 @@ PRIVATE void crypt_utf8_coalesc_protocol_sse2(CryptParam* param)
 					}
 				}
 			}
-			report_keys_processed(4);
+			
+			if(continue_attack)
+				report_keys_processed(4);
 		}
 	}
 
@@ -624,7 +624,9 @@ PRIVATE void crypt_utf8_coalesc_protocol_v128(CryptParam* param)
 					}
 				}
 			}
-			report_keys_processed(8);
+			
+			if (continue_attack)
+				report_keys_processed(8);
 		}
 	}
 
@@ -743,7 +745,9 @@ PRIVATE void crypt_utf8_coalesc_protocol_avx2(CryptParam* param)
 					}
 				}
 			}
-			report_keys_processed(16);
+			
+			if (continue_attack)
+				report_keys_processed(16);
 		}
 	}
 

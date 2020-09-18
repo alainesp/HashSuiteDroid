@@ -29,8 +29,9 @@ PUBLIC uint32_t num_threads;
 PUBLIC uint32_t app_num_threads;
 // Used to stop the attack
 PUBLIC int continue_attack;
+PUBLIC int stop_universe;
 PUBLIC int save_needed = FALSE;
-PRIVATE callback_funtion* send_message_gui;
+PUBLIC callback_funtion* send_message_gui;
 // Number of passwords currently loaded
 PUBLIC uint32_t num_passwords_loaded;
 // The binary values of the hashes
@@ -69,7 +70,12 @@ PUBLIC uint32_t* same_salt_next = NULL;
 ////////////////////////////////////////////////////////////////////////////////////
 // Found hashes
 ////////////////////////////////////////////////////////////////////////////////////
-PRIVATE uint32_t num_passwords_found = 0;
+#ifdef HS_TESTING
+PUBLIC
+#else
+PRIVATE
+#endif
+uint32_t num_passwords_found = 0;
 
 typedef struct FoundKey
 {
@@ -203,23 +209,23 @@ typedef void apply_format(const char* cleartext, char* hash);
 PRIVATE apply_format* hash_format[MAX_NUM_FORMATS] = {
 	hash_lm , hash_ntlm , hash_md5     , hash_sha1, hash_sha256, hash_sha512,
 	hash_dcc, hash_ssha1, hash_md5crypt, hash_dcc2, hash_wpa   , hash_bcrypt, 
-	hash_sha256crypt
+	hash_sha256crypt, hash_sha512crypt
 };
 PUBLIC uint32_t hash_count_to_test[MAX_NUM_FORMATS] = {
 	1024, 1024, 1024, 1024, 1024, 1024,
 #ifdef __ANDROID__
-	512, 256, 128,  8,   8, 2, 4
+	512, 256, 128,  8,   8, 2, 4, 2
 #else
-	1024, 512, 256, 16, 16, 2,/*8 if only CPU*/4
+	1024, 512, 256, 16, 16, 2,/*8 if only CPU*/4, 2
 #endif
 };
 PRIVATE uint32_t num_keys_asked_by_format[MAX_NUM_FORMATS] = {
 #ifdef __ANDROID__
 	128*8, 128, 128, 128, 128, 128,
-	   64, 128,   1,  64,  64,   1,  1
+	   64, 128,   1,  64,  64,   1,  1, 1
 #else
 	128*8, 256, 256, 256, 256, 256,
-	   64, 256,   1,  64,  64,   3,  1
+	   64, 256,   1,  64,  64,   3,  1, 1
 #endif
 };
 PRIVATE void update_num_keys_asked_by_format()
@@ -229,12 +235,14 @@ PRIVATE void update_num_keys_asked_by_format()
 	{
 		num_keys_asked_by_format[MD5CRYPT_INDEX] = 4;
 		num_keys_asked_by_format[SHA256CRYPT_INDEX] = 4;
+		num_keys_asked_by_format[SHA512CRYPT_INDEX] = 2;
 	}
 	if (current_cpu.capabilites[CPU_CAP_AVX])
 	{
 		num_keys_asked_by_format[DCC_INDEX] = 256;
 		num_keys_asked_by_format[MD5CRYPT_INDEX] = 8;
 		num_keys_asked_by_format[SHA256CRYPT_INDEX] = 4;
+		num_keys_asked_by_format[SHA512CRYPT_INDEX] = 2;
 		num_keys_asked_by_format[DCC2_INDEX] = 256;
 		num_keys_asked_by_format[WPA_INDEX] = 256;
 	}
@@ -243,6 +251,7 @@ PRIVATE void update_num_keys_asked_by_format()
 		num_keys_asked_by_format[DCC_INDEX] = 256;
 		num_keys_asked_by_format[MD5CRYPT_INDEX] = 16;
 		num_keys_asked_by_format[SHA256CRYPT_INDEX] = 8;
+		num_keys_asked_by_format[SHA512CRYPT_INDEX] = 4;
 		num_keys_asked_by_format[DCC2_INDEX] = 256;
 		num_keys_asked_by_format[WPA_INDEX] = 256;
 	}
@@ -256,11 +265,12 @@ PRIVATE void update_num_keys_asked_by_format()
 	{
 		num_keys_asked_by_format[MD5CRYPT_INDEX] = 8;
 		num_keys_asked_by_format[SHA256CRYPT_INDEX] = 4;
+		num_keys_asked_by_format[SHA512CRYPT_INDEX] = 2;
 	}
 #endif
 }
 
-#if MAX_NUM_FORMATS != 13
+#if MAX_NUM_FORMATS != 14
 #error 'hash_format' hasn't enough definitions
 #endif
 
@@ -287,7 +297,7 @@ PRIVATE void generate_keys_for_testing()
 			break;
 		}
 
-	// Test rule support in the GPUs. Fails: DCC, MD5CRYPT (because short 'test_sleep_time')
+	// Test rule support in the GPUs. Fails: MD5CRYPT (because short key_length support)
 	if (!test_rules_on_gpu && provider_index == RULES_INDEX && get_num_gpus_used())
 		generate = NULL;
 
@@ -305,7 +315,7 @@ PRIVATE void generate_keys_for_testing()
 		attack->format_index = MD5_INDEX;// Required by rules
 
 		// Generate keys process
-		key_providers[provider_index].resume(attack->min_lenght, attack->max_lenght, attack->params, attack->resume_arg, attack->format_index);
+		key_providers[provider_index].resume(attack->min_lenght, attack->max_lenght, attack->params, (attack->provider_index==FAST_LM_INDEX ? NULL : attack->resume_arg), attack->format_index);
 		thread_params = calloc(1, key_providers[provider_index].per_thread_data_size);// Because of rules this is below key_provider.resume(...)
 		num_thread_params = 1;
 
@@ -957,7 +967,10 @@ PUBLIC void password_was_found(uint32_t index, unsigned char* cleartext)
 			num_passwords_found++;
 
 			if (num_passwords_found >= num_passwords_loaded)
+			{
 				continue_attack = FALSE;
+				stop_universe = TRUE;
+			}
 		}
 	}
 	else
@@ -973,6 +986,7 @@ PUBLIC void password_was_found(uint32_t index, unsigned char* cleartext)
 			if (num_passwords_found >= num_passwords_loaded)
 			{
 				continue_attack = FALSE;
+				stop_universe = TRUE;
 			}// IF salted AND found >= 20% THEN restart attack
 			else if (formats[batch[current_attack_index].format_index].salt_size && num_passwords_found * 100ll / num_passwords_loaded >= 20ll)
 			{
@@ -1028,6 +1042,7 @@ PRIVATE void begin_crack(void* set_start_time)
 	else
 		load_hashes(batch[current_attack_index].format_index);
 	continue_attack = TRUE;
+	stop_universe = FALSE;
 	save_needed = FALSE;
 
 	//num_keys_served_from_save  = 0;
@@ -1066,7 +1081,8 @@ out_opencl:
 				ocl_crypt_ptr_params[i] = (OpenCL_Param*)calloc(1, sizeof(OpenCL_Param));
 				if (!create_gpu_crypt(ocl_crypt_ptr_params[i], i, generate, &(crypt_ptr_func[i])))
 				{
-					send_message_gui(MESSAGE_ATTACK_GPU_FAIL);
+					if(num_passwords_found < num_passwords_loaded)// Because we may do some cases in 'create_gpu_crypt(...)'
+						send_message_gui(MESSAGE_ATTACK_GPU_FAIL);
 					ocl_crypt_ptr_params[i] = NULL;
 				}
 			}
@@ -1149,8 +1165,15 @@ out:
 	send_message_gui(is_test ? MESSAGE_TESTING_INIT_COMPLETE : MESSAGE_ATTACK_INIT_COMPLETE);
 	if (is_test)
 	{
-		// This is need if the test fails
-		Sleep(test_sleep_time);
+		// This is needed if the test fails
+		uint32_t sleep_counter = test_sleep_time / 200;
+		for (uint32_t i = 0; is_test && continue_attack && i < sleep_counter; i++)
+			Sleep(200);
+
+		// Wait for all the needed keys are generated
+		while (is_test && continue_attack && get_num_keys_served() < hash_count_to_test[batch[current_attack_index].format_index])
+			Sleep(200);
+
 		if (is_test)
 			continue_attack = FALSE;
 	}
@@ -1546,8 +1569,10 @@ PUBLIC void finish_thread()
 
 			send_message_gui((test_errors_detected || num_passwords_found != num_passwords_loaded) ? MESSAGE_TESTING_FAIL : MESSAGE_TESTING_SUCCEED);
 
+#ifndef HS_TESTING
 			void* set_start_time = (void*)TRUE;
 			begin_crack(set_start_time);
+#endif
 		}
 		else if (attack_need_restart)
 		{
@@ -1559,6 +1584,7 @@ PUBLIC void finish_thread()
 			if (num_passwords_found >= num_passwords_loaded)
 			{
 				continue_attack = FALSE;
+				stop_universe = TRUE;
 				send_message_gui(MESSAGE_FINISH_BATCH);
 			}
 			else

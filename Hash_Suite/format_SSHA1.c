@@ -221,11 +221,7 @@ PRIVATE uint32_t convert_big_endian_c_code(uint32_t* keys_buffer, uint32_t NUM_K
 	// Convert
 	uint32_t len = (max_len/4 + 1) * NUM_KEYS;
 	for (uint32_t i = 0; i < len; i++, keys_buffer++)
-	{
-		uint32_t swap = *keys_buffer;
-		SWAP_ENDIANNESS(swap, swap);
-		*keys_buffer = swap;
-	}
+		*keys_buffer = _byteswap_ulong(*keys_buffer);
 
 	return max_len;
 }

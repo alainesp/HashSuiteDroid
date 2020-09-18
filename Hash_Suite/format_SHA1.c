@@ -263,13 +263,13 @@ PRIVATE void crypt_sha1_kernel_c(uint32_t* nt_buffer)
 
 	for (int i = 0; i < NT_NUM_KEYS; i++)
 	{
-		SWAP_ENDIANNESS(nt_buffer[0 * NT_NUM_KEYS + i], nt_buffer[0 * NT_NUM_KEYS + i]);
-		SWAP_ENDIANNESS(nt_buffer[1 * NT_NUM_KEYS + i], nt_buffer[1 * NT_NUM_KEYS + i]);
-		SWAP_ENDIANNESS(nt_buffer[2 * NT_NUM_KEYS + i], nt_buffer[2 * NT_NUM_KEYS + i]);
-		SWAP_ENDIANNESS(nt_buffer[3 * NT_NUM_KEYS + i], nt_buffer[3 * NT_NUM_KEYS + i]);
-		SWAP_ENDIANNESS(nt_buffer[4 * NT_NUM_KEYS + i], nt_buffer[4 * NT_NUM_KEYS + i]);
-		SWAP_ENDIANNESS(nt_buffer[5 * NT_NUM_KEYS + i], nt_buffer[5 * NT_NUM_KEYS + i]);
-		SWAP_ENDIANNESS(nt_buffer[6 * NT_NUM_KEYS + i], nt_buffer[6 * NT_NUM_KEYS + i]);
+		nt_buffer[0 * NT_NUM_KEYS + i] = _byteswap_ulong(nt_buffer[0 * NT_NUM_KEYS + i]);
+		nt_buffer[1 * NT_NUM_KEYS + i] = _byteswap_ulong(nt_buffer[1 * NT_NUM_KEYS + i]);
+		nt_buffer[2 * NT_NUM_KEYS + i] = _byteswap_ulong(nt_buffer[2 * NT_NUM_KEYS + i]);
+		nt_buffer[3 * NT_NUM_KEYS + i] = _byteswap_ulong(nt_buffer[3 * NT_NUM_KEYS + i]);
+		nt_buffer[4 * NT_NUM_KEYS + i] = _byteswap_ulong(nt_buffer[4 * NT_NUM_KEYS + i]);
+		nt_buffer[5 * NT_NUM_KEYS + i] = _byteswap_ulong(nt_buffer[5 * NT_NUM_KEYS + i]);
+		nt_buffer[6 * NT_NUM_KEYS + i] = _byteswap_ulong(nt_buffer[6 * NT_NUM_KEYS + i]);
 		WW[0 * NT_NUM_KEYS + i]	= nt_buffer[0 * NT_NUM_KEYS + i];
 		WW[1 * NT_NUM_KEYS + i] = nt_buffer[1 * NT_NUM_KEYS + i];
 		WW[2 * NT_NUM_KEYS + i] = nt_buffer[2 * NT_NUM_KEYS + i];
@@ -612,7 +612,7 @@ PRIVATE void ocl_write_sha1_header_charset(char* source, GPUDevice* gpu, cl_uint
 		sprintf(source + strlen(source), "\n__constant uint charset_xor[]={");
 
 		for (cl_uint i = 0; i < num_char_in_charset; i++)
-			sprintf(source + strlen(source), "%s%uU", i ? "," : "", i ? (cl_uint)(charset[i] ^ charset[i - 1]) : (cl_uint)(charset[0]));
+			sprintf(source + strlen(source), "%s%uU", i ? "," : "", (i ? (cl_uint)(charset[i] ^ charset[i - 1]) : (cl_uint)(charset[0]))<<24);
 
 		strcat(source, "};\n");
 	}
@@ -643,7 +643,7 @@ PRIVATE void ocl_gen_kernel(char* source, cl_uint key_lenght, char* nt_buffer[],
 	if (is_charset_consecutive(charset))
 		sprintf(source + strlen(source), "nt_buffer0+=%uu;", 1<<24);
 	else
-		sprintf(source + strlen(source), "nt_buffer0^=((uint)charset_xor[i])<<24u;");
+		sprintf(source + strlen(source), "nt_buffer0^=charset_xor[i];");
 
 	/* Round 1 */
 	sprintf(source + strlen(source),
@@ -955,13 +955,17 @@ PRIVATE void ocl_gen_kernel_with_lenght_local(char* source, cl_uint key_lenght, 
 
 	if (key_lenght == 1)
 		sprintf(source + strlen(source), "uint lidx_base=get_group_id(0)*lsize;");
-	else
+	else {
 #ifdef HS_OCL_CURRENT_KEY_AS_REGISTERS
-		sprintf(source + strlen(source), "uint lidx_base=get_group_id(0)*lsize+(current_key0&%uu)+((current_key0>>%uu)&%uu)*NUM_CHAR_IN_CHARSET+((current_key0>>%uu)&%uu)*NUM_CHAR_IN_CHARSET*NUM_CHAR_IN_CHARSET;"
-					, key_mask, bits_by_char, key_mask, 2 * bits_by_char, key_mask);
+		if (key_lenght)
+			sprintf(source + strlen(source), "uint lidx_base=get_group_id(0)*lsize+(current_key0&%uu)+((current_key0>>%uu)&%uu)*NUM_CHAR_IN_CHARSET+((current_key0>>%uu)&%uu)*NUM_CHAR_IN_CHARSET*NUM_CHAR_IN_CHARSET;"
+				, key_mask, bits_by_char, key_mask, 2 * bits_by_char, key_mask);
+		else
+			sprintf(source + strlen(source), "uint lidx_base=get_group_id(0)*lsize;");
 #else
 		sprintf(source + strlen(source), "uint lidx_base=get_group_id(0)*lsize+current_key[1]+current_key[2]*NUM_CHAR_IN_CHARSET+current_key[3]*NUM_CHAR_IN_CHARSET*NUM_CHAR_IN_CHARSET;");
 #endif
+	}
 
 	sprintf(source + strlen(source),
 		"lsize--;"
@@ -1163,13 +1167,17 @@ PRIVATE void ocl_gen_kernel_with_lenght_mixed(char* source, cl_uint key_lenght, 
 
 		if (key_lenght == 1)
 			sprintf(source + strlen(source), "uint lidx_base=get_group_id(0)*lsize;");
-		else
+		else {
 #ifdef HS_OCL_CURRENT_KEY_AS_REGISTERS
-			sprintf(source + strlen(source), "uint lidx_base=get_group_id(0)*lsize+(current_key0&%uu)+((current_key0>>%uu)&%uu)*NUM_CHAR_IN_CHARSET+((current_key0>>%uu)&%uu)*NUM_CHAR_IN_CHARSET*NUM_CHAR_IN_CHARSET;"
-							, key_mask, bits_by_char, key_mask, 2 * bits_by_char, key_mask);
+			if(key_lenght)
+				sprintf(source + strlen(source), "uint lidx_base=get_group_id(0)*lsize+(current_key0&%uu)+((current_key0>>%uu)&%uu)*NUM_CHAR_IN_CHARSET+((current_key0>>%uu)&%uu)*NUM_CHAR_IN_CHARSET*NUM_CHAR_IN_CHARSET;"
+					, key_mask, bits_by_char, key_mask, 2 * bits_by_char, key_mask);
+			else
+				sprintf(source + strlen(source), "uint lidx_base=get_group_id(0)*lsize;");
 #else
 			sprintf(source + strlen(source), "uint lidx_base=get_group_id(0)*lsize+current_key[1]+current_key[2]*NUM_CHAR_IN_CHARSET+current_key[3]*NUM_CHAR_IN_CHARSET*NUM_CHAR_IN_CHARSET;");
 #endif
+		}
 
 	sprintf(source + strlen(source),
 		"lsize--;"

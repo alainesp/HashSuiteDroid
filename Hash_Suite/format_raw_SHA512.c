@@ -383,17 +383,17 @@ PRIVATE void crypt_kernel_c_code(uint32_t* nt_buffer)
 
 	for (int jj = 0; jj < NT_NUM_KEYS; jj++, nt_buffer++, W++)
 	{
-		SWAP_ENDIANNESS(tmp0, nt_buffer[0 * NT_NUM_KEYS]);
-		SWAP_ENDIANNESS(tmp1, nt_buffer[1 * NT_NUM_KEYS]);
+		tmp0 = _byteswap_ulong(nt_buffer[0 * NT_NUM_KEYS]);
+		tmp1 = _byteswap_ulong(nt_buffer[1 * NT_NUM_KEYS]);
 		W[0 * NT_NUM_KEYS] = (((uint64_t)tmp0) << 32) + tmp1;
-		SWAP_ENDIANNESS(tmp0, nt_buffer[2 * NT_NUM_KEYS]);
-		SWAP_ENDIANNESS(tmp1, nt_buffer[3 * NT_NUM_KEYS]);
+		tmp0 = _byteswap_ulong(nt_buffer[2 * NT_NUM_KEYS]);
+		tmp1 = _byteswap_ulong(nt_buffer[3 * NT_NUM_KEYS]);
 		W[1 * NT_NUM_KEYS] = (((uint64_t)tmp0) << 32) + tmp1;
-		SWAP_ENDIANNESS(tmp0, nt_buffer[4 * NT_NUM_KEYS]);
-		SWAP_ENDIANNESS(tmp1, nt_buffer[5 * NT_NUM_KEYS]);
+		tmp0 = _byteswap_ulong(nt_buffer[4 * NT_NUM_KEYS]);
+		tmp1 = _byteswap_ulong(nt_buffer[5 * NT_NUM_KEYS]);
 		W[2 * NT_NUM_KEYS] = (((uint64_t)tmp0) << 32) + tmp1;
 
-		SWAP_ENDIANNESS(tmp0, nt_buffer[6 * NT_NUM_KEYS]);
+		tmp0 = _byteswap_ulong(nt_buffer[6 * NT_NUM_KEYS]);
 		W[3 * NT_NUM_KEYS] = ((uint64_t)tmp0) << 32;
 		W[15 * NT_NUM_KEYS] = nt_buffer[7 * NT_NUM_KEYS];
 

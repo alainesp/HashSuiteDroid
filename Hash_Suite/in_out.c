@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2015,2020 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2020 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "sqlite3.h"
@@ -17,11 +17,7 @@
 #endif
 
 // Prepare statements
-#ifdef HS_TESTING
-	PUBLIC sqlite3_stmt* insert_account;
-#else
-	PRIVATE sqlite3_stmt* insert_account;
-#endif
+PRIVATE sqlite3_stmt* insert_account;
 PUBLIC sqlite3_stmt* insert_account_lm;
 PUBLIC sqlite3_stmt* insert_tag_account;
 PRIVATE sqlite3_stmt* insert_hash;
@@ -981,7 +977,7 @@ PRIVATE void Handle4Way(int bIsQOS, uint8_t* packet, pcaprec_hdr_t* pkt_hdr, Imp
 	p += 8;
 	// p now points to the 802.1X Authentication structure.
 	ether_auto_802_1x_t* auth = (ether_auto_802_1x_t*)p;
-	SWAP_ENDIANNESS16(auth->length, auth->length);
+	auth->length = _byteswap_ushort(auth->length);
 
 	if (!auth->key_info.KeyACK)// msg 2 or 4
 	{
@@ -1140,10 +1136,10 @@ PRIVATE int GetNextPacketAndProcess(FILE* in, int bROT, uint8_t* full_packet, ui
 
 	if (bROT)
 	{
-		SWAP_ENDIANNESS(pkt_hdr.ts_sec  , pkt_hdr.ts_sec);
-		SWAP_ENDIANNESS(pkt_hdr.ts_usec , pkt_hdr.ts_usec);
-		SWAP_ENDIANNESS(pkt_hdr.incl_len, pkt_hdr.incl_len);
-		SWAP_ENDIANNESS(pkt_hdr.orig_len, pkt_hdr.orig_len);
+		pkt_hdr.ts_sec = _byteswap_ulong(pkt_hdr.ts_sec);
+		pkt_hdr.ts_usec = _byteswap_ulong(pkt_hdr.ts_usec);
+		pkt_hdr.incl_len = _byteswap_ulong(pkt_hdr.incl_len);
+		pkt_hdr.orig_len = _byteswap_ulong(pkt_hdr.orig_len);
 	}
 
 	read_size = fread(full_packet, 1, pkt_hdr.incl_len, in);
@@ -1439,9 +1435,8 @@ PRIVATE void import_wpa_from_pcap_file(ImportParam* param)
 			}
 
 			if (bROT)
-			{
-				SWAP_ENDIANNESS(main_hdr.network, main_hdr.network);
-			}
+				main_hdr.network = _byteswap_ulong(main_hdr.network);
+			
 
 			switch (main_hdr.network)
 			{

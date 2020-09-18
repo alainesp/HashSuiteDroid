@@ -2377,15 +2377,15 @@ PUBLIC void ocl_gen_kernel_common_2_ordered(char* source, cl_uint in_NUM_KEYS_OP
 				"lpos_by_lenght[lidx]=0;"
 			"barrier(CLK_LOCAL_MEM_FENCE);"
 			// Increment count if valid
-			"if(idx<max_idx && len<%uu)"
+			"if(idx<max_idx&&len<%uu)"
 				"pos_out=atomic_inc(lpos_by_lenght+len);"
 			"barrier(CLK_LOCAL_MEM_FENCE);"
 			// Update global memory
-			"if(lidx<%uu && lpos_by_lenght[lidx])"
+			"if(lidx<%uu&&lpos_by_lenght[lidx])"
 				"lpos_by_lenght[lidx]=atomic_add(out_keys+lidx,lpos_by_lenght[lidx])+pos_by_lenght[lidx];"
 			"barrier(CLK_LOCAL_MEM_FENCE);"
 			// Find position if valid
-			"if(idx>=max_idx || len>=%uu)return;"
+			"if(idx>=max_idx||len>=%uu)return;"
 			"pos_out+=lpos_by_lenght[len];"
 			// All __local code is to improves performance of below line
 			//"uint pos_out=atomic_inc(out_keys+len)+pos_by_lenght[len];"

@@ -48,6 +48,7 @@ extern "C" {  // only need to export C interface if used by C++ source code
 #endif
 
 void swap_endianness_array(uint32_t* data, int count);
+void swap_endianness_array64(uint64_t* data, int count);
 
 // Flag to tag non hexadecimal characters------------------------------------------
 #define NOT_HEX_CHAR 127

@@ -131,13 +131,13 @@ PUBLIC void hash_sha1(const char* message, char* hash)
 	strcpy((char*)nt_buffer, message);
 	((unsigned char*)nt_buffer)[len] = 0x80;
 
-	SWAP_ENDIANNESS(W[0], nt_buffer[0]);
-	SWAP_ENDIANNESS(W[1], nt_buffer[1]);
-	SWAP_ENDIANNESS(W[2], nt_buffer[2]);
-	SWAP_ENDIANNESS(W[3], nt_buffer[3]);
-	SWAP_ENDIANNESS(W[4], nt_buffer[4]);
-	SWAP_ENDIANNESS(W[5], nt_buffer[5]);
-	SWAP_ENDIANNESS(W[6], nt_buffer[6]);
+	W[0] = _byteswap_ulong(nt_buffer[0]);
+	W[1] = _byteswap_ulong(nt_buffer[1]);
+	W[2] = _byteswap_ulong(nt_buffer[2]);
+	W[3] = _byteswap_ulong(nt_buffer[3]);
+	W[4] = _byteswap_ulong(nt_buffer[4]);
+	W[5] = _byteswap_ulong(nt_buffer[5]);
+	W[6] = _byteswap_ulong(nt_buffer[6]);
 
 	W[15] = len << 3;
 
@@ -506,10 +506,7 @@ PUBLIC void hash_md5(const char* message, char* hash)
 
 	hash[0] = 0;
 	for (uint32_t i = 0; i < 4; i++)
-	{
-		SWAP_ENDIANNESS(md5_state[i], md5_state[i]);
-		sprintf(hash + strlen(hash), "%08x", md5_state[i]);
-	}
+		sprintf(hash + strlen(hash), "%08x", _byteswap_ulong(md5_state[i]));
 }
 // NTLM
 PUBLIC void hash_ntlm(const unsigned char* message, char* hash)
@@ -541,10 +538,7 @@ PUBLIC void hash_ntlm(const unsigned char* message, char* hash)
 
 	hash[0] = 0;
 	for (uint32_t i = 0; i < 4; i++)
-	{
-		SWAP_ENDIANNESS(md4_state[i], md4_state[i]);
-		sprintf(hash + strlen(hash), "%08X", md4_state[i]);
-	}
+		sprintf(hash + strlen(hash), "%08X", _byteswap_ulong(md4_state[i]));
 }
 
 // SHA256
@@ -817,17 +811,17 @@ PUBLIC void hash_sha512(const char* message, char* hash)
 	strcpy((char*)nt_buffer, message);
 	((unsigned char*)nt_buffer)[len] = 0x80;
 
-	SWAP_ENDIANNESS(tmp0, nt_buffer[0]);
-	SWAP_ENDIANNESS(tmp1, nt_buffer[1]);
+	tmp0 = _byteswap_ulong(nt_buffer[0]);
+	tmp1 = _byteswap_ulong(nt_buffer[1]);
 	W[0] = (((uint64_t)tmp0) << 32) + tmp1;
-	SWAP_ENDIANNESS(tmp0, nt_buffer[2]);
-	SWAP_ENDIANNESS(tmp1, nt_buffer[3]);
+	tmp0 = _byteswap_ulong(nt_buffer[2]);
+	tmp1 = _byteswap_ulong(nt_buffer[3]);
 	W[1] = (((uint64_t)tmp0) << 32) + tmp1;
-	SWAP_ENDIANNESS(tmp0, nt_buffer[4]);
-	SWAP_ENDIANNESS(tmp1, nt_buffer[5]);
+	tmp0 = _byteswap_ulong(nt_buffer[4]);
+	tmp1 = _byteswap_ulong(nt_buffer[5]);
 	W[2] = (((uint64_t)tmp0) << 32) + tmp1;
 
-	SWAP_ENDIANNESS(tmp0, nt_buffer[6]);
+	tmp0 = _byteswap_ulong(nt_buffer[6]);
 	W[3] = ((uint64_t)tmp0) << 32;
 	W[15] = len << 3;
 
@@ -980,16 +974,10 @@ PUBLIC void hash_file(void* void_data)
 		// Convert to hex
 		data->md4_hash[0] = 0;
 		for (uint32_t i = 0; i < 4; i++)
-		{
-			SWAP_ENDIANNESS(md4_state[i], md4_state[i]);
-			sprintf(data->md4_hash + strlen(data->md4_hash), "%08X", md4_state[i]);
-		}
+			sprintf(data->md4_hash + strlen(data->md4_hash), "%08X", _byteswap_ulong(md4_state[i]));
 		data->md5_hash[0] = 0;
 		for (uint32_t i = 0; i < 4; i++)
-		{
-			SWAP_ENDIANNESS(md5_state[i], md5_state[i]);
-			sprintf(data->md5_hash + strlen(data->md5_hash), "%08X", md5_state[i]);
-		}
+			sprintf(data->md5_hash + strlen(data->md5_hash), "%08X", _byteswap_ulong(md5_state[i]));
 		data->sha1_hash[0] = 0;
 		for (uint32_t i = 0; i < 5; i++)
 			sprintf(data->sha1_hash+strlen(data->sha1_hash), "%08X", sha1_state[i]);
@@ -1297,6 +1285,7 @@ PUBLIC void hash_dcc(const unsigned char* cleartext, char* hash)
 {
 	unsigned char username[32];
 	generate_random_user(username);
+	_strlwr(username);
 
 	uint32_t crypt_result[12];
 	uint32_t i;
@@ -1316,9 +1305,9 @@ PUBLIC void hash_dcc(const unsigned char* cleartext, char* hash)
 	len = (uint32_t)strlen((char*)username);
 	memset(salt_buffer, 0, sizeof(salt_buffer));
 	for (i = 0; i < len / 2; i++)
-		salt_buffer[i] = tolower(username[2 * i]) + (tolower(username[2 * i + 1]) << 16);
+		salt_buffer[i] = username[2 * i] + (username[2 * i + 1] << 16);
 
-	salt_buffer[i] = (len % 2) ? tolower(username[2 * i]) + 0x800000 : 0x80;
+	salt_buffer[i] = (len % 2) ? username[2 * i] + 0x800000 : 0x80;
 	salt_buffer[10] = (8 + len) << 4;
 
 	dcc_ntlm_part_c_code(nt_buffer, crypt_result);
@@ -1339,10 +1328,10 @@ PUBLIC void hash_dcc(const unsigned char* cleartext, char* hash)
 	c += (d ^ a ^ b) + salt_buffer[3] + SQRT_3; c = ROTATE(c, 11);
 	b += (c ^ d ^ a) + SQRT_3; b = ROTATE(b, 15);
 
-	SWAP_ENDIANNESS(a, a + INIT_A);
-	SWAP_ENDIANNESS(b, b + INIT_B);
-	SWAP_ENDIANNESS(c, c + INIT_C);
-	SWAP_ENDIANNESS(d, d + INIT_D);
+	a = _byteswap_ulong(a + INIT_A);
+	b = _byteswap_ulong(b + INIT_B);
+	c = _byteswap_ulong(c + INIT_C);
+	d = _byteswap_ulong(d + INIT_D);
 
 	sprintf(hash, "%s:%08x%08x%08x%08x", username, a, b, c, d);
 }
@@ -1351,6 +1340,7 @@ PUBLIC void hash_dcc2(const unsigned char* cleartext, char* hash)
 {
 	unsigned char username[32];
 	generate_random_user(username);
+	_strlwr(username);
 
 	uint32_t crypt_result[12], sha1_hash[5], opad_state[5], ipad_state[5], W[16];
 	uint32_t i;
@@ -1370,9 +1360,9 @@ PUBLIC void hash_dcc2(const unsigned char* cleartext, char* hash)
 	len = (uint32_t)strlen((char*)username);
 	memset(salt_buffer, 0, sizeof(salt_buffer));
 	for (i = 0; i < len / 2; i++)
-		salt_buffer[i] = tolower(username[2 * i]) + (tolower(username[2 * i + 1]) << 16);
+		salt_buffer[i] = username[2 * i] + (username[2 * i + 1] << 16);
 
-	salt_buffer[i] = (len % 2) ? tolower(username[2 * i]) + 0x800000 : 0x80;
+	salt_buffer[i] = (len % 2) ? username[2 * i] + 0x800000 : 0x80;
 	salt_buffer[10] = (8 + len) << 4;
 
 	dcc_ntlm_part_c_code(nt_buffer, crypt_result);
@@ -1407,9 +1397,8 @@ PUBLIC void hash_ssha1(const char* cleartext, char* hash)
 
 	// Copy to W
 	for (uint32_t i = 0; i < 14; i++)
-	{
-		SWAP_ENDIANNESS(W[i], nt_buffer[i]);
-	}
+		W[i] = _byteswap_ulong(nt_buffer[i]);
+
 	W[14] = 0;
 	W[15] = (len + salt_len) << 3;
 
@@ -1600,7 +1589,8 @@ PUBLIC void hash_sha256crypt(const char* cleartext, char* hash)
 
 	// Generate random salt
 	crypt_sha256_salt salt;
-	salt.saltlen = 1 + rand() % 16;// [1,16]
+	salt.saltlen = 16;// Faster testing
+	//salt.saltlen = 1 + rand() % 16;// [1,16]
 	salt.rounds = 5000;// TODO: Manage this
 	for (uint8_t i = 0; i < salt.saltlen; i++)
 	{
@@ -1740,6 +1730,201 @@ PUBLIC void hash_sha256crypt(const char* cleartext, char* hash)
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
+// sha512crypt
+//////////////////////////////////////////////////////////////////////////////////////////
+#define SHA512_INIT_STATE(state) \
+	buffer_len = 0, num_blocks = 0;\
+	state[0] = 0x6A09E667F3BCC908ULL;\
+	state[1] = 0xBB67AE8584CAA73BULL;\
+	state[2] = 0x3C6EF372FE94F82BULL;\
+	state[3] = 0xA54FF53A5F1D36F1ULL;\
+	state[4] = 0x510E527FADE682D1ULL;\
+	state[5] = 0x9B05688C2B3E6C1FULL;\
+	state[6] = 0x1F83D9ABFB41BD6BULL;\
+	state[7] = 0x5BE0CD19137E2179ULL;
+
+#define SHA512_END_CTX(state) \
+	buffer[buffer_len] = 0x80;\
+	if (buffer_len >= 112)\
+	{\
+		memset(buffer + buffer_len + 1, 0, 256 - buffer_len - 1);\
+		((uint64_t*)buffer)[16 + 15] = (num_blocks*128+buffer_len) << 3;\
+		swap_endianness_array64((uint64_t*)buffer, 16);\
+		sha512_process_block(state, (uint64_t*)buffer);\
+		swap_endianness_array64((uint64_t*)(buffer + 128), 14);\
+		sha512_process_block(state, (uint64_t*)(buffer + 128));\
+	}\
+	else\
+	{\
+		memset(buffer + buffer_len + 1, 0, 128 - buffer_len - 1);\
+		((uint64_t*)buffer)[15] = (num_blocks*128+buffer_len) << 3;\
+		swap_endianness_array64((uint64_t*)buffer, 14);\
+		sha512_process_block(state, (uint64_t*)buffer);\
+	}\
+	swap_endianness_array64(state, 8);
+
+PUBLIC void hash_sha512crypt(const char* cleartext, char* hash)
+{
+	assert(strlen(cleartext) <= 64);
+
+	uint64_t sha512_state[8], alt_state[8];
+	HS_ALIGN(8) uint8_t buffer[128 + 128];
+	uint32_t buffer_len, num_blocks;
+	uint32_t key_len = (uint32_t)strlen(cleartext);
+
+	// Generate random salt
+	crypt_sha256_salt salt;
+	salt.saltlen = 16;// Faster testing
+	//salt.saltlen = 1 + rand() % 16;// [1,16]
+	salt.rounds = 5000;// TODO: Manage this
+	for (uint8_t i = 0; i < salt.saltlen; i++)
+	{
+		uint8_t salt_char = 1 + rand() % 255;
+		while (salt_char == '$')
+			salt_char = 1 + rand() % 255;
+		salt.salt[i] = salt_char;
+	}
+
+	// 1st digest
+	SHA512_INIT_STATE(sha512_state);
+	memcpy(buffer + buffer_len, cleartext, key_len); buffer_len += key_len;
+	memcpy(buffer + buffer_len, salt.salt, salt.saltlen); buffer_len += salt.saltlen;
+	memcpy(buffer + buffer_len, cleartext, key_len); buffer_len += key_len;
+	SHA512_END_CTX(sha512_state);
+
+	// 2nd digest
+	SHA512_INIT_STATE(alt_state);
+	memcpy(buffer + buffer_len, cleartext, key_len); buffer_len += key_len;
+	memcpy(buffer + buffer_len, salt.salt, salt.saltlen); buffer_len += salt.saltlen;
+	memcpy(buffer + buffer_len, sha512_state, key_len); buffer_len += key_len;
+	for (uint32_t j = key_len; j > 0; j >>= 1)
+	{
+		if (j & 1)
+		{
+			memcpy(buffer + buffer_len, sha512_state, 64);
+			buffer_len += 64;
+		}
+		else
+		{
+			memcpy(buffer + buffer_len, cleartext, key_len);
+			buffer_len += key_len;
+		}
+		if (buffer_len >= 128)
+		{
+			swap_endianness_array64((uint64_t*)buffer, 16);
+			sha512_process_block(alt_state, (uint64_t*)buffer);
+			buffer_len -= 128;
+			num_blocks++;
+			memcpy(buffer, buffer + 128, buffer_len);
+		}
+	}
+	SHA512_END_CTX(alt_state);
+
+	// Start computation of P byte sequence.
+	SHA512_INIT_STATE(sha512_state);
+	for (uint32_t i = 0; i < key_len; i++)
+	{
+		memcpy(buffer + buffer_len, cleartext, key_len);
+		buffer_len += key_len;
+		if (buffer_len >= 128)
+		{
+			swap_endianness_array64((uint64_t*)buffer, 16);
+			sha512_process_block(sha512_state, (uint64_t*)buffer);
+			buffer_len -= 128;
+			num_blocks++;
+			memcpy(buffer, buffer + 128, buffer_len);
+		}
+	}
+	SHA512_END_CTX(sha512_state);
+	char p_bytes[64];
+	memcpy(p_bytes, sha512_state, key_len);
+	// Start computation of S byte sequence.
+	SHA512_INIT_STATE(sha512_state);
+	for (uint32_t i = 0; i < (16u + ((unsigned char*)alt_state)[0]); i++)
+	{
+		memcpy(buffer + buffer_len, salt.salt, salt.saltlen);
+		buffer_len += salt.saltlen;
+		if (buffer_len >= 128)
+		{
+			swap_endianness_array64((uint64_t*)buffer, 16);
+			sha512_process_block(sha512_state, (uint64_t*)buffer);
+			buffer_len -= 128;
+			num_blocks++;
+			memcpy(buffer, buffer + 128, buffer_len);
+		}
+	}
+	SHA512_END_CTX(sha512_state);
+	char s_bytes[16];
+	memcpy(s_bytes, sha512_state, salt.saltlen);
+
+	// Big cycle
+	for (uint32_t i = 0; i < salt.rounds; i++)
+	{
+		SHA512_INIT_STATE(sha512_state);
+
+		if (i & 1)
+		{
+			memcpy(buffer + buffer_len, p_bytes, key_len); buffer_len += key_len;
+		}
+		else
+		{
+			memcpy(buffer + buffer_len, alt_state, 64); buffer_len += 64;
+		}
+		if (i % 3)
+		{
+			memcpy(buffer + buffer_len, s_bytes, salt.saltlen); buffer_len += salt.saltlen;
+		}
+		if (i % 7)
+		{
+			memcpy(buffer + buffer_len, p_bytes, key_len); buffer_len += key_len;
+		}
+		if (i & 1)
+		{
+			memcpy(buffer + buffer_len, alt_state, 64); buffer_len += 64;
+		}
+		else
+		{
+			memcpy(buffer + buffer_len, p_bytes, key_len); buffer_len += key_len;
+		}
+
+		SHA512_END_CTX(sha512_state);
+		memcpy(alt_state, sha512_state, 64);
+	}
+
+	// Export hash
+	sprintf(hash, "$6$rounds=%i$%.*s$", salt.rounds, salt.saltlen, salt.salt);
+	char* pos = hash + strlen(hash);
+	unsigned char* out = (unsigned char*)sha512_state;
+	uint32_t value;
+
+	TO_BASE64( 0, 21, 42);
+	TO_BASE64(22, 43,  1);
+	TO_BASE64(44,  2, 23);
+	TO_BASE64( 3, 24, 45);
+	TO_BASE64(25, 46,  4);
+	TO_BASE64(47,  5, 26);
+	TO_BASE64( 6, 27, 48);
+	TO_BASE64(28, 49,  7);
+	TO_BASE64(50,  8, 29);
+	TO_BASE64( 9, 30, 51);
+	TO_BASE64(31, 52, 10);
+	TO_BASE64(53, 11, 32);
+	TO_BASE64(12, 33, 54);
+	TO_BASE64(34, 55, 13);
+	TO_BASE64(56, 14, 35);
+	TO_BASE64(15, 36, 57);
+	TO_BASE64(37, 58, 16);
+	TO_BASE64(59, 17, 38);
+	TO_BASE64(18, 39, 60);
+	TO_BASE64(40, 61, 19);
+	TO_BASE64(62, 20, 41);
+	//TO_BASE64(-, -, 63);
+	pos[0] = itoa64[out[63] & 63];
+	pos[1] = itoa64[out[63] >> 6];
+	pos[2] = 0;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
 // WPA
 //////////////////////////////////////////////////////////////////////////////////////////
 typedef struct
@@ -1782,7 +1967,7 @@ PRIVATE void convert2wpa_salt(hccap_t hccap, hccap_bin* salt)
 	if (hccap.keyver != 1)
 		for (uint32_t i = 0; i < (sizeof(salt->eapol) / 4 - 2); i++)
 		{
-			SWAP_ENDIANNESS(eapol_ptr[i], eapol_ptr[i]);
+			eapol_ptr[i] = _byteswap_ulong(eapol_ptr[i]);
 		}
 	eapol_ptr[16 * (salt->eapol_blocks - 1) + ((hccap.keyver == 1) ? 14 : 15)] = (64 + hccap.eapol_size) << 3;
 
@@ -1817,9 +2002,7 @@ PRIVATE void convert2wpa_salt(hccap_t hccap, hccap_bin* salt)
 	prf_buffer_ptr[16 + 15] = (64 + 100) << 3;
 
 	for (uint32_t i = 0; i < 104 / 4; i++)
-	{
-		SWAP_ENDIANNESS(prf_buffer_ptr[i], prf_buffer_ptr[i]);
-	}
+		prf_buffer_ptr[i] = _byteswap_ulong(prf_buffer_ptr[i]);
 	//------------------------------------------------------------------------------
 }
 
@@ -1841,9 +2024,7 @@ PUBLIC void hash_wpa(const unsigned char* cleartext, unsigned char* hash)
 	nt_buffer[16 * 64] = len << 3;
 	len = (len + 3) / 4;
 	for (uint32_t j = 0; j < len; j++)
-	{
-		SWAP_ENDIANNESS(nt_buffer[j * 64], nt_buffer[j * 64]);
-	}
+		nt_buffer[j * 64] = _byteswap_ulong(nt_buffer[j * 64]);
 
 	// Salt
 	hccap_t wpa_data;
@@ -1864,9 +2045,7 @@ PUBLIC void hash_wpa(const unsigned char* cleartext, unsigned char* hash)
 	memset(((char*)essid_block) + essid_len + 5, 0, 60 - (essid_len + 5));
 	essid_block[15] = (64 + essid_len + 4) << 3;
 	for (uint32_t k = 0; k < 14; k++)
-	{
-		SWAP_ENDIANNESS(essid_block[k], essid_block[k]);
-	}
+		essid_block[k] = _byteswap_ulong(essid_block[k]);
 
 	// Execute the format
 	wpa_body_c_code(nt_buffer, essid_block, crypt_result, sha1_hash, opad_state, ipad_state, W);
@@ -1874,9 +2053,7 @@ PUBLIC void hash_wpa(const unsigned char* cleartext, unsigned char* hash)
 
 	if (wpa_data.keyver != 1)
 		for (uint32_t i = 0; i < 4; i++)
-		{
-			SWAP_ENDIANNESS(crypt_result[i], crypt_result[i]);
-		}
+			crypt_result[i] = _byteswap_ulong(crypt_result[i]);
 
 	memcpy(wpa_data.keymic, crypt_result, 16);
 

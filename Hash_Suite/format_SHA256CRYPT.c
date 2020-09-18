@@ -309,10 +309,11 @@ PRIVATE uint8_t g[] = { 0, 7, 3, 5, 3, 7, 1, 6, 3, 5, 3, 7, 1, 7, 2, 5, 3, 7, 1,
 typedef void sha256_process_block_func(void* state, void* tmp_block, const void* block);
 PRIVATE void crypt_utf8_coalesc_protocol_body(CryptParam* param, sha256_process_block_func* kernels_asm[], uint32_t keys_in_parallel, copy_pattern_same_size_func* copy_asm[])
 {
-	//                                           keys sha256 state                                   simple_buffer    ordered_keys
-	uint32_t* buffer = (uint32_t*)_aligned_malloc((8 + 32*8 + 8) * sizeof(uint32_t) * keys_in_parallel + 128 + MAX_KEY_SIZE*(MAX_KEY_SIZE+1)*keys_in_parallel, 32);
+	//                                           keys sha256 tmp state                                   simple_buffer    ordered_keys
+	uint32_t* buffer = (uint32_t*)_aligned_malloc((8 + 32*8 + 16 + 8) * sizeof(uint32_t) * keys_in_parallel + 128 + MAX_KEY_SIZE*(MAX_KEY_SIZE+1)*keys_in_parallel, 32);
 	uint32_t* sha256_buffer = buffer + 8 * keys_in_parallel;// size: 32 * 8 * keys_in_parallel
-	uint32_t* state = sha256_buffer + 32 * 8 * keys_in_parallel;// size: 8 * keys_in_parallel
+	uint32_t* tmp_buffer = sha256_buffer + 32 * 8 * keys_in_parallel;// size: 16 * keys_in_parallel
+	uint32_t* state = tmp_buffer + 16 * keys_in_parallel;// size: 8 * keys_in_parallel
 	uint8_t* simple_buffer = (uint8_t*)(state + 8 * keys_in_parallel);// size: 128
 	char* ordered_keys = simple_buffer + 128;
 
@@ -345,7 +346,7 @@ PRIVATE void crypt_utf8_coalesc_protocol_body(CryptParam* param, sha256_process_
 		}
 
 process_keys:
-		for (uint32_t key_length = 0; key_length <= MAX_KEY_SIZE; key_length++)
+		for (uint32_t key_length = 0; !stop_universe && key_length <= MAX_KEY_SIZE; key_length++)
 			if (count_by_length[key_length] && (count_by_length[key_length] >= keys_in_parallel || last_iteration))
 			{
 				for (uint32_t current_salt_index = 0; current_salt_index < num_diff_salts; current_salt_index++)
@@ -467,11 +468,10 @@ process_keys:
 						else// Copy at begining
 							memcpy(pattern_buffer, state, 32 * keys_in_parallel);
 
-						// Using 2nd block of 'pattern[0]=alt pass' because it's unused
-						uint32_t* unused_pattern = sha256_buffer + (32 * 0 + 16) * keys_in_parallel;
-						kernels_asm[0](state, unused_pattern, pattern_buffer);
+						// Two sha256 calls
+						kernels_asm[0](state, tmp_buffer, pattern_buffer);
 						if (need_2nd_block)
-							kernels_asm[1](state, unused_pattern, pattern_buffer + 16 * keys_in_parallel);
+							kernels_asm[1](state, tmp_buffer, pattern_buffer + 16 * keys_in_parallel);
 
 						if (g_index == 41)
 							g_index = -1;
@@ -518,10 +518,11 @@ process_keys:
 			for (uint32_t key_length = 0; key_length <= MAX_KEY_SIZE; key_length++)
 				total_keys += count_by_length[key_length];
 
-			if (total_keys)
+			if (!stop_universe && total_keys)
 			{
 				// TODO: Group keys by length+salt_length to provide faster finish
 				last_iteration = TRUE;
+				send_message_gui(MESSAGE_FLUSHING_KEYS);
 				goto process_keys;
 			}
 			else
@@ -593,18 +594,6 @@ PRIVATE void crypt_utf8_coalesc_protocol_c_code(CryptParam* param)
 	copy_pattern_same_size_func* copy_pattern_c_code[] = { copy_pattern_c_code_1, copy_pattern_c_code_2, copy_pattern_c_code_3 };
 	sha256_process_block_func* kernels[] = { sha256_process_first_block_c, sha256_process_block_c };
 	crypt_utf8_coalesc_protocol_body(param, kernels, 1, copy_pattern_c_code);
-}
-#endif
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// TODO: Neon code
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-#ifdef HS_ARM
-void md5_one_block_neon(void* state, const void* block);
-PRIVATE void crypt_utf8_coalesc_protocol_neon(CryptParam* param)
-{
-	copy_pattern_same_size_func* copy_pattern_v128[] = { copy_pattern_v128_1, copy_pattern_v128_2, copy_pattern_v128_3 };
-	crypt_utf8_coalesc_protocol_body(param, md5_one_block_neon, 8, copy_pattern_v128);
 }
 #endif
 
@@ -766,6 +755,18 @@ PRIVATE void crypt_utf8_coalesc_protocol_sse2(CryptParam* param)
 #endif
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// TODO: Neon code
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#ifdef HS_ARM
+void md5_one_block_neon(void* state, const void* block);
+PRIVATE void crypt_utf8_coalesc_protocol_neon(CryptParam* param)
+{
+	copy_pattern_same_size_func* copy_pattern_v128[] = { copy_pattern_v128_1, copy_pattern_v128_2, copy_pattern_v128_3 };
+	crypt_utf8_coalesc_protocol_body(param, md5_one_block_neon, 4, copy_pattern_v128);
+}
+#endif
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // AVX code
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_X86
@@ -835,8 +836,8 @@ PRIVATE void crypt_utf8_coalesc_protocol_avx2(CryptParam* param)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_OPENCL_SUPPORT
 
-#define KERNEL_INDEX_INIT_PART			MAX_KEY_LENGHT_SMALL+0
-#define KERNEL_INDEX_COMPARE_RESULT		MAX_KEY_LENGHT_SMALL+1
+#define KERNEL_INIT_PART		param->kernels[0]
+#define KERNEL_COMPARE_RESULT	param->kernels[1]
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Common
@@ -847,10 +848,10 @@ PRIVATE void ocl_work_body(OpenCL_Param* param, cl_uint length, cl_uint gpu_max_
 	const crypt_sha256_salt* salt = ((const crypt_sha256_salt*)salts_values) + salt_index;
 
 	// Init
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_INIT_PART], 3, sizeof(cl_uint), &gpu_base_pos);
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_INIT_PART], 4, sizeof(cl_uint), &length);
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_INIT_PART], 5, sizeof(cl_uint), &salt_index);
-	pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_INIT_PART], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+	pclSetKernelArg(KERNEL_INIT_PART, 3, sizeof(cl_uint), &gpu_base_pos);
+	pclSetKernelArg(KERNEL_INIT_PART, 4, sizeof(cl_uint), &length);
+	pclSetKernelArg(KERNEL_INIT_PART, 5, sizeof(cl_uint), &salt_index);
+	pclEnqueueNDRangeKernel(param->queue, KERNEL_INIT_PART, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 
 	// SHA256 cycle
 	cl_kernel sha256_kernel = param->additional_kernels[length * MAX_SALT_SIZE + salt->saltlen - 1];
@@ -870,8 +871,8 @@ PRIVATE void ocl_work_body(OpenCL_Param* param, cl_uint length, cl_uint gpu_max_
 	}
 
 	// Compare results
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_COMPARE_RESULT], 3, sizeof(cl_uint), &salt_index);
-	pclEnqueueNDRangeKernel(param->queue, param->kernels[KERNEL_INDEX_COMPARE_RESULT], 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+	pclSetKernelArg(KERNEL_COMPARE_RESULT, 3, sizeof(cl_uint), &salt_index);
+	pclEnqueueNDRangeKernel(param->queue, KERNEL_COMPARE_RESULT, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 
 	// Find matches
 	pclEnqueueReadBuffer(param->queue, param->mems[GPU_OUTPUT], CL_TRUE, 0, 4, &num_found, 0, NULL, NULL);
@@ -922,12 +923,8 @@ PRIVATE void ocl_gen_finish_buffer_be(char* block[32], uint32_t buffer_len)
 }
 PRIVATE void ocl_gen_load_w(char* block[32], 
 	const char* data_prefix0, const char* data_prefix1, const char* data_prefix2, const char* data_prefix3, 
-	uint32_t data_len0, uint32_t data_len1, uint32_t data_len2, uint32_t data_len3,
-	char* source, uint32_t switch_case_num, uint32_t base_block_index)
+	uint32_t data_len0, uint32_t data_len1, uint32_t data_len2, uint32_t data_len3)
 {
-	for (size_t i = 0; i < 32; i++)
-		block[i][0] = 0;
-
 	// Load W
 	uint32_t buffer_len = 0;
 	buffer_len += ocl_gen_update_buffer_be(block, data_prefix0, data_len0, buffer_len);
@@ -937,12 +934,6 @@ PRIVATE void ocl_gen_load_w(char* block[32],
 	if (data_prefix3)
 		buffer_len += ocl_gen_update_buffer_be(block, data_prefix3, data_len3, buffer_len);
 	ocl_gen_finish_buffer_be(block, buffer_len);
-
-	// Generate switch case
-	sprintf(source + strlen(source), "case %u:", switch_case_num);
-	for (size_t i = 0; i < 16; i++)
-		sprintf(source + strlen(source), "%s", block[base_block_index + i]);
-	sprintf(source + strlen(source), "break;");
 }
 PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_uint key_len, cl_uint salt_len)
 {
@@ -988,30 +979,75 @@ PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_
 				"switch(g_value)"
 				"{");
 	
-		char* block[32];
-		char* block_ptr = malloc(32 * 64);		
-		for (size_t i = 0; i < 32; i++)
+		char* block[32 * 9];
+		char* block_ptr = malloc(32 * 64 * 9);
+		memset(block_ptr, 0, 32 * 64 * 9);
+		for (size_t i = 0; i < 32 * 9; i++)
 			block[i] = block_ptr + i * 64;
 		//pattern[0]=alt pass-------------------------------------------------------------------------------------
-		ocl_gen_load_w(block, "state", "key"  ,   NULL ,   NULL ,   32  ,  key_len ,   0   ,   0   , source, 0, 0);
+		ocl_gen_load_w(block + 0 * 32, "state", "key"  ,   NULL ,   NULL ,   32   ,  key_len,    0   ,    0);
 		//pattern[1]=alt pass pass-------------------------------------------------------------------------------
-		ocl_gen_load_w(block, "state", "key"  ,  "key" ,   NULL ,   32  ,  key_len , key_len,   0   , source, 1, 0);
+		ocl_gen_load_w(block + 1 * 32, "state", "key"  ,  "key" ,   NULL ,   32   ,  key_len, key_len,    0);
 		//pattern[2]=alt salt pass--------------------------------------------------------------------------------
-		ocl_gen_load_w(block, "state", "salt" ,  "key" ,   NULL ,   32  , salt_len, key_len,   0   , source, 2, 0);
+		ocl_gen_load_w(block + 2 * 32, "state", "salt" ,  "key" ,   NULL ,   32   , salt_len, key_len,    0);
 		//pattern[3]=alt salt pass pass---------------------------------------------------------------------------
-		ocl_gen_load_w(block, "state", "salt" ,  "key" ,  "key" ,   32  , salt_len, key_len, key_len, source, 3, 0);
+		ocl_gen_load_w(block + 3 * 32, "state", "salt" ,  "key" ,  "key" ,   32   , salt_len, key_len, key_len);
 		//pattern[4]=pass alt-------------------------------------------------------------------------------------
-		ocl_gen_load_w(block, "key"  , "state",   NULL ,   NULL , key_len,    32   ,   0   ,   0   , source, 4, 0);
+		ocl_gen_load_w(block + 4 * 32, "key"  , "state",   NULL ,   NULL , key_len,    32   ,    0   ,    0);
 		//pattern[5]=pass pass alt--------------------------------------------------------------------------------
-		ocl_gen_load_w(block, "key"  , "key"  , "state",   NULL , key_len,  key_len ,   32  ,   0   , source, 5, 0);
+		ocl_gen_load_w(block + 5 * 32, "key"  , "key"  , "state",   NULL , key_len,  key_len,    32  ,    0);
 		//pattern[6]=pass salt alt--------------------------------------------------------------------------------
-		ocl_gen_load_w(block, "key"  , "salt" , "state",   NULL , key_len, salt_len,   32  ,   0   , source, 6, 0);
+		ocl_gen_load_w(block + 6 * 32, "key"  , "salt" , "state",   NULL , key_len, salt_len,    32  ,    0);
 		//pattern[7]=pass salt pass alt---------------------------------------------------------------------------
-		ocl_gen_load_w(block, "key"  , "salt" ,   "key", "state", key_len, salt_len, key_len,   32  , source, 7, 0);
+		ocl_gen_load_w(block + 7 * 32, "key"  , "salt" ,   "key", "state", key_len, salt_len, key_len,    32);
+
+		// Search W for load patterns
+		for (size_t i = 0; i < 16; i++)
+		{
+			int is_same = TRUE;// Has W[i] the same value for each pattern of g_value?
+			for (cl_uint pattern_index = 0; pattern_index < 7; pattern_index++)
+				if (strcmp(block[i + pattern_index * 32], block[i + (pattern_index+1) * 32]))
+				{
+					is_same = FALSE;
+					break;
+				}
+
+			if (is_same)
+			{
+				// Add pattern to common
+				strcpy(block[i + 8 * 32], block[i + 0 * 32]);
+				// Delete pattern
+				for (cl_uint pattern_index = 0; pattern_index < 8; pattern_index++)
+					strcpy(block[i + pattern_index * 32], "");
+			}
+		}
+		// Generate switch case
+		for (cl_uint pattern_index = 0; pattern_index < 8; pattern_index++)
+		{
+			sprintf(source + strlen(source), "case %u:", pattern_index);
+			for (size_t i = 0; i < 16; i++)
+				sprintf(source + strlen(source), "%s", block[i + pattern_index * 32]);
+			sprintf(source + strlen(source), "break;");
+		}		
+
+		sprintf(source + strlen(source), 
+			    "}");
+		// Load common patterns of W
+		for (size_t i = 0; i < 16; i++)
+			sprintf(source + strlen(source), "%s", block[i + 8 * 32]);
+
+		// Cache 'state' for 2nd sha256 when needed
+		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 0)) sprintf(source + strlen(source), "uint tt7=state7;");
+		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 1)) sprintf(source + strlen(source), "uint tt6=state6;");
+		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 2)) sprintf(source + strlen(source), "uint tt5=state5;");
+		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 3)) sprintf(source + strlen(source), "uint tt4=state4;");
+		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 4)) sprintf(source + strlen(source), "uint tt3=state3;");
+		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 5)) sprintf(source + strlen(source), "uint tt2=state2;");
+		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 6)) sprintf(source + strlen(source), "uint tt1=state1;");
+		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 7)) sprintf(source + strlen(source), "uint tt0=state0;");
 
 		// First sha256 compress hash function
 		sprintf(source + strlen(source),
-				"}"
 				"state0=0x6A09E667;"
 				"state1=0xBB67AE85;"
 				"state2=0x3C6EF372;"
@@ -1026,26 +1062,71 @@ PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_
 		// Need 2nd sha256 in some cases
 		if ((32 + 2 * key_len + salt_len) >= 56)
 		{
+			memset(block_ptr, 0, 32 * 64 * 9);
 			// Load W
 			sprintf(source + strlen(source),
 				"switch(g_value)"
 				"{");
-			//pattern[0]=alt pass--------------------------------------------------------------------------------------------------------------------------
-			if ((32 + key_len) >= 56)              ocl_gen_load_w(block, "state",  "key" ,   NULL ,   NULL ,   32  ,  key_len ,   0   ,   0   , source, 0, 16);
+			//pattern[0]=alt pass-------------------------------------------------------------------------------------------------------------------------
+			if ((32 + key_len) >= 56)              ocl_gen_load_w(block + 0 * 32, "tt" ,  "key",  NULL,  NULL,    32  ,  key_len,    0   ,    0);
 			//pattern[1]=alt pass pass--------------------------------------------------------------------------------------------------------------------
-			if ((32 + 2*key_len) >= 56)            ocl_gen_load_w(block, "state",  "key" ,  "key" ,   NULL ,   32  ,  key_len , key_len,   0   , source, 1, 16);
-			//pattern[2]=alt salt pass---------------------------------------------------------------------------------------------------------------------
-			if ((32 + salt_len + key_len) >= 56)   ocl_gen_load_w(block, "state", "salt" ,  "key" ,   NULL ,   32  , salt_len, key_len,   0   , source, 2, 16);
+			if ((32 + 2*key_len) >= 56)            ocl_gen_load_w(block + 1 * 32, "tt" ,  "key", "key",  NULL,    32  ,  key_len, key_len,    0);
+			//pattern[2]=alt salt pass--------------------------------------------------------------------------------------------------------------------
+			if ((32 + salt_len + key_len) >= 56)   ocl_gen_load_w(block + 2 * 32, "tt" , "salt", "key",  NULL,    32  , salt_len, key_len,    0);
 			//pattern[3]=alt salt pass pass---------------------------------------------------------------------------------------------------------------
-			if ((32 + salt_len + 2*key_len) >= 56) ocl_gen_load_w(block, "state", "salt" ,  "key" ,  "key" ,   32  , salt_len, key_len, key_len, source, 3, 16);
-			//pattern[4]=pass alt--------------------------------------------------------------------------------------------------------------------------
-			if ((key_len + 32) >= 56)              ocl_gen_load_w(block,  "key" , "state",   NULL ,   NULL , key_len,    32   ,   0   ,   0   , source, 4, 16);
-			//pattern[5]=pass pass alt---------------------------------------------------------------------------------------------------------------------													          
-			if ((2*key_len + 32) >= 56)            ocl_gen_load_w(block,  "key" ,  "key" , "state",   NULL , key_len,  key_len ,   32  ,   0   , source, 5, 16);
-			//pattern[6]=pass salt alt---------------------------------------------------------------------------------------------------------------------														          
-			if ((key_len + salt_len + 32) >= 56)   ocl_gen_load_w(block,  "key" , "salt" , "state",   NULL , key_len, salt_len,   32  ,   0   , source, 6, 16);
-			//pattern[7]=pass salt pass alt----------------------------------------------------------------------------------------------------------------
-			if ((2*key_len + salt_len + 32) >= 56) ocl_gen_load_w(block,  "key" , "salt" ,  "key" , "state", key_len, salt_len, key_len,   32  , source, 7, 16);
+			if ((32 + salt_len + 2*key_len) >= 56) ocl_gen_load_w(block + 3 * 32, "tt" , "salt", "key", "key",    32  , salt_len, key_len, key_len);
+			//pattern[4]=pass alt-------------------------------------------------------------------------------------------------------------------------
+			if ((key_len + 32) >= 56)              ocl_gen_load_w(block + 4 * 32, "key",  "tt" , NULL ,  NULL, key_len,    32   ,    0   ,    0);
+			//pattern[5]=pass pass alt--------------------------------------------------------------------------------------------------------------------											          
+			if ((2*key_len + 32) >= 56)            ocl_gen_load_w(block + 5 * 32, "key",  "key", "tt" ,  NULL, key_len,  key_len,    32  ,    0);
+			//pattern[6]=pass salt alt--------------------------------------------------------------------------------------------------------------------													          
+			if ((key_len + salt_len + 32) >= 56)   ocl_gen_load_w(block + 6 * 32, "key", "salt", "tt" ,  NULL, key_len, salt_len,    32  ,    0);
+			//pattern[7]=pass salt pass alt---------------------------------------------------------------------------------------------------------------
+			if ((2*key_len + salt_len + 32) >= 56) ocl_gen_load_w(block + 7 * 32, "key", "salt", "key",  "tt", key_len, salt_len, key_len,    32);
+
+			// Search W for load patterns
+			for (size_t i = 16; i < 32; i++)
+			{
+				int is_same = TRUE;// Has W[i] the same value for each pattern of g_value?
+				for (cl_uint pattern_index = 0; pattern_index < 8; pattern_index++)
+					for (cl_uint pattern_index1 = 0; pattern_index1 < 8; pattern_index1++)
+						if (strlen(block[i + pattern_index * 32]) && strlen(block[i + pattern_index1 * 32]) && 
+							strcmp(block[i + pattern_index * 32],           block[i + pattern_index1 * 32]))
+						{
+							is_same = FALSE;
+							break;
+						}
+
+				if (is_same)
+				{
+					// Add pattern to common
+					for (cl_uint pattern_index = 0; pattern_index < 8; pattern_index++)
+						if (strlen(block[i + pattern_index * 32]))
+						{
+							strcpy(block[i + 8 * 32], block[i + pattern_index * 32]);
+							break;
+						}
+					// Delete pattern
+					for (cl_uint pattern_index = 0; pattern_index < 8; pattern_index++)
+						strcpy(block[i + pattern_index * 32], "");
+				}
+			}
+			
+			// Generate switch case
+			for (cl_uint pattern_index = 0; pattern_index < 8; pattern_index++)
+			{
+				int is_empty_case = TRUE;
+				for (size_t i = 16; i < 32; i++)
+					if (strlen(block[i + pattern_index * 32]))
+						is_empty_case = FALSE;
+
+				if (is_empty_case) continue;
+
+				sprintf(source + strlen(source), "case %u:", pattern_index);
+				for (size_t i = 16; i < 32; i++)
+					sprintf(source + strlen(source), "%s", block[i + pattern_index * 32]);
+				sprintf(source + strlen(source), "break;");
+			}
 
 			// 2nd sha256 compress hash function
 			sprintf(source + strlen(source),
@@ -1069,6 +1150,10 @@ PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_
 			//pattern[7]=pass salt pass alt---------------------------------------------------
 			if ((2 * key_len + salt_len + 32) >= 56) sprintf(source + strlen(source), "case 7:");
 		
+			// Load common patterns of W
+			for (size_t i = 16; i < 32; i++)
+				sprintf(source + strlen(source), "%s", block[i + 8 * 32]);
+
 			sprintf(source + strlen(source),
 					"sha256_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7);"
 					"break;"
@@ -1090,7 +1175,7 @@ PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_
 			"GET_DATA(7u)=state7;"
 		"}\n");
 }
-PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provider, OpenCL_Param* param, int use_rules)
+PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules)
 {
 	// Generate code
 	assert(use_rules >= 0);
@@ -1116,8 +1201,6 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provi
 
 		"#define GET_DATA(index) current_data[(%uu+index)*%uu+get_global_id(0)]\n"
 		, use_rules ? 8 : 0, param->NUM_KEYS_OPENCL);
-
-	ocl_kernel_provider->gen_kernel(source, param->param1);
 
 	// Helpers
 	sprintf(source + strlen(source), "\n"
@@ -1182,73 +1265,73 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provi
 			"H=state7;"
 
 			/* Rounds */
-			"H+=R_E(E)+bs(G,F,E)+0x428A2F98+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"G+=R_E(D)+bs(F,E,D)+0x71374491+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"F+=R_E(C)+bs(E,D,C)+0xB5C0FBCF+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"E+=R_E(B)+bs(D,C,B)+0xE9B5DBA5+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"D+=R_E(A)+bs(C,B,A)+0x3956C25B+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"C+=R_E(H)+bs(B,A,H)+0x59F111F1+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"B+=R_E(G)+bs(A,H,G)+0x923F82A4+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"A+=R_E(F)+bs(H,G,F)+0xAB1C5ED5+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-			"H+=R_E(E)+bs(G,F,E)+0xD807AA98+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"G+=R_E(D)+bs(F,E,D)+0x12835B01+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"F+=R_E(C)+bs(E,D,C)+0x243185BE+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"E+=R_E(B)+bs(D,C,B)+0x550C7DC3+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"D+=R_E(A)+bs(C,B,A)+0x72BE5D74+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"C+=R_E(H)+bs(B,A,H)+0x80DEB1FE+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"B+=R_E(G)+bs(A,H,G)+0x9BDC06A7+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"A+=R_E(F)+bs(H,G,F)+0xC19BF174+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
+			"H+=R_E(E)+bs(G,F,E)+0x428A2F98u+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+			"G+=R_E(D)+bs(F,E,D)+0x71374491u+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
+			"F+=R_E(C)+bs(E,D,C)+0xB5C0FBCFu+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
+			"E+=R_E(B)+bs(D,C,B)+0xE9B5DBA5u+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
+			"D+=R_E(A)+bs(C,B,A)+0x3956C25Bu+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
+			"C+=R_E(H)+bs(B,A,H)+0x59F111F1u+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
+			"B+=R_E(G)+bs(A,H,G)+0x923F82A4u+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
+			"A+=R_E(F)+bs(H,G,F)+0xAB1C5ED5u+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
+			"H+=R_E(E)+bs(G,F,E)+0xD807AA98u+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+			"G+=R_E(D)+bs(F,E,D)+0x12835B01u+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
+			"F+=R_E(C)+bs(E,D,C)+0x243185BEu+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
+			"E+=R_E(B)+bs(D,C,B)+0x550C7DC3u+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
+			"D+=R_E(A)+bs(C,B,A)+0x72BE5D74u+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
+			"C+=R_E(H)+bs(B,A,H)+0x80DEB1FEu+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
+			"B+=R_E(G)+bs(A,H,G)+0x9BDC06A7u+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
+			"A+=R_E(F)+bs(H,G,F)+0xC19BF174u+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
 
-			"W00+=R1(W14)+W09+R0(W01);H+=R_E(E)+bs(G,F,E)+0xE49B69C1+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W01+=R1(W15)+W10+R0(W02);G+=R_E(D)+bs(F,E,D)+0xEFBE4786+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W02+=R1(W00)+W11+R0(W03);F+=R_E(C)+bs(E,D,C)+0x0FC19DC6+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W03+=R1(W01)+W12+R0(W04);E+=R_E(B)+bs(D,C,B)+0x240CA1CC+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W04+=R1(W02)+W13+R0(W05);D+=R_E(A)+bs(C,B,A)+0x2DE92C6F+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W05+=R1(W03)+W14+R0(W06);C+=R_E(H)+bs(B,A,H)+0x4A7484AA+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W06+=R1(W04)+W15+R0(W07);B+=R_E(G)+bs(A,H,G)+0x5CB0A9DC+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W07+=R1(W05)+W00+R0(W08);A+=R_E(F)+bs(H,G,F)+0x76F988DA+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-			"W08+=R1(W06)+W01+R0(W09);H+=R_E(E)+bs(G,F,E)+0x983E5152+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W09+=R1(W07)+W02+R0(W10);G+=R_E(D)+bs(F,E,D)+0xA831C66D+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W10+=R1(W08)+W03+R0(W11);F+=R_E(C)+bs(E,D,C)+0xB00327C8+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W11+=R1(W09)+W04+R0(W12);E+=R_E(B)+bs(D,C,B)+0xBF597FC7+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W12+=R1(W10)+W05+R0(W13);D+=R_E(A)+bs(C,B,A)+0xC6E00BF3+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W13+=R1(W11)+W06+R0(W14);C+=R_E(H)+bs(B,A,H)+0xD5A79147+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W14+=R1(W12)+W07+R0(W15);B+=R_E(G)+bs(A,H,G)+0x06CA6351+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W15+=R1(W13)+W08+R0(W00);A+=R_E(F)+bs(H,G,F)+0x14292967+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
+			"W00+=R1(W14)+W09+R0(W01);H+=R_E(E)+bs(G,F,E)+0xE49B69C1u+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+			"W01+=R1(W15)+W10+R0(W02);G+=R_E(D)+bs(F,E,D)+0xEFBE4786u+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
+			"W02+=R1(W00)+W11+R0(W03);F+=R_E(C)+bs(E,D,C)+0x0FC19DC6u+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
+			"W03+=R1(W01)+W12+R0(W04);E+=R_E(B)+bs(D,C,B)+0x240CA1CCu+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
+			"W04+=R1(W02)+W13+R0(W05);D+=R_E(A)+bs(C,B,A)+0x2DE92C6Fu+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
+			"W05+=R1(W03)+W14+R0(W06);C+=R_E(H)+bs(B,A,H)+0x4A7484AAu+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
+			"W06+=R1(W04)+W15+R0(W07);B+=R_E(G)+bs(A,H,G)+0x5CB0A9DCu+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
+			"W07+=R1(W05)+W00+R0(W08);A+=R_E(F)+bs(H,G,F)+0x76F988DAu+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
+			"W08+=R1(W06)+W01+R0(W09);H+=R_E(E)+bs(G,F,E)+0x983E5152u+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+			"W09+=R1(W07)+W02+R0(W10);G+=R_E(D)+bs(F,E,D)+0xA831C66Du+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
+			"W10+=R1(W08)+W03+R0(W11);F+=R_E(C)+bs(E,D,C)+0xB00327C8u+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
+			"W11+=R1(W09)+W04+R0(W12);E+=R_E(B)+bs(D,C,B)+0xBF597FC7u+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
+			"W12+=R1(W10)+W05+R0(W13);D+=R_E(A)+bs(C,B,A)+0xC6E00BF3u+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
+			"W13+=R1(W11)+W06+R0(W14);C+=R_E(H)+bs(B,A,H)+0xD5A79147u+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
+			"W14+=R1(W12)+W07+R0(W15);B+=R_E(G)+bs(A,H,G)+0x06CA6351u+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
+			"W15+=R1(W13)+W08+R0(W00);A+=R_E(F)+bs(H,G,F)+0x14292967u+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
 
-			"W00+=R1(W14)+W09+R0(W01);H+=R_E(E)+bs(G,F,E)+0x27B70A85+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W01+=R1(W15)+W10+R0(W02);G+=R_E(D)+bs(F,E,D)+0x2E1B2138+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W02+=R1(W00)+W11+R0(W03);F+=R_E(C)+bs(E,D,C)+0x4D2C6DFC+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W03+=R1(W01)+W12+R0(W04);E+=R_E(B)+bs(D,C,B)+0x53380D13+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W04+=R1(W02)+W13+R0(W05);D+=R_E(A)+bs(C,B,A)+0x650A7354+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W05+=R1(W03)+W14+R0(W06);C+=R_E(H)+bs(B,A,H)+0x766A0ABB+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W06+=R1(W04)+W15+R0(W07);B+=R_E(G)+bs(A,H,G)+0x81C2C92E+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W07+=R1(W05)+W00+R0(W08);A+=R_E(F)+bs(H,G,F)+0x92722C85+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-			"W08+=R1(W06)+W01+R0(W09);H+=R_E(E)+bs(G,F,E)+0xA2BFE8A1+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W09+=R1(W07)+W02+R0(W10);G+=R_E(D)+bs(F,E,D)+0xA81A664B+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W10+=R1(W08)+W03+R0(W11);F+=R_E(C)+bs(E,D,C)+0xC24B8B70+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W11+=R1(W09)+W04+R0(W12);E+=R_E(B)+bs(D,C,B)+0xC76C51A3+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W12+=R1(W10)+W05+R0(W13);D+=R_E(A)+bs(C,B,A)+0xD192E819+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W13+=R1(W11)+W06+R0(W14);C+=R_E(H)+bs(B,A,H)+0xD6990624+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W14+=R1(W12)+W07+R0(W15);B+=R_E(G)+bs(A,H,G)+0xF40E3585+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W15+=R1(W13)+W08+R0(W00);A+=R_E(F)+bs(H,G,F)+0x106AA070+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
+			"W00+=R1(W14)+W09+R0(W01);H+=R_E(E)+bs(G,F,E)+0x27B70A85u+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+			"W01+=R1(W15)+W10+R0(W02);G+=R_E(D)+bs(F,E,D)+0x2E1B2138u+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
+			"W02+=R1(W00)+W11+R0(W03);F+=R_E(C)+bs(E,D,C)+0x4D2C6DFCu+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
+			"W03+=R1(W01)+W12+R0(W04);E+=R_E(B)+bs(D,C,B)+0x53380D13u+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
+			"W04+=R1(W02)+W13+R0(W05);D+=R_E(A)+bs(C,B,A)+0x650A7354u+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
+			"W05+=R1(W03)+W14+R0(W06);C+=R_E(H)+bs(B,A,H)+0x766A0ABBu+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
+			"W06+=R1(W04)+W15+R0(W07);B+=R_E(G)+bs(A,H,G)+0x81C2C92Eu+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
+			"W07+=R1(W05)+W00+R0(W08);A+=R_E(F)+bs(H,G,F)+0x92722C85u+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
+			"W08+=R1(W06)+W01+R0(W09);H+=R_E(E)+bs(G,F,E)+0xA2BFE8A1u+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+			"W09+=R1(W07)+W02+R0(W10);G+=R_E(D)+bs(F,E,D)+0xA81A664Bu+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
+			"W10+=R1(W08)+W03+R0(W11);F+=R_E(C)+bs(E,D,C)+0xC24B8B70u+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
+			"W11+=R1(W09)+W04+R0(W12);E+=R_E(B)+bs(D,C,B)+0xC76C51A3u+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
+			"W12+=R1(W10)+W05+R0(W13);D+=R_E(A)+bs(C,B,A)+0xD192E819u+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
+			"W13+=R1(W11)+W06+R0(W14);C+=R_E(H)+bs(B,A,H)+0xD6990624u+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
+			"W14+=R1(W12)+W07+R0(W15);B+=R_E(G)+bs(A,H,G)+0xF40E3585u+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
+			"W15+=R1(W13)+W08+R0(W00);A+=R_E(F)+bs(H,G,F)+0x106AA070u+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
 
-			"W00+=R1(W14)+W09+R0(W01);H+=R_E(E)+bs(G,F,E)+0x19A4C116+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W01+=R1(W15)+W10+R0(W02);G+=R_E(D)+bs(F,E,D)+0x1E376C08+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W02+=R1(W00)+W11+R0(W03);F+=R_E(C)+bs(E,D,C)+0x2748774C+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W03+=R1(W01)+W12+R0(W04);E+=R_E(B)+bs(D,C,B)+0x34B0BCB5+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W04+=R1(W02)+W13+R0(W05);D+=R_E(A)+bs(C,B,A)+0x391C0CB3+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W05+=R1(W03)+W14+R0(W06);C+=R_E(H)+bs(B,A,H)+0x4ED8AA4A+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W06+=R1(W04)+W15+R0(W07);B+=R_E(G)+bs(A,H,G)+0x5B9CCA4F+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W07+=R1(W05)+W00+R0(W08);A+=R_E(F)+bs(H,G,F)+0x682E6FF3+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-			"W08+=R1(W06)+W01+R0(W09);H+=R_E(E)+bs(G,F,E)+0x748F82EE+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W09+=R1(W07)+W02+R0(W10);G+=R_E(D)+bs(F,E,D)+0x78A5636F+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W10+=R1(W08)+W03+R0(W11);F+=R_E(C)+bs(E,D,C)+0x84C87814+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W11+=R1(W09)+W04+R0(W12);E+=R_E(B)+bs(D,C,B)+0x8CC70208+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W12+=R1(W10)+W05+R0(W13);D+=R_E(A)+bs(C,B,A)+0x90BEFFFA+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W13+=R1(W11)+W06+R0(W14);C+=R_E(H)+bs(B,A,H)+0xA4506CEB+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W14+=R1(W12)+W07+R0(W15);B+=R_E(G)+bs(A,H,G)+0xBEF9A3F7+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W15+=R1(W13)+W08+R0(W00);A+=R_E(F)+bs(H,G,F)+0xC67178F2+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
+			"W00+=R1(W14)+W09+R0(W01);H+=R_E(E)+bs(G,F,E)+0x19A4C116u+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+			"W01+=R1(W15)+W10+R0(W02);G+=R_E(D)+bs(F,E,D)+0x1E376C08u+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
+			"W02+=R1(W00)+W11+R0(W03);F+=R_E(C)+bs(E,D,C)+0x2748774Cu+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
+			"W03+=R1(W01)+W12+R0(W04);E+=R_E(B)+bs(D,C,B)+0x34B0BCB5u+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
+			"W04+=R1(W02)+W13+R0(W05);D+=R_E(A)+bs(C,B,A)+0x391C0CB3u+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
+			"W05+=R1(W03)+W14+R0(W06);C+=R_E(H)+bs(B,A,H)+0x4ED8AA4Au+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
+			"W06+=R1(W04)+W15+R0(W07);B+=R_E(G)+bs(A,H,G)+0x5B9CCA4Fu+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
+			"W07+=R1(W05)+W00+R0(W08);A+=R_E(F)+bs(H,G,F)+0x682E6FF3u+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
+			"W08+=R1(W06)+W01+R0(W09);H+=R_E(E)+bs(G,F,E)+0x748F82EEu+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
+			"W09+=R1(W07)+W02+R0(W10);G+=R_E(D)+bs(F,E,D)+0x78A5636Fu+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
+			"W10+=R1(W08)+W03+R0(W11);F+=R_E(C)+bs(E,D,C)+0x84C87814u+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
+			"W11+=R1(W09)+W04+R0(W12);E+=R_E(B)+bs(D,C,B)+0x8CC70208u+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
+			"W12+=R1(W10)+W05+R0(W13);D+=R_E(A)+bs(C,B,A)+0x90BEFFFAu+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
+			"W13+=R1(W11)+W06+R0(W14);C+=R_E(H)+bs(B,A,H)+0xA4506CEBu+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
+			"W14+=R1(W12)+W07+R0(W15);B+=R_E(G)+bs(A,H,G)+0xBEF9A3F7u+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
+			"W15+=R1(W13)+W08+R0(W00);A+=R_E(F)+bs(H,G,F)+0xC67178F2u+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
 
 			"state0+=A;"
 			"state1+=B;"
@@ -1583,22 +1666,56 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provi
 	//		"GET_DATA(7u)=state7;"
 	//	"}\n");
 
+	uint32_t exist_salt_by_len[MAX_SALT_SIZE+1];
+	memset(exist_salt_by_len, FALSE, sizeof(exist_salt_by_len));
+	for (uint32_t i = 0; i < num_diff_salts; i++)
+		exist_salt_by_len[((const crypt_sha256_salt*)salts_values)->saltlen] = TRUE;
+
 	// Generate specific code for each length
 	for (cl_uint key_len = 0; key_len <= MAX_KEY_SIZE; key_len++)
 		for (uint32_t salt_len = 1; salt_len <= MAX_SALT_SIZE; salt_len++)
-			ocl_gen_sha256body_by_lenght(source + strlen(source), param, key_len, salt_len);
+			if(exist_salt_by_len[salt_len])
+				ocl_gen_sha256body_by_lenght(source + strlen(source), param, key_len, salt_len);
 
 	//size_t len = strlen(source);
 	return source;
 }
 PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules)
 {
-	if (!ocl_init_slow_hashes_ordered(param, gpu_index, gen, gpu_crypt, ocl_kernel_provider, use_rules, (use_rules ? 8 : 0) + 20, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 8, MAX_KEY_SIZE, TRUE))
+	// Only one hash
+	// For Intel HD 4600 best DIVIDER=?
+	//  1	4.00K
+	//	2	3.94K
+	//	4	3.90K
+	//	8	3.55K
+	//	16	2.99K
+	//	32	2.84K
+	// For AMD HD 7970 best DIVIDER=?
+	//  1	146K
+	//	2	146K
+	//	4	144K
+	//	8	141K
+	//	16	138K
+	//	32	131K
+	// For Nvidia GTX 970 best DIVIDER=?
+	//  1	99K
+	//	2	142K
+	//	4	139K
+	//	8	119K
+	//	16	101K
+	//	32	127K
+
+	// For AMD HD 7970
+	// Hashcat: 
+	// Theoretical: 
+	// HS by len : 
+	if (!ocl_init_slow_hashes_ordered(param, gpu_index, gen, gpu_crypt, ocl_kernel_provider, use_rules, (use_rules ? 8 : 0) + 20, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 4, MAX_KEY_SIZE, TRUE))
 		return FALSE;
 
 	// Crypt Kernels
-	create_kernel(param, KERNEL_INDEX_INIT_PART, "init_part");
-	create_kernel(param, KERNEL_INDEX_COMPARE_RESULT, "compare_result");
+	cl_int code;
+	KERNEL_INIT_PART = pclCreateKernel(param->additional_program, "init_part", &code);
+	KERNEL_COMPARE_RESULT = pclCreateKernel(param->additional_program, "compare_result", &code);
 
 	if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
 	{
@@ -1613,16 +1730,16 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 
 	// Set OpenCL kernel params
 	//__kernel void init_part(__global uint* current_key,__global uint* current_data,__global crypt_sha256_salt* salts, uint base_len, uint len, uint salt_index)
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_INIT_PART], 0, sizeof(cl_mem), (void*)&param->mems[GPU_ORDERED_KEYS]);
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_INIT_PART], 1, sizeof(cl_mem), (void*)&param->mems[GPU_CURRENT_KEY]);
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_INIT_PART], 2, sizeof(cl_mem), (void*)&param->mems[GPU_SALT_VALUES]);
+	pclSetKernelArg(KERNEL_INIT_PART, 0, sizeof(cl_mem), (void*)&param->mems[GPU_ORDERED_KEYS]);
+	pclSetKernelArg(KERNEL_INIT_PART, 1, sizeof(cl_mem), (void*)&param->mems[GPU_CURRENT_KEY]);
+	pclSetKernelArg(KERNEL_INIT_PART, 2, sizeof(cl_mem), (void*)&param->mems[GPU_SALT_VALUES]);
 
 	//__kernel void compare_result(__global uint* current_data,__global uint* output,const __global uint* bin,uint current_salt_index,const __global uint* salt_index,const __global uint* same_salt_next)
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_COMPARE_RESULT], 0, sizeof(cl_mem), (void*)&param->mems[GPU_CURRENT_KEY]);
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_COMPARE_RESULT], 1, sizeof(cl_mem), (void*)&param->mems[GPU_OUTPUT]);
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_COMPARE_RESULT], 2, sizeof(cl_mem), (void*)&param->mems[GPU_BINARY_VALUES]);
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_COMPARE_RESULT], 4, sizeof(cl_mem), (void*)&param->mems[GPU_SALT_INDEX]);
-	pclSetKernelArg(param->kernels[KERNEL_INDEX_COMPARE_RESULT], 5, sizeof(cl_mem), (void*)&param->mems[GPU_SAME_SALT_NEXT]);
+	pclSetKernelArg(KERNEL_COMPARE_RESULT, 0, sizeof(cl_mem), (void*)&param->mems[GPU_CURRENT_KEY]);
+	pclSetKernelArg(KERNEL_COMPARE_RESULT, 1, sizeof(cl_mem), (void*)&param->mems[GPU_OUTPUT]);
+	pclSetKernelArg(KERNEL_COMPARE_RESULT, 2, sizeof(cl_mem), (void*)&param->mems[GPU_BINARY_VALUES]);
+	pclSetKernelArg(KERNEL_COMPARE_RESULT, 4, sizeof(cl_mem), (void*)&param->mems[GPU_SALT_INDEX]);
+	pclSetKernelArg(KERNEL_COMPARE_RESULT, 5, sizeof(cl_mem), (void*)&param->mems[GPU_SAME_SALT_NEXT]);
 
 	if (!(gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY))
 	{
@@ -1634,22 +1751,34 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 	// Create the kernels by length
 	param->additional_kernels_size = (MAX_KEY_SIZE + 1) * MAX_SALT_SIZE;
 	param->additional_kernels = malloc(param->additional_kernels_size * sizeof(cl_kernel));
+	memset(param->additional_kernels, 0, param->additional_kernels_size * sizeof(cl_kernel));
+	assert(param->additional_kernels);
+	// Pre-calculate salt sizes
+	uint32_t exist_salt_by_len[MAX_SALT_SIZE + 1];
+	memset(exist_salt_by_len, FALSE, sizeof(exist_salt_by_len));
+	for (uint32_t i = 0; i < num_diff_salts; i++)
+		exist_salt_by_len[((const crypt_sha256_salt*)salts_values)->saltlen] = TRUE;
+
 	for (cl_uint key_len = 0; key_len <= MAX_KEY_SIZE; key_len++)
 		for (uint32_t salt_len = 1; salt_len <= MAX_SALT_SIZE; salt_len++)
-		{
-			cl_int code;
-			char name[32];
-			sprintf(name, "sha256crypt_cycle%ux%u", key_len, salt_len);
-			param->additional_kernels[key_len * MAX_SALT_SIZE + salt_len - 1] = pclCreateKernel(param->program, name, &code);
+			if (exist_salt_by_len[salt_len])
+			{
+				cl_int code;
+				char name[32];
+				sprintf(name, "sha256crypt_cycle%ux%u", key_len, salt_len);
+				param->additional_kernels[key_len * MAX_SALT_SIZE + salt_len - 1] = pclCreateKernel(param->additional_program, name, &code);
 
-			//	                        keylen-x-saltlen
-			//__kernel void sha256crypt_cycle%ux%u(__global uint* current_data,uint rounds)
-			pclSetKernelArg(param->additional_kernels[key_len * MAX_SALT_SIZE + salt_len - 1], 0, sizeof(cl_mem), (void*)&param->mems[GPU_CURRENT_KEY]);
-		}
+				//	                        keylen-x-saltlen
+				//__kernel void sha256crypt_cycle%ux%u(__global uint* current_data,uint rounds)
+				if (code == CL_SUCCESS)
+					pclSetKernelArg(param->additional_kernels[key_len * MAX_SALT_SIZE + salt_len - 1], 0, sizeof(cl_mem), (void*)&param->mems[GPU_CURRENT_KEY]);
+			}
 
 	// Select best params
+	uint32_t max_salt_len = MAX_SALT_SIZE;
+	for (; !exist_salt_by_len[max_salt_len]; max_salt_len--);
 	cl_uint rounds = 42*8;
-	ocl_calculate_best_work_group(param, param->additional_kernels + MAX_KEY_SIZE * MAX_SALT_SIZE + (MAX_SALT_SIZE-1), INT32_MAX, &rounds, 1, FALSE, CL_TRUE);
+	ocl_calculate_best_work_group(param, param->additional_kernels + MAX_KEY_SIZE * MAX_SALT_SIZE + (max_salt_len-1), INT32_MAX, &rounds, 1, FALSE, CL_TRUE);
 	// Manage rounds
 	if (rounds == 0) rounds = 1;
 	// if it's too low
@@ -1683,20 +1812,8 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Charset
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-PRIVATE void ocl_check_empty()
-{
-	// TODO:
-}
 PRIVATE int ocl_protocol_charset_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt)
 {
-	// Do not allow blank in GPU
-	if (current_key_lenght == 0)
-	{
-		ocl_check_empty();
-
-		current_key_lenght = 1;
-		report_keys_processed(1);
-	}
 	return ocl_protocol_common_init(param, gpu_index, gen, gpu_crypt, kernels2common + CHARSET_INDEX_IN_KERNELS, FALSE);
 }
 

@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2013-2015,2020 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2013-2020 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
@@ -69,7 +69,7 @@ PRIVATE uint32_t get_binary(const unsigned char* ciphertext, void* binary, void*
 	for(; ciphertext[salt_lenght] != ':'; salt_lenght++);
 	// Convert salt-----------------------------------------------------
 	for(; i < salt_lenght/2; i++)
-		salt[i] = ((uint32_t)ciphertext[2*i]) | ((uint32_t)ciphertext[2*i+1]) << 16;
+		salt[i] = ((uint32_t)ciphertext[2*i]) | (((uint32_t)ciphertext[2*i+1]) << 16);
 
 	salt[i] = (salt_lenght%2) ? ((uint32_t)ciphertext[2*i]) | 0x800000 : 0x80;
 	salt[10] = (8 + salt_lenght) << 4;
@@ -143,15 +143,11 @@ PUBLIC void dcc2_body_c_code(uint32_t* salt_buffer, uint32_t* crypt_result, uint
 
 	//pbkdf2
 	uint32_t salt_len = (salt_buffer[10] >> 3) - 16;
-	SWAP_ENDIANNESS(a, a);
-	SWAP_ENDIANNESS(b, b);
-	SWAP_ENDIANNESS(c, c);
-	SWAP_ENDIANNESS(d, d);
 
-	sha1_hash[0] = a;
-	sha1_hash[1] = b;
-	sha1_hash[2] = c;
-	sha1_hash[3] = d;
+	sha1_hash[0] = _byteswap_ulong(a);
+	sha1_hash[1] = _byteswap_ulong(b);
+	sha1_hash[2] = _byteswap_ulong(c);
+	sha1_hash[3] = _byteswap_ulong(d);
 	uint32_t len = 4;
 	hmac_sha1_init_simd(sha1_hash, &len, 1, 1, opad_state, ipad_state, W);
 
@@ -498,7 +494,9 @@ PRIVATE void crypt_ntlm_protocol_sse2(CryptParam* param)
 					}
 				}
 			}
-			report_keys_processed(4);
+
+			if (continue_attack)
+				report_keys_processed(4);
 		}
 	}
 
@@ -612,7 +610,9 @@ PRIVATE void crypt_ntlm_protocol_v128(CryptParam* param)
 					}
 				}
 			}
-			report_keys_processed(8);
+
+			if (continue_attack)
+				report_keys_processed(8);
 		}
 	}
 
@@ -808,7 +808,9 @@ PRIVATE void crypt_ntlm_protocol_avx2(CryptParam* param)
 					}
 				}
 			}
-			report_keys_processed(16);
+			
+			if(continue_attack)
+				report_keys_processed(16);
 		}
 	}
 

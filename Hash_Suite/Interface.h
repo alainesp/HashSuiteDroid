@@ -23,8 +23,8 @@
 
 #define ROTATE32(x,shift)	_rotl(x,shift)
 #define ROTATE64(x,shift)	_rotl64(x,shift)
-#define SWAP_ENDIANNESS(x, data) x = ROTATE32(data, 16U); x = ((x & 0x00FF00FF) << 8) | ((x >> 8) & 0x00FF00FF);
-#define SWAP_ENDIANNESS16(x, data) x = (((data&0xff00)>>8) | ((data&0xff)<<8));
+//#define SWAP_ENDIANNESS(x, data) x = ROTATE32(data, 16U); x = ((x & 0x00FF00FF) << 8) | ((x >> 8) & 0x00FF00FF);
+//#define SWAP_ENDIANNESS16(x, data) x = (((data&0xff00)>>8) | ((data&0xff)<<8));
 
 #define PRIVATE static
 #define PUBLIC
@@ -120,7 +120,7 @@ typedef struct OpenCL_Param
 	};
 
 	union{// Support OpenCL/Cuda driver API
-		cl_kernel kernels[MAX_KEY_LENGHT_SMALL+4];
+		cl_kernel kernels[MAX_KEY_LENGHT_SMALL];
 		CUfunction cu_kernels[MAX_KEY_LENGHT_SMALL];
 	};
 
@@ -137,6 +137,7 @@ typedef struct OpenCL_Param
 	void* additional_param1;
 	cl_kernel* additional_kernels;
 	cl_uint additional_kernels_size;
+	cl_program additional_program;
 	// Needed by rules
 	OCL_Rules rules;
 }
@@ -152,13 +153,14 @@ typedef int create_gpu_crypt_funtion(OpenCL_Param*, cl_uint, generate_key_funtio
 #define MESSAGE_TESTING_INIT_COMPLETE	5
 #define MESSAGE_TESTING_FAIL			6
 #define MESSAGE_TESTING_SUCCEED			7
+#define MESSAGE_FLUSHING_KEYS			8
 typedef void callback_funtion(int message);
 
 ////////////////////////////////////////////////////////////////////////////////////
 // Formats
 ////////////////////////////////////////////////////////////////////////////////////
 #ifndef INCLUDE_DEVELOPING_FORMAT
-#define MAX_NUM_FORMATS 13
+#define MAX_NUM_FORMATS 14
 #endif
 
 #define LM_INDEX			0
@@ -174,6 +176,7 @@ typedef void callback_funtion(int message);
 #define WPA_INDEX			10
 #define BCRYPT_INDEX		11
 #define SHA256CRYPT_INDEX	12
+#define SHA512CRYPT_INDEX	13
 
 
 // Protocols
@@ -532,7 +535,9 @@ void save_settings_to_db();
 extern uint32_t num_passwords_loaded;
 // Used to stop the attack
 extern int continue_attack;
+extern int stop_universe;
 extern int save_needed;
+extern callback_funtion* send_message_gui;
 
 // Hashing
 void hash_lm(const char* message, char* hash);
@@ -546,6 +551,7 @@ void hash_dcc2(const unsigned char* cleartext, char* hash);
 void hash_ssha1(const char* cleartext, char* hash);
 void hash_md5crypt(const unsigned char* cleartext, char* hash);
 void hash_sha256crypt(const char* cleartext, char* hash);
+void hash_sha512crypt(const char* cleartext, char* hash);
 void hash_wpa(const unsigned char* cleartext, unsigned char* hash);
 void hash_bcrypt(const char* cleartext, unsigned char* hash);
 void hash_file(void* void_data);

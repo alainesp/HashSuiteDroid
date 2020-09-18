@@ -5,21 +5,8 @@ Copyright (c) 2014-2020 by Alain Espinosa. See LICENSE.
 
 package com.hashsuite.droid;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.LineNumberReader;
-import java.io.OutputStreamWriter;
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.Timer;
-import java.util.TimerTask;
-
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.ActionBar;
 import android.app.Activity;
@@ -33,7 +20,6 @@ import android.app.FragmentTransaction;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
@@ -58,7 +44,6 @@ import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.AdapterView;
-import android.widget.AdapterView.OnItemClickListener;
 import android.widget.AdapterView.OnItemSelectedListener;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
@@ -71,7 +56,25 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.codemybrainsout.ratingdialog.RatingDialog;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.LineNumberReader;
+import java.io.OutputStreamWriter;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.Objects;
+import java.util.Timer;
+import java.util.TimerTask;
+
 import ar.com.daidalos.afiledialog.FileChooserDialog;
+
+import static android.view.Gravity.LEFT;
 
 public class MainActivity extends Activity implements ActionBar.TabListener, OnItemSelectedListener
 {
@@ -116,11 +119,10 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	private static native void BenchmarkStop();
 	private static native int GetBenchmarkDuration();
 	private static native int[] GetBenchmarkValues(int format_index);
-	private static native int GetRulesGPUStatus();
 
 	// Wordlist
 	public static native long SaveWordlist(String path, String name, long file_lenght);
-	public static native long SavePhrases(String path, String name, long file_lenght);
+	public static native void SavePhrases(String path, String name, long file_lenght);
 	public static native void setPhrasesMaxWords(int max_num_words);
 
 	// Settings
@@ -137,7 +139,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	private static final int ID_KEY_PROV_BASE = 33101;
 	private static final int ID_WIZARD = 37667;
 
-	private static final int REQUEST_LOAD = 0;
+	//private static final int REQUEST_LOAD = 0;
 	static int format_index = 0;
 	static int key_provider_index = 0;
 	private boolean is_cracking;
@@ -231,7 +233,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 				is.close();
 				os.close();
 			}
-			catch (IOException e)
+			catch (IOException ignored)
 			{}
 			// Save to db
             switch(fileType)
@@ -286,6 +288,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		
 		// Set up the action bar.
 		ActionBar actionBar = getActionBar();
+		assert actionBar != null;
 		if(isTabletUI())
 		{
 			this.setContentView(R.layout.tablet_ui);
@@ -321,7 +324,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			reader.close();
 			file.close();
 		}
-		catch (Exception e)
+		catch (Exception ignored)
 		{}
 		
 		download_receiver = new BroadcastReceiver()
@@ -346,6 +349,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 						DownloadManager dm = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
 						DownloadManager.Query query = new DownloadManager.Query();
 						query.setFilterById(downloadId);
+						assert dm != null;
 						Cursor c = dm.query(query);
 						if (c.moveToFirst())
 						{
@@ -441,7 +445,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			writer.close();
 			file.close();
 		}
-		catch (Exception e)
+		catch (Exception ignored)
 		{}
 				
 		this.unregisterReceiver(download_receiver);
@@ -465,7 +469,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		 {
 			 outState.putInt(APP_STATE, APP_STATE_NORMAL);
 			 if(!isTabletUI())
-				 outState.putInt(TAB_SELECTED, getActionBar().getSelectedNavigationIndex());
+				 outState.putInt(TAB_SELECTED, Objects.requireNonNull(getActionBar()).getSelectedNavigationIndex());
 		 }
 		//super.onSaveInstanceState(outState);
 	}
@@ -512,7 +516,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 
 		final Timer import_timer = new Timer();
 		stats_dialog.show();
-		stats_dialog.getWindow().setLayout(calculateDialogWidth(420), WindowManager.LayoutParams.WRAP_CONTENT);
+		Objects.requireNonNull(stats_dialog.getWindow()).setLayout(calculateDialogWidth(420), WindowManager.LayoutParams.WRAP_CONTENT);
 		stats_dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
 		final TableLayout formats_table = (TableLayout)stats_dialog.findViewById(R.id.import_table);
 		final String[] format_names = HashesFragment.GetFormats();
@@ -546,6 +550,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 						
 						return name;
 					}
+					@SuppressLint({"SetTextI18n", "RtlHardcoded"})
 					@Override
 					public void run()
 					{
@@ -555,7 +560,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 
 						for (int i = 0; i < format_names.length; i++)
 						{
-							int num_users_added 	= GetImportResultInt(3*i+IMPORT_FORMATS_DATA+0);
+							int num_users_added 	= GetImportResultInt(3*i+IMPORT_FORMATS_DATA);
 							int num_users_disabled 	= GetImportResultInt(3*i+IMPORT_FORMATS_DATA+1);
 							int num_users_exist 	= GetImportResultInt(3*i+IMPORT_FORMATS_DATA+2);
 							
@@ -569,7 +574,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 									TableRow row = new TableRow(my_activity);
 									TextView name = CreateTextView(first_child);
 									name.setText(format_names[i]);
-									name.setGravity(Gravity.LEFT);
+									name.setGravity(LEFT);
 									row.addView(name);
 									
 									row.addView(CreateTextView(first_child));
@@ -645,42 +650,38 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		AlertDialog.Builder builder = new AlertDialog.Builder(my_activity);
 		if(!isTabletUI())
 			builder.setTitle("Export");
-		builder.setItems(exporters, new DialogInterface.OnClickListener()
-		{
-			public void onClick(DialogInterface dialog, final int which)
+		builder.setItems(exporters, (dialog, which) -> {
+			dialog.dismiss();
+			// The 'which' argument contains the index position of the selected item
+			if(which >= 0 && which < 5)
 			{
-				dialog.dismiss();
-				// The 'which' argument contains the index position of the selected item
-				if(which >= 0 && which < 5)
+				// Create the dialog.
+				FileChooserDialog select_directory = new FileChooserDialog(my_activity, "Select directory to export", my_activity.getLayoutInflater());
+				select_directory.setFolderMode(true);
+				select_directory.setShowOnlySelectable(true);
+
+				// Assign listener for the select event.
+				select_directory.addListener(new FileChooserDialog.OnFileSelectedListener()
 				{
-					// Create the dialog.
-					FileChooserDialog select_directory = new FileChooserDialog(my_activity, "Select directory to export", my_activity.getLayoutInflater());
-					select_directory.setFolderMode(true);
-					select_directory.setShowOnlySelectable(true);
-
-					// Assign listener for the select event.
-					select_directory.addListener(new FileChooserDialog.OnFileSelectedListener()
+					private void Export(Dialog source, String file_path)
 					{
-						private void Export(Dialog source, String file_path)
-						{
-							source.dismiss();
-							MainActivity.Export(file_path, which, format_index);
-							Toast.makeText(my_activity, "Exported file successfully", Toast.LENGTH_SHORT).show();
-						}
+						source.dismiss();
+						MainActivity.Export(file_path, which, format_index);
+						Toast.makeText(my_activity, "Exported file successfully", Toast.LENGTH_SHORT).show();
+					}
 
-						public void onFileSelected(Dialog source, File file)
-						{
-							Export(source, file.getAbsolutePath());
-						}
-						public void onFileSelected(Dialog source, File folder, String name)
-						{
-							Export(source, folder.getAbsolutePath());
-						}
-					});
+					public void onFileSelected(Dialog source, File file)
+					{
+						Export(source, file.getAbsolutePath());
+					}
+					public void onFileSelected(Dialog source, File folder, String name)
+					{
+						Export(source, folder.getAbsolutePath());
+					}
+				});
 
-					// Show the dialog.
-					select_directory.show();
-				}
+				// Show the dialog.
+				select_directory.show();
 			}
 		});
 		AlertDialog dialog = builder.create();
@@ -689,7 +690,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			alignTopRight(dialog);
 		dialog.show();
 
-		dialog.getWindow().setLayout(calculateDialogWidth(320), WindowManager.LayoutParams.WRAP_CONTENT);
+		Objects.requireNonNull(dialog.getWindow()).setLayout(calculateDialogWidth(320), WindowManager.LayoutParams.WRAP_CONTENT);
 	}
 	private void onImportFile()
 	{
@@ -717,6 +718,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 					int mPendingIntentId = 123456;
 					PendingIntent mPendingIntent = PendingIntent.getActivity(my_activity, mPendingIntentId,    mStartActivity, PendingIntent.FLAG_CANCEL_CURRENT);
 					AlarmManager mgr = (AlarmManager)my_activity.getSystemService(Context.ALARM_SERVICE);
+					assert mgr != null;
 					mgr.set(AlarmManager.RTC, System.currentTimeMillis() + 300, mPendingIntent);
 					System.exit(0);
 				}
@@ -743,68 +745,59 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	public static int SelectConflictingFormat(final String line, final int[] valid_formats)
 	{
 		conflict_format_result = -2;
-		my_activity.runOnUiThread(new Runnable()
-		{
-			@Override
-			public void run()
-			{
-				LayoutInflater inflater = MainActivity.my_activity.getLayoutInflater();
-				// Instantiate an AlertDialog.Builder with its constructor
-				
-				AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.my_activity).setPositiveButton("OK", new DialogInterface.OnClickListener()
-				{
-					public void onClick(DialogInterface dialog, int id)
+		my_activity.runOnUiThread(() -> {
+			LayoutInflater inflater = MainActivity.my_activity.getLayoutInflater();
+			// Instantiate an AlertDialog.Builder with its constructor
+
+			AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.my_activity).setPositiveButton("OK", (dialog, id) -> {
+				// Found the selected format
+				int selected_format_id = rb_formats.getCheckedRadioButtonId();
+				for (int i = 0; i < rb_formats.getChildCount(); i++)
+					if(rb_formats.getChildAt(i).getId() == selected_format_id)
 					{
-						// Found the selected format
-						int selected_format_id = rb_formats.getCheckedRadioButtonId();
-						for (int i = 0; i < rb_formats.getChildCount(); i++)
-							if(rb_formats.getChildAt(i).getId() == selected_format_id)
+						int num_formats_added = 0;
+						for (int j = 0; j < valid_formats.length; j++)
+							if(valid_formats[j] != 0)
 							{
-								int num_formats_added = 0;
-								for (int j = 0; j < valid_formats.length; j++)
-									if(valid_formats[j] != 0)
-									{
-										if(num_formats_added == i)
-										{
-											conflict_format_result = j;
-											break;
-										}
-										num_formats_added++;
-									}
-								break;
+								if(num_formats_added == i)
+								{
+									conflict_format_result = j;
+									break;
+								}
+								num_formats_added++;
 							}
-						
-						if(conflict_format_result < 0)
-							conflict_format_result = -1;
-						dialog.dismiss();
+						break;
 					}
-				}).setCancelable(false).setTitle("Conflicting formats over line of text").setView(inflater.inflate(R.layout.select_format, null));
-				
-				AlertDialog formats_dialog = builder.create();
-				formats_dialog.show();
-				//formats_dialog.getWindow().setLayout(calculateDialogWidth(420), WindowManager.LayoutParams.WRAP_CONTENT);
-				
-				TextView conflict_line = (TextView)formats_dialog.findViewById(R.id.conflict_line);
-				conflict_line.setText(line);
-				
-				rb_formats = (RadioGroup)formats_dialog.findViewById(R.id.conflicting_formats_rb);
-				rb_formats.clearCheck();
-				int num_formats_added = 0;
-				String[] format_names = HashesFragment.GetFormats();
-				
-				// Add the formats to select
-				for (int i = 0; i < valid_formats.length; i++)
-					if(valid_formats[i] != 0)
-					{
-						RadioButton rb = new RadioButton(my_activity);
-						rb.setText(format_names[i]);
-						rb_formats.addView(rb, num_formats_added);
-						if(num_formats_added==0)
-							rb_formats.check(rb.getId());
-						num_formats_added++;
-					}
-			}
-		});	
+
+				if(conflict_format_result < 0)
+					conflict_format_result = -1;
+				dialog.dismiss();
+			}).setCancelable(false).setTitle("Conflicting formats over line of text").setView(inflater.inflate(R.layout.select_format, null));
+
+			AlertDialog formats_dialog = builder.create();
+			formats_dialog.show();
+			//formats_dialog.getWindow().setLayout(calculateDialogWidth(420), WindowManager.LayoutParams.WRAP_CONTENT);
+
+			TextView conflict_line = formats_dialog.findViewById(R.id.conflict_line);
+			conflict_line.setText(line);
+
+			rb_formats = formats_dialog.findViewById(R.id.conflicting_formats_rb);
+			rb_formats.clearCheck();
+			int num_formats_added = 0;
+			String[] format_names = HashesFragment.GetFormats();
+
+			// Add the formats to select
+			for (int i = 0; i < valid_formats.length; i++)
+				if(valid_formats[i] != 0)
+				{
+					RadioButton rb = new RadioButton(my_activity);
+					rb.setText(format_names[i]);
+					rb_formats.addView(rb, num_formats_added);
+					if(num_formats_added==0)
+						rb_formats.check(rb.getId());
+					num_formats_added++;
+				}
+		});
 		
 		while(conflict_format_result < -1)
 		{
@@ -812,7 +805,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			{
 				Thread.sleep(300);
 			}
-			catch (InterruptedException e)
+			catch (InterruptedException ignored)
 			{}
 		}
 		return conflict_format_result;
@@ -963,13 +956,13 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		});
 	}
 
-	private static final int MESSAGE_FINISH_BATCH		  =	1;
-	private static final int MESSAGE_FINISH_ATTACK		  =	2;
-	private static final int MESSAGE_ATTACK_INIT_COMPLETE =	3;
+	//private static final int MESSAGE_FINISH_BATCH		  =	1;
+	//private static final int MESSAGE_FINISH_ATTACK		  =	2;
+	//private static final int MESSAGE_ATTACK_INIT_COMPLETE =	3;
 	private static final int MESSAGE_ATTACK_GPU_FAIL      =	4;
-	private static final int MESSAGE_TESTING_INIT_COMPLETE=	5;
+	//private static final int MESSAGE_TESTING_INIT_COMPLETE=	5;
 	private static final int MESSAGE_TESTING_FAIL		  =	6;
-	private static final int MESSAGE_TESTING_SUCCEED	  = 7;
+	//private static final int MESSAGE_TESTING_SUCCEED	  = 7;
 	private static void AttackReceiveMessage(int message) {
 		my_activity.runOnUiThread(() -> {
 			switch(message)
@@ -980,6 +973,9 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 //				case MESSAGE_TESTING_SUCCEED:
 //					Toast.makeText(my_activity, "Testing succeed.", Toast.LENGTH_SHORT).show();
 //					break;
+				case MESSAGE_ATTACK_GPU_FAIL:
+					Toast.makeText(my_activity, "Error trying to execute the attack in the GPU.", Toast.LENGTH_LONG).show();
+					break;
 				case MESSAGE_TESTING_FAIL:
 					if(ParamsFragment.getGPUsUsed() == 0)
 						Toast.makeText(my_activity, "A problem was detected testing the cracking process. This means there is a bug in Hash Suite. " +
@@ -992,14 +988,15 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		});
 	}
 	
+	@SuppressLint("RtlHardcoded")
 	private static void alignTopRight(AlertDialog dialog)
 	{
 		WindowManager.LayoutParams wmlp = new WindowManager.LayoutParams();
-		wmlp.copyFrom(dialog.getWindow().getAttributes());
+		wmlp.copyFrom(Objects.requireNonNull(dialog.getWindow()).getAttributes());
 		
     	wmlp.gravity = Gravity.TOP | Gravity.RIGHT;
     	wmlp.x = 0;
-    	wmlp.y = (int)(my_activity.getActionBar().getHeight());
+    	wmlp.y = Objects.requireNonNull(my_activity.getActionBar()).getHeight();
     	wmlp.windowAnimations = R.style.DialogAnimation;
     	wmlp.horizontalMargin = 0f;
     	wmlp.verticalMargin = 0f;
@@ -1065,7 +1062,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 							downloading_data.add(new WordlistDownloadingData(wordlists2download[which].id, enqueue));
 							WordlistData.setWordlistStateDownloading(wordlists2download[which].id);
 						}
-						catch (SecurityException ignored)
+						catch (Exception ignored)
 						{
 							Toast.makeText(this, "Can't enqueue download", Toast.LENGTH_SHORT).show();
 						}
@@ -1073,8 +1070,9 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 				});
 		AlertDialog downloader = builder.create();
 		downloader.show();
-		downloader.getWindow().setLayout(calculateDialogWidth(520), WindowManager.LayoutParams.WRAP_CONTENT);
+		Objects.requireNonNull(downloader.getWindow()).setLayout(calculateDialogWidth(520), WindowManager.LayoutParams.WRAP_CONTENT);
 	}
+	@SuppressLint({"RtlHardcoded", "SetTextI18n", "DefaultLocale"})
 	@Override
 	public boolean onOptionsItemSelected(MenuItem item)
 	{
@@ -1120,6 +1118,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 									timer_update_gui = new TimerTask()
 									{
 										int gpu_rules_compilation_timer = 0;
+										@SuppressLint("SetTextI18n")
 										@Override
 										public void run()
 										{
@@ -1150,7 +1149,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 						else
 						{
 							if(!isTabletUI())
-								my_activity.getActionBar().setSelectedNavigationItem(2);
+								Objects.requireNonNull(my_activity.getActionBar()).setSelectedNavigationItem(2);
 							Toast.makeText(this, "No hardware selected", Toast.LENGTH_SHORT).show();
 						}
 					}
@@ -1190,30 +1189,25 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 						if(isTabletUI())
 					    	alignTopRight(resume_dialog);
 						resume_dialog.show();
-						resume_dialog.getWindow().setLayout(calculateDialogWidth(360), WindowManager.LayoutParams.WRAP_CONTENT);
+						Objects.requireNonNull(resume_dialog.getWindow()).setLayout(calculateDialogWidth(360), WindowManager.LayoutParams.WRAP_CONTENT);
 						
-						ListView resumes = (ListView)resume_dialog.findViewById(R.id.list_wordlist);
-						resumes.setAdapter(new ArrayAdapter<ResumeAttackData>(MainActivity.my_activity, android.R.layout.simple_list_item_1, resume_attacks));
+						ListView resumes = resume_dialog.findViewById(R.id.list_wordlist);
+						resumes.setAdapter(new ArrayAdapter<>(MainActivity.my_activity, android.R.layout.simple_list_item_1, resume_attacks));
 						resumes.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
-						resumes.setOnItemClickListener(new OnItemClickListener()
-						{
-							@Override
-							public void onItemClick(AdapterView<?> parent, View view, int position, long id)
+						resumes.setOnItemClickListener((parent, view, position, id) -> {
+							resume_dialog.dismiss();
+							int num_threads = ParamsFragment.getNumThreads();
+							int gpus_used = ParamsFragment.getGPUsUsed();
+							if(num_threads > 0 || gpus_used > 0)
 							{
-								resume_dialog.dismiss();
-								int num_threads = ParamsFragment.getNumThreads();
-								int gpus_used = ParamsFragment.getGPUsUsed();
-								if(num_threads > 0 || gpus_used > 0)
-								{
-									ResumeAttack(((ResumeAttackData)parent.getItemAtPosition(position)).id, num_threads, gpus_used);
-									//onStartAttackCommon();
-								}
-								else
-								{
-									if(!isTabletUI())
-										my_activity.getActionBar().setSelectedNavigationItem(2);
-									Toast.makeText(my_activity, "No hardware selected", Toast.LENGTH_SHORT).show();
-								}
+								ResumeAttack(((ResumeAttackData)parent.getItemAtPosition(position)).id, num_threads, gpus_used);
+								//onStartAttackCommon();
+							}
+							else
+							{
+								if(!isTabletUI())
+									Objects.requireNonNull(my_activity.getActionBar()).setSelectedNavigationItem(2);
+								Toast.makeText(my_activity, "No hardware selected", Toast.LENGTH_SHORT).show();
 							}
 						});
 					}
@@ -1231,25 +1225,13 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 				new AlertDialog.Builder(MainActivity.my_activity)
 				.setTitle("Operation irreversible.")
 				.setMessage("Are you sure you want to delete all accounts?")
-				.setPositiveButton("OK", new DialogInterface.OnClickListener()
-				{
-					@Override
-					public void onClick(DialogInterface dialog, int which)
-					{
-						dialog.dismiss();
-						clearAllAccounts();
-						tab_main.LoadHashes();
-						setTitle(ShowHashesStats(format_index, getScreenTitleWidth()));
-					}
+				.setPositiveButton("OK", (dialog, which) -> {
+					dialog.dismiss();
+					clearAllAccounts();
+					tab_main.LoadHashes();
+					setTitle(ShowHashesStats(format_index, getScreenTitleWidth()));
 				})
-				.setNegativeButton("Cancel", new DialogInterface.OnClickListener()
-				{
-					@Override
-					public void onClick(DialogInterface dialog, int which)
-					{
-						dialog.dismiss();
-					}
-				})
+				.setNegativeButton("Cancel", (dialog, which) -> dialog.dismiss())
 				.create()
 				.show();
 			}
@@ -1292,7 +1274,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 					cpu_name.setTextSize(first_child.getTextSize()/display_density);
 					cpu_name.setTextColor(first_child.getTextColors());
 					cpu_name.setText("CPU");
-					cpu_name.setGravity(Gravity.LEFT);
+					cpu_name.setGravity(LEFT);
 					row_cpu.addView(cpu_name);
 					
 					cpu_name = new TextView(my_activity);
@@ -1324,45 +1306,44 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 					hardware_table.addView(row_cpu);
 					//GPU
 					GPUInfo[] gpus_info = GPUInfo.GetGpusInfo();
-					for (int i = 0; i < gpus_info.length; i++)
-					{
+					for (GPUInfo gpuInfo : gpus_info) {
 						TableRow row_gpu = new TableRow(my_activity);
 						TextView gpu_name = new TextView(my_activity);
-						gpu_name.setTextSize(first_child.getTextSize()/display_density);
+						gpu_name.setTextSize(first_child.getTextSize() / display_density);
 						gpu_name.setTextColor(Color.rgb(0, 150, 0));
 						//gpu_name.setBackgroundColor(Color.rgb(240, 255, 240));
-						gpu_name.setText(gpus_info[i].name);
-						gpu_name.setGravity(Gravity.LEFT);
+						gpu_name.setText(gpuInfo.name);
+						gpu_name.setGravity(LEFT);
 						row_gpu.addView(gpu_name);
-						
+
 						gpu_name = new TextView(my_activity);
-						gpu_name.setTextSize(first_child.getTextSize()/display_density);
+						gpu_name.setTextSize(first_child.getTextSize() / display_density);
 						gpu_name.setTextColor(Color.rgb(0, 150, 0));
 						//gpu_name.setBackgroundColor(Color.rgb(240, 255, 240));
-						gpu_name.setText(""+gpus_info[i].cores);
+						gpu_name.setText("" + gpuInfo.cores);
 						gpu_name.setGravity(Gravity.CENTER_HORIZONTAL);
 						row_gpu.addView(gpu_name);
-						
+
 						gpu_name = new TextView(my_activity);
-						gpu_name.setTextSize(first_child.getTextSize()/display_density);
+						gpu_name.setTextSize(first_child.getTextSize() / display_density);
 						gpu_name.setTextColor(Color.rgb(0, 150, 0));
 						//gpu_name.setBackgroundColor(Color.rgb(240, 255, 240));
-						if(gpus_info[i].frequency >= 1000)
-							gpu_name.setText(String.format("%.2fGHz", (gpus_info[i].frequency/1000.0)));
+						if (gpuInfo.frequency >= 1000)
+							gpu_name.setText(String.format("%.2fGHz", (gpuInfo.frequency / 1000.0)));
 						else
-							gpu_name.setText(""+gpus_info[i].frequency+"MHz");
+							gpu_name.setText("" + gpuInfo.frequency + "MHz");
 						gpu_name.setGravity(Gravity.CENTER_HORIZONTAL);
 						row_gpu.addView(gpu_name);
-						
+
 						gpu_name = new TextView(my_activity);
-						gpu_name.setTextSize(first_child.getTextSize()/display_density);
+						gpu_name.setTextSize(first_child.getTextSize() / display_density);
 						gpu_name.setTextColor(Color.rgb(0, 150, 0));
 						//gpu_name.setBackgroundColor(Color.rgb(240, 255, 240));
 						gpu_name.setPadding(10, 0, 0, 0);
-						gpu_name.setText(gpus_info[i].driver_version);
+						gpu_name.setText(gpuInfo.driver_version);
 						gpu_name.setGravity(Gravity.CENTER_HORIZONTAL);
 						row_gpu.addView(gpu_name);
-						
+
 						hardware_table.addView(row_gpu);
 					}
 					
@@ -1372,23 +1353,19 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 					first_child = (TextView)first_row.getChildAt(0);
 					int[] last_bench_values = GetBenchmarkValues(0);
 					int num_gpus = gpus_info.length;
-					
-					for (int j = 0; j < last_bench_values.length; j++)
-					{
+
+					for (int last_bench_value : last_bench_values) {
 						TextView data = new TextView(my_activity);
-						if(last_bench_values[j] <= 1000)
-						{
-							data.setText(""+last_bench_values[j]);
-						}
-						else
-						{
-							if(last_bench_values[j]==65536)
+						if (last_bench_value <= 1000) {
+							data.setText("" + last_bench_value);
+						} else {
+							if (last_bench_value == 65536)
 								data.setText("2^16");
 							else
-								data.setText("10^"+((int)Math.log10(last_bench_values[j])));
+								data.setText("10^" + ((int) Math.log10(last_bench_value)));
 						}
-						data.setPadding(10, 0, 0, 0);	
-						data.setTextSize(first_child.getTextSize()/display_density);
+						data.setPadding(10, 0, 0, 0);
+						data.setTextSize(first_child.getTextSize() / display_density);
 						data.setTextColor(first_child.getTextColors());
 						data.setGravity(Gravity.CENTER_HORIZONTAL);
 						first_row.addView(data);
@@ -1403,13 +1380,12 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 						if(current_bench_value.length != last_bench_values.length)
 						{
 							row.addView(new TextView(my_activity));
-							
-							for (int i = 0; i < current_bench_value.length; i++)
-							{
+
+							for (int i1 : current_bench_value) {
 								TextView data = new TextView(my_activity);
-								data.setText(""+current_bench_value[i]);
-								data.setPadding(10, 0, 0, 0);		
-								data.setTextSize(first_child.getTextSize()/display_density);
+								data.setText("" + i1);
+								data.setPadding(10, 0, 0, 0);
+								data.setTextSize(first_child.getTextSize() / display_density);
 								data.setTextColor(first_child.getTextColors());
 								data.setGravity(Gravity.CENTER_HORIZONTAL);
 								row.addView(data);
@@ -1429,7 +1405,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 						name.setTextSize(first_child.getTextSize()/display_density);
 						name.setTextColor(first_child.getTextColors());
 						name.setText(format_names[j]);
-						name.setGravity(Gravity.LEFT);
+						name.setGravity(LEFT);
 						row.addView(name);
 						bench_table.addView(row);
 						
@@ -1450,13 +1426,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 					}
 					
 					is_complete_benchmark = false;
-					new Thread(new Runnable()
-					{
-				        public void run()
-				        {
-				            Benchmark();
-				        }
-				    }).start();
+					new Thread(MainActivity::Benchmark).start();
 				}
 				else
 					Toast.makeText(this, "An attack is already executing", Toast.LENGTH_SHORT).show();
@@ -1468,30 +1438,23 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 				.setTitle("About")
 				//.setIcon(R.drawable.ic_action_about)
 				.setView(this.getLayoutInflater().inflate(R.layout.about, null))
-				.setPositiveButton("OK", new DialogInterface.OnClickListener()
-				{
-					@Override
-					public void onClick(DialogInterface dialog, int which)
-					{
-						dialog.dismiss();
-					}
-				});
+				.setPositiveButton("OK", (dialog, which) -> dialog.dismiss());
 			AlertDialog about = builder.create();
 			about.show();
 			about.getWindow().setLayout(calculateDialogWidth(340), WindowManager.LayoutParams.WRAP_CONTENT);
 			
 			// Set the url
-			TextView url_hs = (TextView)about.findViewById(R.id.visit_website);
+			TextView url_hs = about.findViewById(R.id.visit_website);
 			url_hs.setText(Html.fromHtml("<a href=\"http://hashsuite.openwall.net/android\">Hash Suite Website</a>"));
 			url_hs.setMovementMethod(LinkMovementMethod.getInstance());
 			
 			try
 			{
 				String app_version = my_activity.getPackageManager().getPackageInfo(my_activity.getPackageName(), 0).versionName;
-				TextView about_version = (TextView)about.findViewById(R.id.about_version);
+				TextView about_version = about.findViewById(R.id.about_version);
 				about_version.setText(about_version.getText()+app_version);
 			}
-			catch (NameNotFoundException e)
+			catch (NameNotFoundException ignored)
 			{}
 				
 			return true;
@@ -1512,7 +1475,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 				 cpu_clock = Long.parseLong(br.readLine());
 				 br.close();
 			 }
-			 catch (IOException e)
+			 catch (IOException ignored)
 			 {}
 		}
 		cpu_clock = Math.round(cpu_clock/1000.);
@@ -1524,34 +1487,29 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	static AlertDialog benchmark_dialog = null;
 	static TableLayout bench_table = null;
 	static int benchmark_secs;
-	private static int[] bench_dcc_values = new int[]{1,4,16,64}; 
+	private static int[] bench_dcc_values = new int[]{1,4,16,64};
 	private static boolean is_complete_benchmark;
 	static void SetBenchData(final String bench_data, final int row_index, int time_spend)
 	{
 		benchmark_secs -= time_spend;
-		my_activity.runOnUiThread(new Runnable()
-		{
-			@Override
-			public void run()
+		my_activity.runOnUiThread(() -> {
+			if(bench_table != null)
 			{
-				if(bench_table != null)
-				{
-					TableRow row = (TableRow)bench_table.getChildAt(2+row_index);
-					TextView first_child = ((TextView)row.getChildAt(0));
-					
-					TextView data = new TextView(my_activity);
-					data.setText(bench_data);
-					data.setPadding(10, 0, 0, 0);		
-					data.setTextSize(first_child.getTextSize()/display_density);
-					data.setTextColor(first_child.getTextColors());
-					data.setGravity(Gravity.CENTER_HORIZONTAL);
-					row.addView(data);
-					
-					if(benchmark_secs > 60)
-						benchmark_dialog.setTitle("Benchmark end in " + Math.round(benchmark_secs/60.) + " min");
-					else
-						benchmark_dialog.setTitle("Benchmark end in " + benchmark_secs + " sec");
-				}
+				TableRow row = (TableRow)bench_table.getChildAt(2+row_index);
+				TextView first_child = ((TextView)row.getChildAt(0));
+
+				TextView data = new TextView(my_activity);
+				data.setText(bench_data);
+				data.setPadding(10, 0, 0, 0);
+				data.setTextSize(first_child.getTextSize()/display_density);
+				data.setTextColor(first_child.getTextColors());
+				data.setGravity(Gravity.CENTER_HORIZONTAL);
+				row.addView(data);
+
+				if(benchmark_secs > 60)
+					benchmark_dialog.setTitle("Benchmark end in " + Math.round(benchmark_secs/60.) + " min");
+				else
+					benchmark_dialog.setTitle("Benchmark end in " + benchmark_secs + " sec");
 			}
 		});
 	}
@@ -1562,7 +1520,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		for (int i = 0; i < table.getChildCount(); i++)
 		{
 			View child = table.getChildAt(i);
-			if(child != null && child instanceof TableRow)
+			if(child instanceof TableRow)
 			{
 				TableRow row = (TableRow)child;
 				for (int j = 0; j < row.getChildCount(); j++)
@@ -1583,46 +1541,41 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		if(is_complete_benchmark) return;
 		
 		is_complete_benchmark = true;
-		my_activity.runOnUiThread(new Runnable()
-		{
-			@Override
-			public void run()
+		my_activity.runOnUiThread(() -> {
+			if(benchmark_dialog != null)
+				benchmark_dialog.setTitle("Benchmark Complete");
+
+			// Try to save the benchmark as a csv file
+			if(bench_table != null)
 			{
-				if(benchmark_dialog != null)
-					benchmark_dialog.setTitle("Benchmark Complete");
-				
-				// Try to save the benchmark as a csv file
-				if(bench_table != null)
+				try
 				{
-					try
-					{
-						File bench_file = new File(my_activity.getExternalFilesDir(null), "benchmark.csv");
-						FileOutputStream file = new FileOutputStream(bench_file.getAbsolutePath(), true);
-						OutputStreamWriter writer = new OutputStreamWriter(file);
-						
-						String app_version = my_activity.getPackageManager().getPackageInfo(my_activity.getPackageName(), 0).versionName;
-						
-						// Save benchmark header
-						writer.write("/////////////////////////////////////////////////////////////////////////////////\n");
-						writer.write("Hash Suite Droid "+app_version);
-						writer.write(","+Build.MANUFACTURER);
-						writer.write(" "+Build.PRODUCT);
-						writer.write(" "+Build.MODEL);
-						writer.write(","+new Date().toString()+"\n");
-						
-						// Save benchmark table data
-						SaveDataTable((TableLayout)benchmark_dialog.findViewById(R.id.benchmark_hardware), writer);
-						SaveDataTable(bench_table, writer);
-				
-						writer.close();
-						file.close();
-					}
-					catch (Exception e)
-					{}
+					File bench_file = new File(my_activity.getExternalFilesDir(null), "benchmark.csv");
+					FileOutputStream file = new FileOutputStream(bench_file.getAbsolutePath(), true);
+					OutputStreamWriter writer = new OutputStreamWriter(file);
+
+					String app_version = my_activity.getPackageManager().getPackageInfo(my_activity.getPackageName(), 0).versionName;
+
+					// Save benchmark header
+					writer.write("/////////////////////////////////////////////////////////////////////////////////\n");
+					writer.write("Hash Suite Droid "+app_version);
+					writer.write(","+Build.MANUFACTURER);
+					writer.write(" "+Build.PRODUCT);
+					writer.write(" "+Build.MODEL);
+					writer.write(","+new Date().toString()+"\n");
+
+					// Save benchmark table data
+					SaveDataTable(benchmark_dialog.findViewById(R.id.benchmark_hardware), writer);
+					SaveDataTable(bench_table, writer);
+
+					writer.close();
+					file.close();
 				}
-				benchmark_dialog = null;
-				bench_table = null;
+				catch (Exception ignored)
+				{}
 			}
+			benchmark_dialog = null;
+			bench_table = null;
 		});
 	}
 
@@ -1672,14 +1625,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			@Override
 			public void run()
 			{
-				my_activity.runOnUiThread(new Runnable()
-				{
-					@Override
-					public void run()
-					{
-						my_activity.tab_main.LoadHashes();
-					}
-				});
+				my_activity.runOnUiThread(() -> my_activity.tab_main.LoadHashes());
 			}
 		}, 300);
 	}

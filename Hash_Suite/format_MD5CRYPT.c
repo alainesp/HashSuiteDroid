@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2016 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2016-2020 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
@@ -1432,7 +1432,7 @@ PRIVATE void ocl_gen_md5body_by_lenght(char* source, OpenCL_Param* param, cl_uin
 			"GET_MD5_DATA(3)=d;"
 		"}\n");
 }
-PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provider, OpenCL_Param* param, int use_rules)
+PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules)
 {
 	// Generate code
 	char* source = malloc(32 * 1024 * (1 + use_rules + MD5_MAX_KEY_LENGHT + 1));
@@ -1457,8 +1457,6 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, oclKernel2Common* ocl_kernel_provi
 
 		"#define GET_MD5_DATA(index) current_data[(%uu+index)*%uu+get_global_id(0)]\n"
 		, use_rules ? 8 : 0, param->NUM_KEYS_OPENCL);
-
-	ocl_kernel_provider->gen_kernel(source, param->param1);
 
 	sprintf(source + strlen(source), "\n#define PUTCHAR(buf, index, val) (buf)[(index)>>2u] = ((buf)[(index)>>2u] & ~(0xffU << (((index) & 3u) << 3u))) + ((val) << (((index) & 3u) << 3u))\n");
 	// Prefixes
@@ -1815,7 +1813,7 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 
 	// For AMD HD 7970
 	// oclHashcat: 2.46M
-	// Teoretical: 5.24M
+	// Theoretical: 5.24M
 	// HS by len : 4.50M
 	if (!ocl_init_slow_hashes_ordered(param, gpu_index, gen, gpu_crypt, ocl_kernel_provider, use_rules, (use_rules ? 8 : 0) + 4, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 
 		all_salt_lenght_8 ? 2 : 4, MD5_MAX_KEY_LENGHT, FALSE))
@@ -1824,16 +1822,17 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 	// New--------------------------------------->: 1m:38s
 
 	// Crypt Kernels
-	create_kernel(param, KERNEL_INDEX_INIT_PART, "init_part");
-	create_kernel(param, KERNEL_INDEX_MD5_CYCLE, "md5crypt_cycle");
-	create_kernel(param, KERNEL_INDEX_COMPARE_RESULT, "compare_result");
+	cl_int code;
+	param->kernels[KERNEL_INDEX_INIT_PART] = pclCreateKernel(param->additional_program, "init_part", &code);
+	param->kernels[KERNEL_INDEX_MD5_CYCLE] = pclCreateKernel(param->additional_program, "md5crypt_cycle", &code);
+	param->kernels[KERNEL_INDEX_COMPARE_RESULT] = pclCreateKernel(param->additional_program, "compare_result", &code);
 
 	if (num_diff_salts < num_passwords_loaded)
 	{
 		if (gpu_devices[gpu_index].flags & GPU_FLAG_HAD_UNIFIED_MEMORY)
 		{
-			create_opencl_mem(param, GPU_SALT_INDEX, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*num_passwords_loaded, salt_index);
-			create_opencl_mem(param, GPU_SAME_SALT_NEXT, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint)*num_passwords_loaded, same_salt_next);
+			create_opencl_mem(param, GPU_SALT_INDEX, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint) * num_passwords_loaded, salt_index);
+			create_opencl_mem(param, GPU_SAME_SALT_NEXT, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(cl_uint) * num_passwords_loaded, same_salt_next);
 		}
 		else
 		{
@@ -1875,7 +1874,7 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 	{
 		char name[32];
 		sprintf(name, "md5crypt_cycle%u", i);
-		create_kernel(param, i, name);
+		param->kernels[i] = pclCreateKernel(param->additional_program, name, &code);
 
 		//__kernel void md5crypt_cycle%u(__global uint* current_key, __global uint* current_data, __global uint* salts, uint i, uint max_i, uint offset)
 		pclSetKernelArg(param->kernels[i], 0, sizeof(cl_mem), (void*)&param->mems[GPU_ORDERED_KEYS]);

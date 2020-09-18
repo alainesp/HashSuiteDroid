@@ -11,6 +11,7 @@ BZ2_DIR:= ../../../../../Hash_Suite/compress/libbz2/
 LOCAL_CPPFLAGS :=  -std=c++14
 
 LOCAL_MODULE := HashSuiteNative
+# LOCAL_ARM_MODE := arm # ASAN
 
 # Hash Suite 'core' files
 LOCAL_SRC_FILES := jni_bridge.cpp $(HS_DIR)common.c $(HS_DIR)sqlite3.c $(HS_DIR)attack.c $(HS_DIR)key_providers.c $(HS_DIR)rules.c $(HS_DIR)hardware.c $(HS_DIR)in_out.c  $(HS_DIR)opencl_code.c $(HS_DIR)hash.c
@@ -18,7 +19,7 @@ LOCAL_SRC_FILES += $(HS_DIR)cbg_table.cpp $(HS_DIR)in_hashtable.cpp $(HS_DIR)att
 
 # Formats
 LOCAL_SRC_FILES += $(HS_DIR)format_LM.c $(HS_DIR)format_NTLM.c $(HS_DIR)format_MD5.c $(HS_DIR)format_SHA1.c $(HS_DIR)format_DCC.c $(HS_DIR)format_DCC2.c $(HS_DIR)format_raw_SHA256.c $(HS_DIR)format_raw_SHA512.c
-LOCAL_SRC_FILES += $(HS_DIR)format_WPA.c $(HS_DIR)format_BCRYPT.c $(HS_DIR)format_SSHA1.c $(HS_DIR)format_MD5CRYPT.c
+LOCAL_SRC_FILES += $(HS_DIR)format_WPA.c $(HS_DIR)format_BCRYPT.c $(HS_DIR)format_SSHA1.c $(HS_DIR)format_MD5CRYPT.c $(HS_DIR)format_SHA256CRYPT.c $(HS_DIR)format_SHA512CRYPT.c
 
 # Wordlist support (including compressing wordlists)
 LOCAL_SRC_FILES += $(HS_DIR)wordlist.c $(HS_DIR)compress/zlib/unzip.c $(HS_DIR)compress/zlib/ioapi.c $(BZ2_DIR)bzlib.c $(BZ2_DIR)decompress.c $(BZ2_DIR)crctable.c $(BZ2_DIR)randtable.c $(BZ2_DIR)huffman.c

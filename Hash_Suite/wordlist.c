@@ -151,12 +151,12 @@ PRIVATE int getline_plaintext(unsigned char* current_key, int max_lenght)
 			if(buffer_pos >= buffer_count)
 			{
 				buffer_count = fread(wordlist_buffer, 1, WORDLIST_BUFFER_SIZE, wordlist);
+				buffer_pos = 0;
 				if(buffer_count <= 0)
 				{
 					end_of_file = TRUE;
 					break;//end of file
 				}
-				buffer_pos = 0;
 			}
 
 			if(wordlist_buffer[buffer_pos] <= 13)// End of line
@@ -178,7 +178,7 @@ PRIVATE void calculate_completition_plaintext()
 	if(wordlist != NULL)
 	{
 		fgetpos(wordlist, &current_pos);
-		current_pos += buffer_pos;
+		current_pos = current_pos - buffer_count + buffer_pos;
 		if(current_pos)
 			wordlist_completition = (double)wordlist_lenght / (double)current_pos;// We use double and parenthesis to prevent buffer overflows
 	}

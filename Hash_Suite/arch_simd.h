@@ -46,6 +46,7 @@
 #define SSE2_5ADD(a,b,c,d,e)	SSE2_ADD(SSE2_ADD(SSE2_ADD(a,b),SSE2_ADD(c,d)),e)
 
 // 64bits
+#define SSE2_CONST64(u64_const)	_mm_set1_epi64x(u64_const)
 #define SSE2_ADD64(a,b)			_mm_add_epi64(a,b)
 #define SSE2_3ADD64(a,b,c)		SSE2_ADD64(SSE2_ADD64(a,b),c)
 #define SSE2_4ADD64(a,b,c,d)	SSE2_ADD64(SSE2_ADD64(a,b),SSE2_ADD64(c,d))
@@ -81,6 +82,17 @@
 
 #define CPU_CAP_V128			CPU_CAP_SSE2
 
+// 64bits
+#define V128_CONST64(u64_const)	_mm_set1_epi64x(u64_const)
+#define V128_ADD64(a,b)			SSE2_ADD64(a,b)			
+#define V128_3ADD64(a,b,c)		SSE2_3ADD64(a,b,c)		
+#define V128_4ADD64(a,b,c,d)	SSE2_4ADD64(a,b,c,d)	
+#define V128_5ADD64(a,b,c,d,e)	SSE2_5ADD64(a,b,c,d,e)	
+
+#define V128_SL64(elem,shift)	SSE2_SL64(elem,shift)	
+#define V128_SR64(elem,shift)	SSE2_SR64(elem,shift)	
+#define V128_ROTATE64(a,rot)	SSE2_ROTATE64(a,rot)	
+
 #endif
 
 #define V128_BIT_LENGHT	128
@@ -105,9 +117,12 @@
 
 #define V128_SL(a,shift)		vshlq_n_u32(a,shift)
 #define V128_SR(a,shift)		vshrq_n_u32(a,shift)
+#define V128_SL64(a,shift)		vshlq_n_u64(a,shift)
+#define V128_SR64(a,shift)		vshrq_n_u64(a,shift)
 #define V128_ROTATE(a,rot)		vorrq_u32(vshlq_n_u32(a, rot), vshrq_n_u32(a, 32-rot))
 
 #define V128_CONST(u32_const)	vdupq_n_u32(u32_const)
+#define V128_CONST64(u64_const)	vdupq_n_u64(u64_const)
 
 #define V128_ALL_ONES	V128_CONST(0xffffffff)
 #define V128_ZERO		V128_CONST(0x0)

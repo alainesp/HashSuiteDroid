@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2014,2016,2020 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2020 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include <ctype.h>
@@ -1186,24 +1186,24 @@ PRIVATE void oclru_lower_common(char* source, char* rule_name, cl_uint in_NUM_KE
 		"{"
 			"uint part_key=in_key[i*%uu+idx];"
 
-			"if(((part_key & 0xFF) - 65u) <= 25u)"
+			"if(((part_key&0xFF)-65u)<=25u)"
 			"{"
-				"part_key += 32u;"
+				"part_key+=32u;"
 				"have_change=true;"
 			"}"
-			"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
+			"if((((part_key>>8u)&0xFF)-65u)<=25u)"
 			"{"
-				"part_key += 32u<<8u;"
+				"part_key+=32u<<8u;"
 				"have_change=true;"
 			"}"
-			"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
+			"if((((part_key>>16u)&0xFF)-65u)<=25u)"
 			"{"
-				"part_key += 32u<<16u;"
+				"part_key+=32u<<16u;"
 				"have_change=true;"
 			"}"
-			"if(((part_key>>24u) - 65u) <= 25u)"
+			"if(((part_key>>24u)-65u)<=25u)"
 			"{"
-				"part_key += 32u<<24u;"
+				"part_key+=32u<<24u;"
 				"have_change=true;"
 			"}"
 
@@ -1234,24 +1234,24 @@ PRIVATE void oclru_upper_common(char* source, char* rule_name, cl_uint in_NUM_KE
 		"{"
 			"uint part_key=in_key[i*%uu+idx];"
 
-			"if(((part_key & 0xFF) - 97u) <= 25u)"
+			"if(((part_key&0xFF)-97u)<=25u)"
 			"{"
-				"part_key -= 32u;"
+				"part_key-=32u;"
 				"have_change=true;"
 			"}"
-			"if((((part_key>>8u) & 0xFF) - 97u) <= 25u)"
+			"if((((part_key>>8u)&0xFF)-97u)<=25u)"
 			"{"
-				"part_key -= 32u<<8u;"
+				"part_key-=32u<<8u;"
 				"have_change=true;"
 			"}"
-			"if((((part_key>>16u) & 0xFF) - 97u) <= 25u)"
+			"if((((part_key>>16u)&0xFF)-97u)<=25u)"
 			"{"
-				"part_key -= 32u<<16u;"
+				"part_key-=32u<<16u;"
 				"have_change=true;"
 			"}"
-			"if(((part_key>>24u) - 97u) <= 25u)"
+			"if(((part_key>>24u)-97u)<=25u)"
 			"{"
-				"part_key -= 32u<<24u;"
+				"part_key-=32u<<24u;"
 				"have_change=true;"
 			"}"
 
@@ -1283,31 +1283,31 @@ PRIVATE void oclru_capitalize_common(char* source, char* rule_name, cl_uint in_N
 			"uint part_key=in_key[i*%uu+idx];"
 
 			"if(i==0){"
-				"if(((part_key & 0xFF) - 97u) <= 25u)"
+				"if(((part_key&0xFF)-97u)<=25u)"
 				"{"
-					"part_key -= 32u;"
+					"part_key-=32u;"
 					"have_change=true;"
 				"}"
 			"}else{"
-				"if(((part_key & 0xFF) - 65u) <= 25u)"
+				"if(((part_key&0xFF)-65u)<=25u)"
 				"{"
-					"part_key += 32u;"
+					"part_key+=32u;"
 					"have_change=true;"
 				"}"
 			"}"
-			"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
+			"if((((part_key>>8u)&0xFF)-65u)<=25u)"
 			"{"
-				"part_key += 32u<<8u;"
+				"part_key+=32u<<8u;"
 				"have_change=true;"
 			"}"
-			"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
+			"if((((part_key>>16u)&0xFF)-65u)<=25u)"
 			"{"
-				"part_key += 32u<<16u;"
+				"part_key+=32u<<16u;"
 				"have_change=true;"
 			"}"
-			"if(((part_key>>24u) - 65u) <= 25u)"
+			"if(((part_key>>24u)-65u)<=25u)"
 			"{"
-				"part_key += 32u<<24u;"
+				"part_key+=32u<<24u;"
 				"have_change=true;"
 			"}"
 
@@ -1343,13 +1343,13 @@ PRIVATE void oclru_duplicate_common(char* source, char* rule_name, cl_uint in_NU
 			"for(uint i=0;i<max_iter;i++)"
 				"out_key[i*%uu+out_index]=in_key[i*%uu+idx];"
 			
-			"uint part_key=in_key[max_iter*%uu+idx] & (0xffffffff >> (32u-len));"
+			"uint part_key=in_key[max_iter*%uu+idx]&(0xffffffff>>(32u-len));"
 
 			"for(uint i=0;i<(max_iter+1);i++)"
 			"{"
 				"uint in_part=in_key[i*%uu+idx];"
-				"out_key[(max_iter+i)*%uu+out_index]=part_key + (in_part<<len);"
-				"part_key = in_part >> (32u-len);"
+				"out_key[(max_iter+i)*%uu+out_index]=part_key+(in_part<<len);"
+				"part_key=in_part>>(32u-len);"
 			"}"
 			"if(len>=(2u<<3u))"
 				"out_key[(2*max_iter+1)*%uu+out_index]=part_key;"
@@ -1381,37 +1381,37 @@ PRIVATE void oclru_lower_upper_last_common(char* source, char* rule_name, cl_uin
 		"{"
 			"uint part_key=in_key[i*%uu+idx];"
 
-			"if(((part_key & 0xFF) - 65u) <= 25u)"
+			"if(((part_key&0xFF)-65u)<=25u)"
 			"{"
-				"part_key += 32u;"
+				"part_key+=32u;"
 				"have_change=true;"
 			"}"
-			"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
+			"if((((part_key>>8u)&0xFF)-65u)<=25u)"
 			"{"
-				"part_key += 32u<<8u;"
+				"part_key+=32u<<8u;"
 				"have_change=true;"
 			"}"
-			"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
+			"if((((part_key>>16u)&0xFF)-65u)<=25u)"
 			"{"
-				"part_key += 32u<<16u;"
+				"part_key+=32u<<16u;"
 				"have_change=true;"
 			"}"
-			"if(((part_key>>24u) - 65u) <= 25u)"
+			"if(((part_key>>24u)-65u)<=25u)"
 			"{"
-				"part_key += 32u<<24u;"
+				"part_key+=32u<<24u;"
 				"have_change=true;"
 			"}"
 
 			"tmp[i]=part_key;"
 		"}"
 
-		"uint len3 = (len>>4u)&3u;"
-		"uint index_last = max_iter- (len3 ? 1 : 2);"
+		"uint len3=(len>>4u)&3u;"
+		"uint index_last=max_iter-(len3?1:2);"
 		"uint last_part=tmp[index_last];"
 		"len3=(len3-1u)&3u;"
-		"if((((last_part>>(8u*len3)) & 0xFF) - 97u) <= 25u)"
+		"if((((last_part>>(8u*len3))&0xFF)-97u)<=25u)"
 		"{"
-			"last_part -= 32u<<(8u*len3);"
+			"last_part-=32u<<(8u*len3);"
 			"have_change=true;"
 		"}"
 		"tmp[index_last]=last_part;"
@@ -2224,29 +2224,29 @@ PRIVATE void oclru_lower_plus_common(char* source, char* rule_name, cl_uint in_N
 		"{"
 			"uint part_key=in_key[i*%uu+idx];"
 
-			"if(((part_key & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u;"
-			"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<8u;"
-			"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<16u;"
-			"if(((part_key>>24u) - 65u) <= 25u)"
-				"part_key += 32u<<24u;"
+			"if(((part_key&0xFF)-65u)<=25u)"
+				"part_key+=32u;"
+			"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<8u;"
+			"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<16u;"
+			"if(((part_key>>24u)-65u)<=25u)"
+				"part_key+=32u<<24u;"
 
 			"out_key[i*%uu+out_index]=part_key;"
 		"}"
 
 		"uint part_key=in_key[max_iter*%uu+idx];"
 
-		"if(((part_key & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u;"
-		"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<8u;"
-		"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<16u;"
+		"if(((part_key&0xFF)-65u)<=25u)"
+			"part_key+=32u;"
+		"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<8u;"
+		"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<16u;"
 
-		"uint char_added = (%uu+param)<<len;"
-		"out_key[max_iter*%uu+out_index]=bs(part_key, char_added, 0xffffu<<len);"
+		"uint char_added=(%uu+param)<<len;"
+		"out_key[max_iter*%uu+out_index]=bs(part_key,char_added,0xffffu<<len);"
 
 		"if(len==(3u<<3u))"
 			"out_key[(max_iter+1)*%uu+out_index]=0x80;"
@@ -2271,18 +2271,18 @@ PRIVATE void oclru_capitalize_plus_common(char* source, char* rule_name, cl_uint
 			"uint part_key=in_key[i*%uu+idx];"
 
 			"if(i==0){"
-				"if(((part_key & 0xFF) - 97u) <= 25u)"
-					"part_key -= 32u;"
+				"if(((part_key&0xFF)-97u)<=25u)"
+					"part_key-=32u;"
 			"}else{"
-				"if(((part_key & 0xFF) - 65u) <= 25u)"
-					"part_key += 32u;"
+				"if(((part_key&0xFF)-65u)<=25u)"
+					"part_key+=32u;"
 			"}"
-			"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<8u;"
-			"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<16u;"
-			"if(((part_key>>24u) - 65u) <= 25u)"
-				"part_key += 32u<<24u;"
+			"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<8u;"
+			"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<16u;"
+			"if(((part_key>>24u)-65u)<=25u)"
+				"part_key+=32u<<24u;"
 
 			"out_key[i*%uu+out_index]=part_key;"
 		"}"
@@ -2290,19 +2290,19 @@ PRIVATE void oclru_capitalize_plus_common(char* source, char* rule_name, cl_uint
 		"uint part_key=in_key[max_iter*%uu+idx];"
 
 		"if(max_iter==0){"
-			"if(((part_key & 0xFF) - 97u) <= 25u)"
-				"part_key -= 32u;"
+			"if(((part_key&0xFF)-97u)<=25u)"
+				"part_key-=32u;"
 		"}else{"
-			"if(((part_key & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u;"
+			"if(((part_key&0xFF)-65u)<=25u)"
+				"part_key+=32u;"
 		"}"
-		"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<8u;"
-		"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<16u;"
+		"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<8u;"
+		"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<16u;"
 
-		"uint char_added = (%uu+param)<<len;"
-		"out_key[max_iter*%uu+out_index]=bs(part_key, char_added, 0xffffu<<len);"
+		"uint char_added=(%uu+param)<<len;"
+		"out_key[max_iter*%uu+out_index]=bs(part_key,char_added,0xffffu<<len);"
 
 		"if(len==(3u<<3u))"
 			"out_key[(max_iter+1)*%uu+out_index]=0x80;"
@@ -2321,13 +2321,13 @@ PRIVATE void oclru_prefix_common(char* source, char* rule_name, cl_uint in_NUM_K
 		"out_key[7u*%uu+out_index]=len+(1u<<4u);"
 		"uint max_iter=(len>>6u)+1u;"
 
-		"uint char_added = (%uu+param);"
+		"uint char_added=(%uu+param);"
 
 		"for(uint i=0;i<max_iter;i++)"
 		"{"
 			"uint part_key=in_key[i*%uu+idx];"
-			"out_key[i*%uu+out_index]=char_added + (part_key << 8u);"
-			"char_added = part_key>>24u;"
+			"out_key[i*%uu+out_index]=char_added+(part_key<<8u);"
+			"char_added=part_key>>24u;"
 		"}"
 
 		"if(((len>>4u)&3u)==3u)"
@@ -2636,7 +2636,7 @@ PRIVATE cl_uint oclru_overstrike_ucs(char* source, char nt_buffer[16][16], char 
 	oclru_copy_array(source, nt_buffer, nt_buffer_vector_size, lenght, NUM_KEYS_OPENCL, 0);
 	if (!lenght)
 	{
-		sprintf(source + strlen(source), "uint i = 0;return;{");
+		sprintf(source + strlen(source), "uint i=0;return;{");
 		return 1;
 	}
 
@@ -2645,11 +2645,11 @@ PRIVATE cl_uint oclru_overstrike_ucs(char* source, char nt_buffer[16][16], char 
 		"uint to_sum;"
 
 		"if(param & 1){"
-			"nt_buffer[param/2] = %uu | (nt_buffer[param/2] & 0x0000ffff);"
-			"to_sum = 1<<16;"
+			"nt_buffer[param/2]=%uu|(nt_buffer[param/2]&0x0000ffff);"
+			"to_sum=1<<16;"
 		"}else{"
-			"nt_buffer[param/2] = %uu | (nt_buffer[param/2] & 0xffff0000);"
-			"to_sum = 1;"
+			"nt_buffer[param/2]=%uu|(nt_buffer[param/2]&0xffff0000);"
+			"to_sum=1;"
 		"}"
 
 		"for(uint i=0;i<%uu;i++,nt_buffer[param/2]+=to_sum){", MIN_CHAR_ADDED << 16, MIN_CHAR_ADDED, LENGHT_CHAR_ADDED);
@@ -2670,11 +2670,11 @@ PRIVATE cl_uint oclru_remove_ucs(char* source, char nt_buffer[16][16], char nt_b
 	sprintf(nt_buffer[14], "+%uu", (lenght - 1) << 4);
 
 	// Convert the key into a nt_buffer
-	sprintf(source + strlen(source), "uint char_removed = nt_buffer[0] & 0x0000ffff;");
+	sprintf(source + strlen(source), "uint char_removed=nt_buffer[0]&0x0000ffff;");
 
 	// Remove first character
 	for (cl_uint i = 0; i < (lenght - 1) / 2; i++)
-		sprintf(source + strlen(source), "nt_buffer[%u] = (nt_buffer[%u] >> 16) | (nt_buffer[%u] << 16);", i, i, i+1);
+		sprintf(source + strlen(source), "nt_buffer[%u]=(nt_buffer[%u]>>16u)|(nt_buffer[%u]<<16u);", i, i, i+1);
 
 	// Remove character
 	if (lenght & 1)
@@ -2682,7 +2682,7 @@ PRIVATE cl_uint oclru_remove_ucs(char* source, char nt_buffer[16][16], char nt_b
 	else
 	{
 		strcpy(nt_buffer[lenght / 2], "");
-		sprintf(source + strlen(source), "nt_buffer[%u] = 0x800000 | (nt_buffer[%u] >> 16);", lenght / 2 - 1, lenght / 2 - 1);
+		sprintf(source + strlen(source), "nt_buffer[%u]=0x800000|(nt_buffer[%u]>>16u);", lenght / 2 - 1, lenght / 2 - 1);
 	}
 
 	// Lenght and begin cycle
@@ -2833,7 +2833,7 @@ PRIVATE void oclru_remove_common(char* source, char* rule_name, cl_uint in_NUM_K
 
 	sprintf(source + strlen(source),
 		"uint len=in_key[7u*%uu+idx]>>4u;"
-		"if(param >= len)return;"
+		"if(param>=len)return;"
 
 		"uint out_index=atomic_inc(begin_out_index);"
 		"out_key[7u*%uu+out_index]=(len-1u)<<4u;"
@@ -2844,10 +2844,10 @@ PRIVATE void oclru_remove_common(char* source, char* rule_name, cl_uint in_NUM_K
 
 		"uint part_key=in_key[(param/4)*%uu+idx];"
 		"if(param&3u){"
-			"uint pos3 = 8u*(param&3u);"
-			"part_key = (part_key & (0xffffffff>>(32u-pos3))) + ((part_key>>8u) & (0xffffffff<<pos3));"
+			"uint pos3=8u*(param&3u);"
+			"part_key=(part_key&(0xffffffff>>(32u-pos3)))+((part_key>>8u)&(0xffffffff<<pos3));"
 		"}else{"
-			"part_key >>= 8u;"
+			"part_key>>=8u;"
 		"}"
 
 		"for(uint i=param/4+1;i<max_iter;i++)"
@@ -3177,24 +3177,24 @@ PRIVATE void oclru_insert_common(char* source, char* rule_name, cl_uint in_NUM_K
 		"for(uint i=0;i<(pos/4);i++)"
 			"out_key[i*%uu+out_index]=in_key[i*%uu+idx];"
 
-		"uint pos3 = 8u*(pos&3u);"
+		"uint pos3=8u*(pos&3u);"
 		"uint part_key=in_key[(pos/4)*%uu+idx];"
 		"uint char_change=(%uu+param-(pos-1)*%uu)<<pos3;"
 		
 		"if(pos3){"
-			"char_change+= (part_key & (0xffffffff>>(32u-pos3))) + ((part_key<<8u) & (0xffffff00<<pos3));"
+			"char_change+=(part_key&(0xffffffff>>(32u-pos3)))+((part_key<<8u)&(0xffffff00<<pos3));"
 		"}else{"
 			"char_change+=part_key<<8u;"
 		"}"
 
 		"out_key[(pos/4)*%uu+out_index]=char_change;"
-		"char_change = part_key>>24u;"
+		"char_change=part_key>>24u;"
 
 		"for(uint i=pos/4+1;i<max_iter;i++)"
 		"{"
-			"part_key = in_key[i*%uu + idx]; "
-			"out_key[i*%uu+out_index]=char_change + (part_key<<8u);"
-			"char_change = part_key>>24u;"
+			"part_key=in_key[i*%uu+idx]; "
+			"out_key[i*%uu+out_index]=char_change+(part_key<<8u);"
+			"char_change=part_key>>24u;"
 		"}"
 		"if((len&3u)==3u)"
 			"out_key[max_iter*%uu+out_index]=0x80;"
@@ -3864,36 +3864,36 @@ PRIVATE void oclru_lower_plus_2dig_common(char* source, char* rule_name, cl_uint
 		"{"
 			"uint part_key=in_key[i*%uu+idx];"
 
-			"if(((part_key & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u;"
-			"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<8u;"
-			"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<16u;"
-			"if(((part_key>>24u) - 65u) <= 25u)"
-				"part_key += 32u<<24u;"
+			"if(((part_key&0xFF)-65u)<=25u)"
+				"part_key+=32u;"
+			"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<8u;"
+			"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<16u;"
+			"if(((part_key>>24u)-65u)<=25u)"
+				"part_key+=32u<<24u;"
 
 			"out_key[i*%uu+out_index]=part_key;"
 		"}"
 
 		"uint part_key=in_key[max_iter*%uu+idx];"
 
-		"if(((part_key & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u;"
-		"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<8u;"
-		"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<16u;"
+		"if(((part_key&0xFF)-65u)<=25u)"
+			"part_key+=32u;"
+		"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<8u;"
+		"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<16u;"
 
 		// Divide by 10
 		"uint dec=mul_hi(param,429496730u);"
 		"uint un=mul_hi(dec,429496730u);"
 
-		"uint digits_added = (param<<8u)-dec*0x9FF-un*0xA+0x803030;"
+		"uint digits_added=(param<<8u)-dec*0x9FF-un*0xA+0x803030;"
 
 		"out_key[max_iter*%uu+out_index]=bs(part_key, digits_added<<len, 0xffffffffu<<len);"
 
-		"if(len >= (2u<<3u))"
+		"if(len>=(2u<<3u))"
 			"out_key[(max_iter+1)*%uu+out_index]=digits_added>>(32u-len);"
 
 		, in_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, in_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, in_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL);
@@ -3917,18 +3917,18 @@ PRIVATE void oclru_cap_plus_2dig_common(char* source, char* rule_name, cl_uint i
 			"uint part_key=in_key[i*%uu+idx];"
 
 			"if(i==0){"
-				"if(((part_key & 0xFF) - 97u) <= 25u)"
-					"part_key -= 32u;"
+				"if(((part_key&0xFF)-97u)<=25u)"
+					"part_key-=32u;"
 			"}else{"
-				"if(((part_key & 0xFF) - 65u) <= 25u)"
-					"part_key += 32u;"
+				"if(((part_key&0xFF)-65u)<=25u)"
+					"part_key+=32u;"
 			"}"
-			"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<8u;"
-			"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<16u;"
-			"if(((part_key>>24u) - 65u) <= 25u)"
-				"part_key += 32u<<24u;"
+			"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<8u;"
+			"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<16u;"
+			"if(((part_key>>24u)-65u)<=25u)"
+				"part_key+=32u<<24u;"
 
 			"out_key[i*%uu+out_index]=part_key;"
 		"}"
@@ -3936,26 +3936,26 @@ PRIVATE void oclru_cap_plus_2dig_common(char* source, char* rule_name, cl_uint i
 		"uint part_key=in_key[max_iter*%uu+idx];"
 
 		"if(max_iter==0){"
-			"if(((part_key & 0xFF) - 97u) <= 25u)"
-				"part_key -= 32u;"
+			"if(((part_key&0xFF)-97u)<=25u)"
+				"part_key-=32u;"
 		"}else{"
-			"if(((part_key & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u;"
+			"if(((part_key&0xFF)-65u)<=25u)"
+				"part_key+=32u;"
 		"}"
-		"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<8u;"
-		"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<16u;"
+		"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<8u;"
+		"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<16u;"
 
 		// Divide by 10
 		"uint dec=mul_hi(param,429496730u);"
 		"uint un=mul_hi(dec,429496730u);"
 
-		"uint digits_added = (param<<8u)-dec*0x9FF-un*0xA+0x803030;"
+		"uint digits_added=(param<<8u)-dec*0x9FF-un*0xA+0x803030;"
 
-		"out_key[max_iter*%uu+out_index]=bs(part_key, digits_added<<len, 0xffffffffu<<len);"
+		"out_key[max_iter*%uu+out_index]=bs(part_key,digits_added<<len,0xffffffffu<<len);"
 
-		"if(len >= (2u<<3u))"
+		"if(len>=(2u<<3u))"
 			"out_key[(max_iter+1)*%uu+out_index]=digits_added>>(32u-len);"
 
 		, in_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, in_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, in_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL, out_NUM_KEYS_OPENCL);
@@ -4577,38 +4577,38 @@ PRIVATE void oclru_lower_plus_year_common(char* source, char* rule_name, cl_uint
 		"{"
 			"uint part_key=in_key[i*%uu+idx];"
 
-			"if(((part_key & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u;"
-			"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<8u;"
-			"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<16u;"
-			"if(((part_key>>24u) - 65u) <= 25u)"
-				"part_key += 32u<<24u;"
+			"if(((part_key&0xFF)-65u)<=25u)"
+				"part_key+=32u;"
+			"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<8u;"
+			"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<16u;"
+			"if(((part_key>>24u)-65u)<=25u)"
+				"part_key+=32u<<24u;"
 
 			"out_key[i*%uu+out_index]=part_key;"
 		"}"
 
 		"uint part_key=in_key[max_iter*%uu+idx];"
 
-		"if(((part_key & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u;"
-		"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<8u;"
-		"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<16u;"
+		"if(((part_key&0xFF)-65u)<=25u)"
+			"part_key+=32u;"
+		"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<8u;"
+		"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<16u;"
 
 		// Divide by 10
 		"uint dec=mul_hi(param,429496730u);"
 		"uint un=mul_hi(dec,429496730u);"
 
-		"uint year_added = (param < 100) ? 0x30303931 : 0x30303032;"
-		"year_added+= (param<<24u) - dec*0x9FF0000-un*0xA0000;"
+		"uint year_added=(param<100)?0x30303931:0x30303032;"
+		"year_added+=(param<<24u)-dec*0x9FF0000-un*0xA0000;"
 
 		"if(len)"
 		"{"
-			"out_key[max_iter*%uu+out_index]=bs(part_key, year_added<<len, 0xffffffffu<<len);"
-			"out_key[(max_iter+1)*%uu+out_index]=(year_added>>(32u-len)) + (0x80<<len);"
+			"out_key[max_iter*%uu+out_index]=bs(part_key, year_added<<len,0xffffffffu<<len);"
+			"out_key[(max_iter+1)*%uu+out_index]=(year_added>>(32u-len))+(0x80<<len);"
 		"}else{"
 			"out_key[max_iter*%uu+out_index]=year_added;"
 			"out_key[(max_iter+1)*%uu+out_index]=0x80;"
@@ -4634,18 +4634,18 @@ PRIVATE void oclru_cap_plus_year_common(char* source, char* rule_name, cl_uint i
 			"uint part_key=in_key[i*%uu+idx];"
 
 			"if(i==0){"
-				"if(((part_key & 0xFF) - 97u) <= 25u)"
-					"part_key -= 32u;"
+				"if(((part_key&0xFF)-97u)<=25u)"
+					"part_key-=32u;"
 			"}else{"
-				"if(((part_key & 0xFF) - 65u) <= 25u)"
-					"part_key += 32u;"
+				"if(((part_key&0xFF)-65u)<=25u)"
+					"part_key+=32u;"
 			"}"
-			"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<8u;"
-			"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<16u;"
-			"if(((part_key>>24u) - 65u) <= 25u)"
-				"part_key += 32u<<24u;"
+			"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<8u;"
+			"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<16u;"
+			"if(((part_key>>24u)-65u)<=25u)"
+				"part_key+=32u<<24u;"
 
 			"out_key[i*%uu+out_index]=part_key;"
 		"}"
@@ -4653,28 +4653,28 @@ PRIVATE void oclru_cap_plus_year_common(char* source, char* rule_name, cl_uint i
 		"uint part_key=in_key[max_iter*%uu+idx];"
 
 		"if(max_iter==0){"
-			"if(((part_key & 0xFF) - 97u) <= 25u)"
-				"part_key -= 32u;"
+			"if(((part_key&0xFF)-97u)<=25u)"
+				"part_key-=32u;"
 		"}else{"
-			"if(((part_key & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u;"
+			"if(((part_key&0xFF)-65u)<=25u)"
+				"part_key+=32u;"
 		"}"
-		"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<8u;"
-		"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-			"part_key += 32u<<16u;"
+		"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<8u;"
+		"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+			"part_key+=32u<<16u;"
 
 		// Divide by 10
 		"uint dec=mul_hi(param,429496730u);"
 		"uint un=mul_hi(dec,429496730u);"
 
-		"uint year_added = (param < 100) ? 0x30303931 : 0x30303032;"
-		"year_added+= (param<<24u) - dec*0x9FF0000-un*0xA0000;"
+		"uint year_added=(param<100)?0x30303931:0x30303032;"
+		"year_added+=(param<<24u)-dec*0x9FF0000-un*0xA0000;"
 
 		"if(len)"
 		"{"
-			"out_key[max_iter*%uu+out_index]=bs(part_key, year_added<<len, 0xffffffffu<<len);"
-			"out_key[(max_iter+1)*%uu+out_index]=(year_added>>(32u-len)) + (0x80<<len);"
+			"out_key[max_iter*%uu+out_index]=bs(part_key, year_added<<len,0xffffffffu<<len);"
+			"out_key[(max_iter+1)*%uu+out_index]=(year_added>>(32u-len))+(0x80<<len);"
 		"}else{"
 			"out_key[max_iter*%uu+out_index]=year_added;"
 			"out_key[(max_iter+1)*%uu+out_index]=0x80;"
@@ -4904,9 +4904,9 @@ PRIVATE void oclru_prefix_year_common(char* source, char* rule_name, cl_uint in_
 		"uint dec=mul_hi(param,429496730u);"
 		"uint un=mul_hi(dec,429496730u);"
 
-		"uint year_added = (param < 100) ? 0x30303931 : 0x30303032;"
-		"year_added+= (param<<24u) - dec*0x9FF0000-un*0xA0000;"
-		"out_key[out_index] = year_added;"
+		"uint year_added=(param<100)?0x30303931:0x30303032;"
+		"year_added+=(param<<24u)-dec*0x9FF0000-un*0xA0000;"
+		"out_key[out_index]=year_added;"
 
 		"for(uint i=0;i<max_iter;i++)"
 			"out_key[(i+1)*%uu+out_index]=in_key[i*%uu+idx];"
@@ -5510,7 +5510,7 @@ PRIVATE void oclru_plus_2char_common(char* source, char* rule_name, cl_uint in_N
 	else				sprintf(source + strlen(source), "uint div=param>>%iU;", (int)div_param.shift);// Power of two division
 
 	sprintf(source + strlen(source),
-		"uint char_added = %uu+param+div*%uu;"
+		"uint char_added=%uu+param+div*%uu;"
 
 		"for(uint i=0;i<max_iter;i++)"
 			"out_key[i*%uu+out_index]=in_key[i*%uu+idx];"
@@ -6067,7 +6067,7 @@ PRIVATE cl_uint oclru_append_3char_utf8(char* source, char nt_buffer[16][16], ch
 		sprintf(source + strlen(source), "uint%s chars_add=(buffer%u&0xff)+%uu+((param/%uu)<<16u)+((param%%%uu)<<8u);", prefered_vector_size==1?"":"2", lenght / 4, (MIN_CHAR_ADDED << 8) + (MIN_CHAR_ADDED << 16) + (MIN_CHAR_ADDED << 24), LENGHT_CHAR_ADDED, LENGHT_CHAR_ADDED);
 		break;
 	case 0:
-		sprintf(source + strlen(source), "uint%s chars_add=%uu+((param/%uu)<<8u) + param%%%uu;", prefered_vector_size==1?"":"2", MIN_CHAR_ADDED + (MIN_CHAR_ADDED << 8) + (MIN_CHAR_ADDED << 16) + 0x80000000, LENGHT_CHAR_ADDED, LENGHT_CHAR_ADDED);
+		sprintf(source + strlen(source), "uint%s chars_add=%uu+((param/%uu)<<8u)+param%%%uu;", prefered_vector_size==1?"":"2", MIN_CHAR_ADDED + (MIN_CHAR_ADDED << 8) + (MIN_CHAR_ADDED << 16) + 0x80000000, LENGHT_CHAR_ADDED, LENGHT_CHAR_ADDED);
 		break;
 	}
 
@@ -6187,8 +6187,8 @@ PRIVATE void oclru_prefix_3char_common(char* source, char* rule_name, cl_uint in
 		"for(uint i=0;i<max_iter;i++)"
 		"{"
 			"uint part_key=in_key[i*%uu+idx];"
-			"out_key[i*%uu+out_index]=char_added + (part_key << 24u);"
-			"char_added = part_key>>8u;"
+			"out_key[i*%uu+out_index]=char_added+(part_key<<24u);"
+			"char_added=part_key>>8u;"
 		"}"
 
 		"if(((len>>4u)&3u)>=1u)"
@@ -6220,7 +6220,7 @@ PRIVATE void oclru_plus_3char_common(char* source, char* rule_name, cl_uint in_N
 	else				sprintf(source + strlen(source), "uint div1=div>>%iU;", (int)div_param.shift);// Power of two division
 
 	sprintf(source + strlen(source),
-		"uint char_added = %uu+param+div*%uu+div1*%uu;"
+		"uint char_added=%uu+param+div*%uu+div1*%uu;"
 
 		"for(uint i=0;i<max_iter;i++)"
 			"out_key[i*%uu+out_index]=in_key[i*%uu+idx];"
@@ -6519,7 +6519,7 @@ PRIVATE void rule_cap_leet_utf8(uint32_t* nt_buffer, uint32_t NUM_KEYS, uint32_t
 PRIVATE void ocl_write_leet_consts(char* source)
 {
 	// Fill leet_orig
-	sprintf(source+strlen(source),	"__constant uchar leet_array[]={");
+	sprintf(source+strlen(source),	"\n__constant uchar leet_array[]={");
 	for(cl_uint i = 0; i < strlen(leet_orig); i++)
 		sprintf(source+strlen(source), "%s%uu", i?",":"", (cl_uint)leet_orig[i]);
 	// Fill leet_change
@@ -6687,34 +6687,34 @@ PRIVATE void oclru_leet_common(char* source, char* rule_name, cl_uint in_NUM_KEY
 			"uint part_key=in_key[i*%uu+idx];"
 
 			"%s{"
-				"if(((part_key & 0xFF) - 65u) <= 25u)"
-					"part_key += 32u;"
+				"if(((part_key&0xFF)-65u)<=25u)"
+					"part_key+=32u;"
 			"}"
-			"if((((part_key>>8u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<8u;"
-			"if((((part_key>>16u) & 0xFF) - 65u) <= 25u)"
-				"part_key += 32u<<16u;"
-			"if(((part_key>>24u) - 65u) <= 25u)"
-				"part_key += 32u<<24u;"
+			"if((((part_key>>8u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<8u;"
+			"if((((part_key>>16u)&0xFF)-65u)<=25u)"
+				"part_key+=32u<<16u;"
+			"if(((part_key>>24u)-65u)<=25u)"
+				"part_key+=32u<<24u;"
 
-			"if((part_key & 0xFF) == leet_orig)"
+			"if((part_key&0xFF)==leet_orig)"
 			"{"
-				"part_key = bs(part_key,leet_change,0xffu);"
+				"part_key=bs(part_key,leet_change,0xffu);"
 				"have_change=true;"
 			"}"
-			"if(((part_key>>8u) & 0xFF) == leet_orig)"
+			"if(((part_key>>8u)&0xFF)==leet_orig)"
 			"{"
-				"part_key = bs(part_key,leet_change<<8u,0xff00u);"
+				"part_key=bs(part_key,leet_change<<8u,0xff00u);"
 				"have_change=true;"
 			"}"
-			"if(((part_key>>16u) & 0xFF) == leet_orig)"
+			"if(((part_key>>16u) & 0xFF)==leet_orig)"
 			"{"
-				"part_key = bs(part_key,leet_change<<16u,0xff0000u);"
+				"part_key=bs(part_key,leet_change<<16u,0xff0000u);"
 				"have_change=true;"
 			"}"
-			"if((part_key>>24u) == leet_orig)"
+			"if((part_key>>24u)==leet_orig)"
 			"{"
-				"part_key = bs(part_key,leet_change<<24u,0xff000000u);"
+				"part_key=bs(part_key,leet_change<<24u,0xff000000u);"
 				"have_change=true;"
 			"}"
 

@@ -64,12 +64,7 @@ PRIVATE sqlite3_int64 add_hash_from_line(ImportParam* param, char* user_name, ch
 	return -1;
 }
 
-#ifdef HS_TESTING
-PUBLIC
-#else
-PRIVATE
-#endif
-void BF_decode(uint32_t *dst, const char *src, int size)
+PRIVATE void BF_decode(uint32_t *dst, const char *src, int size)
 {
 	unsigned char *dptr = (unsigned char *)dst;
 	unsigned char *end = dptr + size;

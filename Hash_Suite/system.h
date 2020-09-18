@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2014-2015 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2014-2020 by Alain Espinosa. See LICENSE.
 
 #include "compilation_flags.h"
 
@@ -48,6 +48,10 @@
 	#define _aligned_free(x)					free(x)
 	#define _aligned_realloc(x,size,align)		realloc(x,size)
 
+	#define _byteswap_uint64(x) __builtin_bswap64(x)
+	#define _byteswap_ulong(x) __builtin_bswap32(x)
+	#define _byteswap_ushort(x) __builtin_bswap16(x)
+
 	#define HS_NEW_THREAD(function, param) {pthread_t hs_pthread_id;pthread_create(&hs_pthread_id, NULL, (void* (*)(void*))function, (void*)(param));}
 
 	#define HS_MUTEX			pthread_mutex_t
@@ -57,6 +61,7 @@
 	#define HS_DELETE_MUTEX(x)  pthread_mutex_destroy(x)
 
 	typedef unsigned char BYTE;
+	typedef int           BOOL;
 
 #elif defined(_WIN32)// Windows OS
 

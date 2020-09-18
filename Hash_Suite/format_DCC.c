@@ -436,12 +436,12 @@ PUBLIC void dcc_ntlm_part_c_code(uint32_t* nt_buffer, uint32_t* crypt_result)
 	crypt_result[4+3] = d;
 }
 
-#if !defined(_M_X64) || defined(HS_TESTING)
+#if !defined(_M_X64)
 PRIVATE void crypt_ntlm_protocol_c_code(CryptParam* param)
 {
 	dcc_salt_part_func* dcc_salt_parts[28];
 
-	for (int i = 0; i < LENGHT(dcc_salt_parts); i++)
+	for (int i = 0; i < LENGTH(dcc_salt_parts); i++)
 		dcc_salt_parts[i] = (dcc_salt_part_func*)dcc_salt_part_c_code;
 
 	crypt_ntlm_protocol_body(param, NT_NUM_KEYS, 1, (dcc_ntlm_part_func*)dcc_ntlm_part_c_code, dcc_salt_parts);
@@ -764,11 +764,12 @@ PRIVATE void ocl_write_dcc_header(char* source, GPUDevice* gpu, cl_uint unused)
 
 PUBLIC cl_uint* ocl_dcc_shrink_salts_size(char salt_values_str[11][20], cl_uint* num_salt_diff_parts)
 {
-	cl_uchar equal_salt[SALT_SIZE/4];
-	cl_uchar mapped_pos[SALT_SIZE/4];
+	cl_uchar equal_salt[SALT_SIZE / 4];
+	cl_uchar mapped_pos[SALT_SIZE / 4];
 	cl_uint j, diff_pos = 0;
 	cl_uint* salt_ptr = (cl_uint*)salts_values;
 	memset(equal_salt, 1, sizeof(equal_salt));
+	num_salt_diff_parts[0] = 0;
 
 	// Find salts parts that are equals
 	for (cl_uint i = 1; i < num_diff_salts; i++)
@@ -796,9 +797,9 @@ PUBLIC cl_uint* ocl_dcc_shrink_salts_size(char salt_values_str[11][20], cl_uint*
 	// Only use different values of salt
 	cl_uint* small_salts_values = (cl_uint*)malloc(4 * num_salt_diff_parts[0] * num_diff_salts);
 	for (cl_uint i = 0; i < num_diff_salts; i++)
-		for(j = 0; j < SALT_SIZE/4; j++)
-			if(!equal_salt[j])
-				small_salts_values[i*num_salt_diff_parts[0]+mapped_pos[j]] = salt_ptr[i*(SALT_SIZE/4)+j];
+		for (j = 0; j < SALT_SIZE / 4; j++)
+			if (!equal_salt[j])
+				small_salts_values[i * num_salt_diff_parts[0] + mapped_pos[j]] = salt_ptr[i * (SALT_SIZE / 4) + j];
 
 	return small_salts_values;
 }
