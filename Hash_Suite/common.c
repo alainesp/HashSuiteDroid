@@ -269,9 +269,7 @@ PUBLIC KeyProvider* find_key_provider(sqlite3_int64 db_id)
 }
 PUBLIC int find_format_index(sqlite3_int64 db_id)
 {
-	int i = 0;
-
-	for(; i < num_formats; i++)
+	for(int i = 0; i < num_formats; i++)
 		if(formats[i].db_id == db_id)
 			return i;
 
@@ -1036,11 +1034,16 @@ PUBLIC uint32_t total_num_hashes()
 }
 PUBLIC uint32_t has_hashes(int format_index)
 {
+	assert(format_index >= 0 && format_index < num_formats);
+
 	return num_hashes_by_formats1[format_index];
 }
 // All hashes was found for a specific format?
 PUBLIC int is_found_all_hashes(int format_index)
 {
+	if (format_index < 0 || format_index >= num_formats)
+		return TRUE;
+
 	return num_hashes_found_by_format1[format_index] >= num_hashes_by_formats1[format_index];
 }
 

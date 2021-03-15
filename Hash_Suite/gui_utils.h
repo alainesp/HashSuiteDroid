@@ -45,6 +45,7 @@ PRIVATE void execute_bench_func(int bench_format_index, int show_index, int benc
 	MAX_NUM_PASWORDS_LOADED = formats[bench_format_index].bench_values[bench_value_index];
 	// Benchmark
 	benchmark_init_complete = FALSE;
+	benchmark_gpu_fails = FALSE;
 	new_crack(bench_format_index, CHARSET_INDEX, key_lenght, key_lenght, all_chars, &receive_message, FALSE);
 	// Wait to complete initialization
 	while (!benchmark_init_complete) Sleep(200ll);
@@ -54,9 +55,9 @@ PRIVATE void execute_bench_func(int bench_format_index, int show_index, int benc
 	// Show data to user
 #ifdef _WIN32
 	if (bench_wnd_to_post)
-		bench_wnd_to_post->OnSetBenchData(show_index, 2 + bench_value_index, password_per_sec(bench_buffer));
+		bench_wnd_to_post->OnSetBenchData(show_index, 2 + bench_value_index, benchmark_gpu_fails ? "Failed" : password_per_sec(bench_buffer));
 #else
-	env->CallStaticVoidMethod(my_class, SetBenchData_id, env->NewStringUTF(password_per_sec(bench_buffer)), show_index, m_benchmark_time);
+	env->CallStaticVoidMethod(my_class, SetBenchData_id, env->NewStringUTF(benchmark_gpu_fails ? "Failed" : password_per_sec(bench_buffer)), show_index, m_benchmark_time);
 #endif
 
 	// Stop attack

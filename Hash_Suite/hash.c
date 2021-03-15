@@ -1575,8 +1575,8 @@ PUBLIC void hash_md5crypt(const unsigned char* cleartext, char* hash)
 
 typedef struct {
 	uint32_t rounds;
-	uint8_t salt[16];
 	uint8_t saltlen;
+	uint8_t salt[16];
 } crypt_sha256_salt;
 PUBLIC void hash_sha256crypt(const char* cleartext, char* hash)
 {

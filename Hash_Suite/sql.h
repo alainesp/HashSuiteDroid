@@ -171,11 +171,13 @@ CREATE TABLE IF NOT EXISTS CachedKernels (						\
 	GPUID INTEGER NOT NULL,									    \
 	Driver TEXT NOT NULL,										\
 	SourceHash TEXT NOT NULL,									\
-	Bin BLOB NOT NULL											\
+	Bin BLOB NOT NULL,											\
+	FailCompilation INTEGER NOT NULL DEFAULT 0					\
 );																\
 																\
 INSERT OR IGNORE INTO Queries(Name, Query) VALUES('DB Schema', 'SELECT tbl_name,sql FROM sqlite_master WHERE type==''table''');\
 INSERT OR IGNORE INTO Queries(Name, Query) VALUES('Attack Time', 'SELECT ((strftime(''%j'', ''00:00:00'', sum(ElapsedTime)||'' seconds'')-strftime(''%j'', ''00:00:00'')) || strftime(''d %H:%M:%S'', ''00:00:00'', sum(ElapsedTime)||'' seconds'')) AS total_time FROM Attack');\
+INSERT OR IGNORE INTO Queries(Name, Query) VALUES('Failed Compilations', 'SELECT ID,GPUID,Driver,SourceHash FROM CachedKernels WHERE FailCompilation=1;');\
 																\
 CREATE TABLE IF NOT EXISTS Reports (							\
 	ID INTEGER PRIMARY KEY,										\

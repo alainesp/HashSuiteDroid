@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2020 by Alain Espinosa
+// Copyright (c) 2011-2021 by Alain Espinosa
 
 #include <ctype.h>
 #include "common.h"
@@ -20,7 +20,7 @@ PUBLIC clGetDeviceInfoFunc				pclGetDeviceInfo			= NULL;
 PRIVATE clCreateContextFunc				pclCreateContext			= NULL;
 PRIVATE clCreateCommandQueueFunc		pclCreateCommandQueue		= NULL;
 PRIVATE clCreateProgramWithSourceFunc	pclCreateProgramWithSource	= NULL;
-PRIVATE clBuildProgramFunc				pclBuildProgram				= NULL;
+PUBLIC clBuildProgramFunc				pclBuildProgram				= NULL;
 PUBLIC clCreateKernelFunc				pclCreateKernel				= NULL;
 PRIVATE clCreateBufferFunc				pclCreateBuffer				= NULL;
 PUBLIC clSetKernelArgFunc				pclSetKernelArg				= NULL;
@@ -86,12 +86,12 @@ PUBLIC tcuFuncSetCacheConfig    *cuFuncSetCacheConfig	= NULL;
 // Manage status data about Nvidia devices
 PRIVATE HMODULE hnvml = NULL;
 #include "OpenCL\nvml.h"
-typedef nvmlReturn_t DECLDIR tnvmlInit(void);
-typedef nvmlReturn_t DECLDIR tnvmlDeviceGetCount(uint32_t *deviceCount);
-typedef nvmlReturn_t DECLDIR tnvmlDeviceGetHandleByIndex(uint32_t index, nvmlDevice_t *device);
-typedef nvmlReturn_t DECLDIR tnvmlDeviceGetName(nvmlDevice_t device, char *name, uint32_t length);
-typedef nvmlReturn_t DECLDIR tnvmlDeviceGetFanSpeed(nvmlDevice_t device, uint32_t *speed);
-typedef nvmlReturn_t DECLDIR tnvmlDeviceGetTemperature(nvmlDevice_t device, nvmlTemperatureSensors_t sensorType, uint32_t *temp);
+typedef __declspec(dllimport) nvmlReturn_t tnvmlInit(void);
+typedef __declspec(dllimport) nvmlReturn_t tnvmlDeviceGetCount(uint32_t *deviceCount);
+typedef __declspec(dllimport) nvmlReturn_t tnvmlDeviceGetHandleByIndex(uint32_t index, nvmlDevice_t *device);
+typedef __declspec(dllimport) nvmlReturn_t tnvmlDeviceGetName(nvmlDevice_t device, char *name, uint32_t length);
+typedef __declspec(dllimport) nvmlReturn_t tnvmlDeviceGetFanSpeed(nvmlDevice_t device, uint32_t *speed);
+typedef __declspec(dllimport) nvmlReturn_t tnvmlDeviceGetTemperature(nvmlDevice_t device, nvmlTemperatureSensors_t sensorType, uint32_t *temp);
 PRIVATE tnvmlInit* pnvmlInit = NULL;
 PRIVATE tnvmlDeviceGetCount* pnvmlDeviceGetCount = NULL;
 PRIVATE tnvmlDeviceGetHandleByIndex* pnvmlDeviceGetHandleByIndex = NULL;
@@ -100,6 +100,7 @@ PRIVATE tnvmlDeviceGetFanSpeed* pnvmlDeviceGetFanSpeed = NULL;
 PRIVATE tnvmlDeviceGetTemperature* pnvmlDeviceGetTemperature = NULL;
 
 // Manage status data about AMD devices
+typedef BOOL bool;
 #include "OpenCL\adl_sdk.h"
 PRIVATE HMODULE hamdadl = NULL;
 // Definitions of the used function pointers. Add more if you use other ADL APIs
@@ -117,22 +118,32 @@ typedef int ( *ADL_OVERDRIVE6_THERMALCONTROLLER_CAPS )(int iAdapterIndex, ADLOD6
 typedef int ( *ADL_OVERDRIVE6_TEMPERATURE_GET )(int iAdapterIndex, int *lpTemperature);
 typedef int ( *ADL_OVERDRIVE6_CAPABILITIES_GET ) (int iAdapterIndex, ADLOD6Capabilities *lpODCapabilities);
 typedef int	( *ADL_OVERDRIVE6_CURRENTSTATUS_GET )(int iAdapterIndex, ADLOD6CurrentStatus *lpCurrentStatus);
+// Overdrive N
+typedef int ( *ADL2_OVERDRIVE_CAPS ) (ADL_CONTEXT_HANDLE context, int iAdapterIndex, int* iSupported, int* iEnabled, int* iVersion);
+typedef int ( *ADL2_OVERDRIVEN_TEMPERATURE_GET ) (ADL_CONTEXT_HANDLE, int, int, int*);
+typedef int ( *ADL2_OVERDRIVEN_PERFORMANCESTATUS_GET ) (ADL_CONTEXT_HANDLE, int, ADLODNPerformanceStatus*);
+//typedef int ( *ADL2_OVERDRIVEN_FANCONTROL_GET ) (ADL_CONTEXT_HANDLE, int, ADLODNFanControl*);
 
 #define AMDVENDORID             (1002)
 
-ADL_ADAPTER_NUMBEROFADAPTERS_GET ADL_Adapter_NumberOfAdapters_Get;
-ADL_ADAPTER_ADAPTERINFO_GET		 ADL_Adapter_AdapterInfo_Get;
-ADL_OVERDRIVE_CAPS				 ADL_Overdrive_Caps;
+PRIVATE ADL_ADAPTER_NUMBEROFADAPTERS_GET ADL_Adapter_NumberOfAdapters_Get;
+PRIVATE ADL_ADAPTER_ADAPTERINFO_GET		 ADL_Adapter_AdapterInfo_Get;
+PRIVATE ADL_OVERDRIVE_CAPS				 ADL_Overdrive_Caps;
 // Overdrive 5
-ADL_OVERDRIVE5_THERMALDEVICES_ENUM		ADL_Overdrive5_ThermalDevices_Enum;
-ADL_OVERDRIVE5_TEMPERATURE_GET			ADL_Overdrive5_Temperature_Get;
-ADL_OVERDRIVE5_ODPARAMETERS_GET			ADL_Overdrive5_ODParameters_Get;
-ADL_OVERDRIVE5_CURRENTACTIVITY_GET		ADL_Overdrive5_CurrentActivity_Get;
+PRIVATE ADL_OVERDRIVE5_THERMALDEVICES_ENUM		ADL_Overdrive5_ThermalDevices_Enum;
+PRIVATE ADL_OVERDRIVE5_TEMPERATURE_GET			ADL_Overdrive5_Temperature_Get;
+PRIVATE ADL_OVERDRIVE5_ODPARAMETERS_GET			ADL_Overdrive5_ODParameters_Get;
+PRIVATE ADL_OVERDRIVE5_CURRENTACTIVITY_GET		ADL_Overdrive5_CurrentActivity_Get;
 // Overdrive 6
-ADL_OVERDRIVE6_THERMALCONTROLLER_CAPS	ADL_Overdrive6_ThermalController_Caps;
-ADL_OVERDRIVE6_TEMPERATURE_GET			ADL_Overdrive6_Temperature_Get;
-ADL_OVERDRIVE6_CAPABILITIES_GET			ADL_Overdrive6_Capabilities_Get;
-ADL_OVERDRIVE6_CURRENTSTATUS_GET		ADL_Overdrive6_CurrentStatus_Get;
+PRIVATE ADL_OVERDRIVE6_THERMALCONTROLLER_CAPS	ADL_Overdrive6_ThermalController_Caps;
+PRIVATE ADL_OVERDRIVE6_TEMPERATURE_GET			ADL_Overdrive6_Temperature_Get;
+PRIVATE ADL_OVERDRIVE6_CAPABILITIES_GET			ADL_Overdrive6_Capabilities_Get;
+PRIVATE ADL_OVERDRIVE6_CURRENTSTATUS_GET		ADL_Overdrive6_CurrentStatus_Get;
+// Overdrive N
+PRIVATE ADL2_OVERDRIVE_CAPS ADL2_Overdrive_Caps = NULL;
+PRIVATE ADL2_OVERDRIVEN_TEMPERATURE_GET ADL2_OverdriveN_Temperature_Get = NULL;
+PRIVATE ADL2_OVERDRIVEN_PERFORMANCESTATUS_GET ADL2_OverdriveN_PerformanceStatus_Get = NULL;
+//PRIVATE ADL2_OVERDRIVEN_FANCONTROL_GET ADL2_OverdriveN_FanControl_Get = NULL;
 // Memory allocation function
 PRIVATE void* __stdcall ADL_Main_Memory_Alloc ( int iSize )
 {
@@ -280,6 +291,25 @@ PUBLIC int gpu_get_updated_status(uint32_t gpu_index, GPUStatus* status)
 				status->usage = currentStatus.iActivityPercent;
 			}
 		}
+
+		if (gpu_devices[gpu_index].amd.version >= 7)
+		{
+			ADL_CONTEXT_HANDLE context = NULL;
+			if (ADL2_OverdriveN_Temperature_Get && ADL_OK == ADL2_OverdriveN_Temperature_Get(context, gpu_devices[gpu_index].amd.id, 1, &status->temperature))
+			{
+				status->flag |= GPU_STATUS_TEMPERATURE;
+				status->temperature /= 1000;
+			}
+
+			ADLODNPerformanceStatus odNPerformanceStatus;
+			memset(&odNPerformanceStatus, 0, sizeof(ADLODNPerformanceStatus));
+
+			if (ADL2_OverdriveN_PerformanceStatus_Get && ADL_OK == ADL2_OverdriveN_PerformanceStatus_Get(context, gpu_devices[gpu_index].amd.id, &odNPerformanceStatus))
+			{
+				status->flag |= GPU_STATUS_USE;
+				status->usage = odNPerformanceStatus.iGPUActivityPercent;
+			}
+		}
 	}
 
 	return status->flag;
@@ -393,6 +423,11 @@ PRIVATE int init_amdadl()
 		ADL_Overdrive6_Temperature_Get = (ADL_OVERDRIVE6_TEMPERATURE_GET)GetProcAddress (hamdadl, "ADL_Overdrive6_Temperature_Get");
 		ADL_Overdrive6_Capabilities_Get = (ADL_OVERDRIVE6_CAPABILITIES_GET)GetProcAddress(hamdadl, "ADL_Overdrive6_Capabilities_Get");
 		ADL_Overdrive6_CurrentStatus_Get = (ADL_OVERDRIVE6_CURRENTSTATUS_GET)GetProcAddress(hamdadl, "ADL_Overdrive6_CurrentStatus_Get");
+		// Overdrive N
+		ADL2_Overdrive_Caps = (ADL2_OVERDRIVE_CAPS)GetProcAddress(hamdadl, "ADL2_Overdrive_Caps");
+		ADL2_OverdriveN_Temperature_Get = (ADL2_OVERDRIVEN_TEMPERATURE_GET)GetProcAddress(hamdadl, "ADL2_OverdriveN_Temperature_Get");
+		ADL2_OverdriveN_PerformanceStatus_Get = (ADL2_OVERDRIVEN_PERFORMANCESTATUS_GET)GetProcAddress(hamdadl, "ADL2_OverdriveN_PerformanceStatus_Get");
+		//ADL2_OverdriveN_FanControl_Get = (ADL2_OVERDRIVEN_FANCONTROL_GET)GetProcAddress(hDLL, "ADL2_OverdriveN_FanControl_Get");
 
 		if (!ADL_Main_Control_Create || !ADL_Adapter_NumberOfAdapters_Get || !ADL_Adapter_AdapterInfo_Get || !ADL_Overdrive_Caps)
 			goto error_out;
@@ -455,7 +490,7 @@ PRIVATE void get_device_info_extended(int gpu_index)
 	pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DRIVER_VERSION, sizeof(gpu_devices[gpu_index].driver_version), gpu_devices[gpu_index].driver_version, NULL);
 	// OpenCl version
 	pclGetDeviceInfo(gpu_devices[gpu_index].cl_id, CL_DEVICE_VERSION, sizeof(buffer_str), buffer_str, NULL);
-	strstr(strstr(buffer_str, " ")+1, " ")[0] = 0;// select only opencl version
+	strstr(strstr(buffer_str, " ") + 1, " ")[0] = 0;// select only opencl version
 	strcpy(gpu_devices[gpu_index].opencl_version, buffer_str);
 	// GPU Name
 	cl_device_type gpu_type;
@@ -626,13 +661,22 @@ PRIVATE void get_device_info_extended(int gpu_index)
 					}
 				}
 
-			//Overdrive 5 APIs should be used if returned version indicates 5. Overdrive 6 APIs are used if 6 is returned.
-			//Overdrive 5 is supported on legacy ASICs. Newer ASICs (CIK+) should report Overdrive 6
+			// Overdrive 5 APIs should be used if returned version indicates 5. Overdrive 6 APIs are used if 6 is returned.
+			// Overdrive 5 is supported on legacy ASICs. Newer ASICs (CIK+) should report Overdrive 6
 			int overdrive_supported, overdrive_enabled;
-			if ( ADL_OK != ADL_Overdrive_Caps(gpu_devices[gpu_index].amd.id, &overdrive_supported, &overdrive_enabled, &gpu_devices[gpu_index].amd.version) || !overdrive_supported)
-				goto error_out;
+			if (ADL_OK != ADL_Overdrive_Caps(gpu_devices[gpu_index].amd.id, &overdrive_supported, &overdrive_enabled, &gpu_devices[gpu_index].amd.version) || !overdrive_supported)
+			{
+				// Overdrive >=7 API
+				if (ADL2_Overdrive_Caps && ADL2_OverdriveN_Temperature_Get)
+				{
+					ADL_CONTEXT_HANDLE context = NULL;
+					ADL2_Overdrive_Caps(context, gpu_devices[gpu_index].amd.id, &overdrive_supported, &overdrive_enabled, &gpu_devices[gpu_index].amd.version);
+				}
+				else
+					goto error_out;
+			}
 		
-			if (gpu_devices[gpu_index].amd.version == 5 || gpu_devices[gpu_index].amd.version == 6)
+			if (gpu_devices[gpu_index].amd.version >= 5)
 				gpu_devices[gpu_index].flags |= GPU_FLAG_SUPPORT_STATUS_INFO;
 
 error_out:
@@ -1109,22 +1153,7 @@ PUBLIC void release_opencl_param(OpenCL_Param* param)
 
 			if (param->rules.work_group_sizes)
 				free(param->rules.work_group_sizes);
-
-#ifndef OCL_RULES_ALL_IN_GPU
-			pclReleaseProgram(param->rules.program);
-
-			for (int len = 0; len < LENGTH(param->rules.binaries); len++)
-				if (param->rules.binaries[len])
-					free(param->rules.binaries[len]);
-#endif
 		}
-		// Release all programs used by rules
-		/*if (param->rules_programs)
-		{
-			for (i = 0; i < param->num_rules_programs; i++)
-				pclReleaseProgram(param->rules_programs[i]);
-			free(param->rules_programs);
-		}*/
 
 		// Release all aditional kernels
 		if (param->additional_kernels)
@@ -1135,6 +1164,15 @@ PUBLIC void release_opencl_param(OpenCL_Param* param)
 
 			free(param->additional_kernels);
 			param->additional_kernels = NULL;
+		}
+		if (param->additional_programs)
+		{
+			for (cl_uint i = 0; i < param->additional_kernels_size; i++)
+				if (param->additional_programs[i])
+					pclReleaseProgram(param->additional_programs[i]);
+
+			free(param->additional_programs);
+			param->additional_programs = NULL;
 		}
 
 		// Release program
@@ -1159,7 +1197,8 @@ PUBLIC void release_opencl_param(OpenCL_Param* param)
 		free(param);
 	}
 }
-PRIVATE int build_opencl_program_private(OpenCL_Param* param, const char* source, char* compiler_options, cl_program* program)
+cl_int myclBuildProgram(cl_program program, cl_device_id gpu_id, char* compiler_options);
+PUBLIC int build_opencl_program_private(OpenCL_Param* param, const char* source, char* compiler_options, cl_program* program)
 {
 	assert(param && source && program);
 
@@ -1184,7 +1223,7 @@ PRIVATE int build_opencl_program_private(OpenCL_Param* param, const char* source
 
 		// Load cached kernel from DB
 		sqlite3_stmt* select_binary_program;
-		sqlite3_prepare_v2(db, "SELECT Bin,ID FROM CachedKernels WHERE GPUID=? AND Driver=? AND SourceHash=?;", -1, &select_binary_program, NULL);
+		sqlite3_prepare_v2(db, "SELECT Bin,ID FROM CachedKernels WHERE GPUID=? AND Driver=? AND SourceHash=? AND FailCompilation=0;", -1, &select_binary_program, NULL);
 		sqlite3_bind_int(select_binary_program, 1, gpu_devices[gpu_index].device_vendor_id);
 		sqlite3_bind_text(select_binary_program, 2, gpu_devices[gpu_index].driver_version, -1, SQLITE_STATIC);
 		sqlite3_bind_text(select_binary_program, 3, source_sha256, -1, SQLITE_STATIC);
@@ -1217,11 +1256,11 @@ PRIVATE int build_opencl_program_private(OpenCL_Param* param, const char* source
 	}
 	if (code != CL_SUCCESS)
 		return FALSE;
-	
+
 	// Build program
 	if(!param->use_ptx)
 		// For Nvidia GPUs: "-cl-nv-verbose"
-		if (pclBuildProgram(*program, 1, &param->id, compiler_options, NULL, NULL) != CL_SUCCESS)
+		if (myclBuildProgram(*program, param->id, compiler_options) != CL_SUCCESS)
 		{
 #ifdef _DEBUG
 
@@ -1231,20 +1270,30 @@ PRIVATE int build_opencl_program_private(OpenCL_Param* param, const char* source
 #define DEBUG_DIR "C:\\Users\\alain\\Desktop\\"
 #endif
 			FILE* errors = fopen(DEBUG_DIR"build_errors.txt","w");
-			int size_log = 10*1024*1024;
+			size_t size_log = 0;
+			pclGetProgramBuildInfo(*program, param->id, CL_PROGRAM_BUILD_LOG, size_log, NULL, &size_log);
 			char* log = (char*)malloc(size_log);
 			pclGetProgramBuildInfo(*program, param->id, CL_PROGRAM_BUILD_LOG, size_log, (void*)log, NULL);
 
-			fwrite(log, 1, strlen(log), errors);
+			fwrite(log, 1, size_log, errors);
 			fclose(errors);
 			free(log);
 
 			// Save code
-			FILE* code = fopen(DEBUG_DIR"source_code.c","w");
+			FILE* code = fopen(DEBUG_DIR"source_code.cl","w");
 			fwrite(source, 1, strlen(source), code);
 			fclose(code);
 #endif
 			hs_log(HS_LOG_DEBUG, "GPU compilation failed!", "error");
+			// Save to database
+			sqlite3_stmt* insert_program;
+			sqlite3_prepare_v2(db, "INSERT INTO CachedKernels (GPUID,Driver,SourceHash,Bin,FailCompilation) VALUES (?,?,?,?,1);", -1, &insert_program, NULL);
+			sqlite3_bind_int(insert_program, 1, gpu_devices[gpu_index].device_vendor_id);
+			sqlite3_bind_text(insert_program, 2, gpu_devices[gpu_index].driver_version, -1, SQLITE_STATIC);
+			sqlite3_bind_text(insert_program, 3, source_sha256, -1, SQLITE_STATIC);
+			sqlite3_bind_text(insert_program, 4, source, -1, SQLITE_STATIC);
+			sqlite3_step(insert_program);
+			sqlite3_finalize(insert_program);
 			return FALSE;
 		}
 		else
@@ -1273,7 +1322,8 @@ PRIVATE int build_opencl_program_private(OpenCL_Param* param, const char* source
 
 			//// Save build Log
 			//FILE* build_log = fopen(DEBUG_DIR"build_log.txt", "w");
-			//int size_log = 4 * 1024 * 1024;
+			//size_t size_log = 0;
+			//pclGetProgramBuildInfo(*program, param->id, CL_PROGRAM_BUILD_LOG, size_log, NULL, &size_log);
 			//char* log = (char*)malloc(size_log);
 			//pclGetProgramBuildInfo(*program, param->id, CL_PROGRAM_BUILD_LOG, size_log, (void*)log, NULL);
 
@@ -2532,81 +2582,42 @@ void rules_calculate_key_space(uint32_t num_keys_original, int64_t num_keys_in_m
 void rules_report_remain_key_space(int64_t pnum_keys_in_memory, uint32_t thread_id);
 
 PRIVATE char* ocl_gen_rules_code(GPUDevice* gpu, OpenCL_Param* param, int kernel2common_index, ocl_write_header_func* ocl_write_header, ocl_gen_kernel_func* ocl_gen_kernel,
-	cl_uint ntlm_size_bit_table, void* salt_param, int BINARY_SIZE, int FORMAT_BUFFER, cl_uint common_NUM_KEYS_OPENCL, cl_uint ordered_NUM_KEYS_OPENCL
-#ifndef OCL_RULES_ALL_IN_GPU
-	, int current_lenght
-#endif
+	cl_uint ntlm_size_bit_table, void* salt_param, int BINARY_SIZE, int FORMAT_BUFFER, cl_uint common_NUM_KEYS_OPENCL, cl_uint ordered_NUM_KEYS_OPENCL, int rule_index
 ){
-#ifdef OCL_RULES_ALL_IN_GPU
-	char* base_source = (char*)malloc(1024 * 32 * __max(1, current_rules_count)*(NTLM_MAX_KEY_LENGHT + 1));
-#else
-	char* base_source = (char*)malloc(1024 * 32 * __max(1, current_rules_count));
-#endif
-	base_source[0] = 0;
+	char* source = (char*)malloc(1024 * 32 *(NTLM_MAX_KEY_LENGHT + 1));
+	source[0] = 0;
 
 	// Write the definitions needed by the opencl implementation
-	ocl_write_header(base_source, gpu, ntlm_size_bit_table);
+	ocl_write_header(source, gpu, ntlm_size_bit_table);
 
-#ifndef OCL_RULES_ALL_IN_GPU
-	if (current_lenght < 0)
-#endif
+	if (rule_index < 0)
 	{
 		// Kernel needed to convert from * to the common format
-		kernels2common[kernel2common_index].gen_kernel(base_source, common_NUM_KEYS_OPENCL);
+		kernels2common[kernel2common_index].gen_kernel(source, common_NUM_KEYS_OPENCL);
 		// Kernel needed to convert from common format to the ordered by lenght format
-		ocl_gen_kernel_common_2_ordered(base_source, common_NUM_KEYS_OPENCL, ordered_NUM_KEYS_OPENCL, NTLM_MAX_KEY_LENGHT);
+		ocl_gen_kernel_common_2_ordered(source, common_NUM_KEYS_OPENCL, ordered_NUM_KEYS_OPENCL, NTLM_MAX_KEY_LENGHT);
 	}
-#ifndef OCL_RULES_ALL_IN_GPU
 	else
-#endif
 	{
-		char* source = base_source;
-		// This is because AMD compiler do not support __constant vars inside a kernel
-		ocl_write_code** constants_written = (ocl_write_code**)malloc(current_rules_count*sizeof(ocl_write_code*));
-		int num_constants_written = 0;
+		if(rules[rules_remapped[rule_index]].ocl.setup_constants)
+			rules[rules_remapped[rule_index]].ocl.setup_constants(source);
 
 		// Generate one kernel for each rule
-	#ifdef OCL_RULES_ALL_IN_GPU
 		for (cl_uint lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
-	#else
-		cl_uint lenght = current_lenght;
-	#endif
 		{
-			for (int i = 0; i < current_rules_count; i++)
-			{
-				char kernel_name[12];
-				char found_param[64];
-				int* need_param_ptr = NULL;
+			char kernel_name[12];
+			char found_param[64];
+			int* need_param_ptr = NULL;
 
-				if (rules[rules_remapped[i]].ocl.max_param_value)
-					need_param_ptr = &param->param0;
-
-				// If needed to use constants -> write it only once
-				if (rules[rules_remapped[i]].ocl.setup_constants)
-				{
-					int constants_already_written = FALSE, j;
-					// Check if was written before
-					for (j = 0; j < num_constants_written; j++)
-						if (rules[rules_remapped[i]].ocl.setup_constants == constants_written[j])
-						{
-							constants_already_written = TRUE;
-							break;
-						}
-					if (!constants_already_written)
-					{
-						constants_written[num_constants_written] = rules[rules_remapped[i]].ocl.setup_constants;
-						num_constants_written++;
-						rules[rules_remapped[i]].ocl.setup_constants(source);
-					}
-				}
-				// Write the kernel
-				sprintf(kernel_name, "ru_%il%i", i, lenght);
-				sprintf(found_param, "(%uu+%s)", (rules_remapped[i] << 22) + (lenght << 27), rules[rules_remapped[i]].ocl.found_param);
-				//sprintf(source + strlen(source), "\n__attribute__((work_group_size_hint(64, 1, 1))) ");
-				ocl_gen_kernel(source + strlen(source), kernel_name, rules[rules_remapped[i]].ocl.begin[FORMAT_BUFFER], rules[rules_remapped[i]].ocl.end, found_param, need_param_ptr, lenght, ordered_NUM_KEYS_OPENCL, ntlm_size_bit_table, salt_param, gpu->vector_int_size);
-			}
+			if (rules[rules_remapped[rule_index]].ocl.max_param_value)
+				need_param_ptr = &param->param0;
+				
+			// Write the kernel
+			sprintf(kernel_name, "ru_%il%i", rule_index, lenght);
+			sprintf(found_param, "(%uu+%s)", (rules_remapped[rule_index] << 22) + (lenght << 27), rules[rules_remapped[rule_index]].ocl.found_param);
+			//sprintf(source + strlen(source), "\n__attribute__((work_group_size_hint(64, 1, 1))) ");
+			ocl_gen_kernel(source + strlen(source), kernel_name, rules[rules_remapped[rule_index]].ocl.begin[FORMAT_BUFFER], rules[rules_remapped[rule_index]].ocl.end, found_param, need_param_ptr, lenght, ordered_NUM_KEYS_OPENCL, ntlm_size_bit_table, salt_param, gpu->vector_int_size);
 		}
-		free(constants_written);
 	}
 
 	//{// Uncomment this to view code
@@ -2615,62 +2626,9 @@ PRIVATE char* ocl_gen_rules_code(GPUDevice* gpu, OpenCL_Param* param, int kernel
 	//	fclose(code);
 	//}
 
-	return base_source;
+	return source;
 }
 
-PRIVATE void oclru_check_binary_present(OpenCL_Param* param, cl_uint lenght)
-{
-#ifndef OCL_RULES_ALL_IN_GPU
-	cl_int code, status;
-
-	// Release resources
-	for (cl_uint i = 0; i < param->rules.num_kernels; i++)
-		if (param->rules.kernels[i])
-		{
-			pclReleaseKernel(param->rules.kernels[i]);
-			param->rules.kernels[i] = NULL;
-		}
-
-	if (param->rules.program)
-		pclReleaseProgram(param->rules.program);
-
-	// Load program
-	param->rules.program = pclCreateProgramWithBinary(param->context, 1, &param->id, param->rules.binaries_size+lenght, (unsigned char const **)(param->rules.binaries+lenght), &status, &code);
-	if (code != CL_SUCCESS || status != CL_SUCCESS)
-		hs_log(HS_LOG_ERROR, "Test Suite", "Error loading rules binary: lenght=%i", lenght);
-
-	code = pclBuildProgram(param->rules.program, 1, &param->id, gpu_devices[param->rules.gpu_index].compiler_options, NULL, NULL);
-	if (code != CL_SUCCESS)
-		hs_log(HS_LOG_ERROR, "Test Suite", "Error building rules binary: lenght=%i", lenght);
-	// Load kernels
-	for (int i = 0; i < current_rules_count; i++)
-	{
-		char name_buffer[12];
-		sprintf(name_buffer, "ru_%il%i", i, lenght);
-		param->rules.kernels[i + lenght*current_rules_count] = pclCreateKernel(param->rules.program, name_buffer, &code);
-		if (code != CL_SUCCESS)
-			hs_log(HS_LOG_ERROR, "Test Suite", "Error with rule: %s code: %i", name_buffer, code);
-
-		pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 0, sizeof(cl_mem), (void*)&param->mems[GPU_ORDERED_KEYS]);
-		pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 1, sizeof(cl_mem), (void*)&param->mems[GPU_OUTPUT]);
-
-		if(num_diff_salts > 1)
-		{
-			pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 2, sizeof(cl_mem), (void*) &param->mems[GPU_BINARY_VALUES]);
-			pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 3, sizeof(cl_mem), (void*) &param->mems[GPU_SALT_VALUES]);
-			pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 4, sizeof(cl_mem), (void*) &param->mems[GPU_SALT_INDEX]);
-			pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 5, sizeof(cl_mem), (void*) &param->mems[GPU_SAME_SALT_NEXT]);
-		}
-		if (!FORMAT_USE_SALT && num_passwords_loaded > 1)
-		{
-			pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 2, sizeof(cl_mem), (void*)&param->mems[GPU_TABLE]);
-			pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 3, sizeof(cl_mem), (void*)&param->mems[GPU_BINARY_VALUES]);
-			pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 4, sizeof(cl_mem), (void*)&param->mems[GPU_SAME_HASH_NEXT]);
-			pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], 5, sizeof(cl_mem), (void*)&param->mems[GPU_BIT_TABLE]);
-		}
-	}
-#endif
-}
 #define MAX_SALTS_IN_KERNEL_OTHER	64
 cl_uint* ocl_dcc_shrink_salts_size(char salt_values_str[11][20], cl_uint* num_salt_diff_parts);
 PRIVATE void ocl_protocol_rules_work(OpenCL_Param* param)
@@ -2725,8 +2683,6 @@ PRIVATE void ocl_protocol_rules_work(OpenCL_Param* param)
 		{
 			if (gpu_num_keys_by_len[lenght] >= param->NUM_KEYS_OPENCL / 4 * 3)
 			{
-				oclru_check_binary_present(param, lenght);
-
 				// Do actual hashing
 				for (int i = 0; continue_attack && i < current_rules_count; i++)
 				{
@@ -2810,7 +2766,23 @@ PRIVATE void ocl_protocol_rules_work(OpenCL_Param* param)
 	pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_TRUE, 0, (NTLM_MAX_KEY_LENGHT + 1) * sizeof(cl_uint), &gpu_num_keys_by_len, 0, NULL, NULL);
 	num_keys_in_memory = 0;
 	// Calculate the number of keys in memory
+	uint32_t count_kernel_invoc = 0, total_kernel_invoc = 0;
 	for (int lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+	{
+		// Calculate total kernel invocations
+		if (gpu_num_keys_by_len[lenght])
+			for (int i = 0; i < current_rules_count; i++)
+				if (rules[rules_remapped[i]].ocl.max_param_value)
+				{
+					// Some params
+					int max_param_value = rules[rules_remapped[i]].ocl.max_param_value;
+					if (rules[rules_remapped[i]].depend_key_lenght)
+						max_param_value = lenght + rules[rules_remapped[i]].key_lenght_sum;
+					total_kernel_invoc += max_param_value;
+				}
+				else
+					total_kernel_invoc++;
+
 		for (int i = 0; i < current_rules_count; i++)
 		{
 			int64_t multipler = rules[rules_remapped[i]].multipler;
@@ -2819,13 +2791,12 @@ PRIVATE void ocl_protocol_rules_work(OpenCL_Param* param)
 
 			num_keys_in_memory += gpu_num_keys_by_len[lenght] * multipler;
 		}
+	}
 	rules_calculate_key_space(0, num_keys_in_memory, param->thread_id);
 
 	for (int lenght = 0; !stop_universe && lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
 		if (gpu_num_keys_by_len[lenght])
 		{
-			oclru_check_binary_present(param, lenght);
-
 			// Do actual hashing
 			for (int i = 0; !stop_universe && i < current_rules_count; i++)
 			{
@@ -2843,6 +2814,9 @@ PRIVATE void ocl_protocol_rules_work(OpenCL_Param* param)
 
 					for (int j = 0; !stop_universe && j < max_param_value; j++)
 					{
+						send_message_gui(MESSAGE_PUT_DATA(MESSAGE_FLUSHING_KEYS, count_kernel_invoc * 100 / total_kernel_invoc));
+						count_kernel_invoc++;
+
 						pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], param->param0, sizeof(cl_uint), &j);//additional param
 						cl_int code = pclEnqueueNDRangeKernel(param->queue, param->rules.kernels[i + lenght*current_rules_count], 1, NULL, &num_work_items_len, &work_group_size_rl, 0, NULL, NULL);
 						if (code != CL_SUCCESS)
@@ -2860,6 +2834,9 @@ PRIVATE void ocl_protocol_rules_work(OpenCL_Param* param)
 				}
 				else
 				{
+					send_message_gui(MESSAGE_PUT_DATA(MESSAGE_FLUSHING_KEYS, count_kernel_invoc * 100 / total_kernel_invoc));
+					count_kernel_invoc++;
+
 					cl_int code = pclEnqueueNDRangeKernel(param->queue, param->rules.kernels[i + lenght*current_rules_count], 1, NULL, &num_work_items_len, &work_group_size_rl, 0, NULL, NULL);
 					if (code != CL_SUCCESS)
 						hs_log(HS_LOG_ERROR, "Test Suite", "Enqueue error: %i", code);
@@ -2939,8 +2916,6 @@ PRIVATE void ocl_dcc_protocol_rules_work(OpenCL_Param* param)
 		for (int lenght = 0; continue_attack && lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
 			if (gpu_num_keys_by_len[lenght] >= param->NUM_KEYS_OPENCL/4*3)
 			{
-				oclru_check_binary_present(param, lenght);
-
 				// Do actual hashing
 				for (int i = 0; continue_attack && i < current_rules_count; i++)
 				{
@@ -3059,7 +3034,23 @@ PRIVATE void ocl_dcc_protocol_rules_work(OpenCL_Param* param)
 	pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_TRUE, 0, (NTLM_MAX_KEY_LENGHT + 1) * sizeof(cl_uint), &gpu_num_keys_by_len, 0, NULL, NULL);
 	num_keys_in_memory = 0;
 	// Calculate the number of keys in memory
+	uint32_t count_kernel_invoc = 0, total_kernel_invoc = 0;
 	for (int lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+	{
+		// Calculate total kernel invocations
+		if (gpu_num_keys_by_len[lenght])
+			for (int i = 0; i < current_rules_count; i++)
+				if (rules[rules_remapped[i]].ocl.max_param_value)
+				{
+					// Some params
+					int max_param_value = rules[rules_remapped[i]].ocl.max_param_value;
+					if (rules[rules_remapped[i]].depend_key_lenght)
+						max_param_value = lenght + rules[rules_remapped[i]].key_lenght_sum;
+					total_kernel_invoc += max_param_value;
+				}
+				else
+					total_kernel_invoc++;
+
 		for (int i = 0; i < current_rules_count; i++)
 		{
 			int64_t multipler = rules[rules_remapped[i]].multipler;
@@ -3068,13 +3059,12 @@ PRIVATE void ocl_dcc_protocol_rules_work(OpenCL_Param* param)
 
 			num_keys_in_memory += gpu_num_keys_by_len[lenght] * multipler;
 		}
+	}
 	rules_calculate_key_space(0, num_keys_in_memory, param->thread_id);
 
 	for (int lenght = 0; !stop_universe && lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
 		if (gpu_num_keys_by_len[lenght])
 		{
-			oclru_check_binary_present(param, lenght);
-
 			// Do actual hashing
 			for (int i = 0; !stop_universe && i < current_rules_count; i++)
 			{
@@ -3095,6 +3085,9 @@ PRIVATE void ocl_dcc_protocol_rules_work(OpenCL_Param* param)
 
 					for (int j = 0; !stop_universe && j < max_param_value; j++)
 					{
+						send_message_gui(MESSAGE_PUT_DATA(MESSAGE_FLUSHING_KEYS, count_kernel_invoc * 100 / total_kernel_invoc));
+						count_kernel_invoc++;
+
 						pclSetKernelArg(param->rules.kernels[i + lenght*current_rules_count], param->param0, sizeof(cl_uint), &j);//additional param
 
 						for (cl_uint current_salt_index = 0; !stop_universe && current_salt_index < num_diff_salts; current_salt_index += MAX_SALTS_IN_KERNEL_OTHER)
@@ -3127,6 +3120,9 @@ PRIVATE void ocl_dcc_protocol_rules_work(OpenCL_Param* param)
 				}
 				else
 				{
+					send_message_gui(MESSAGE_PUT_DATA(MESSAGE_FLUSHING_KEYS, count_kernel_invoc * 100 / total_kernel_invoc));
+					count_kernel_invoc++;
+
 					int64_t multipler = rules[rules_remapped[i]].multipler;
 					if (rules[rules_remapped[i]].depend_key_lenght)
 						multipler = multipler / RULE_LENGHT_COMMON * __max(0, lenght + rules[rules_remapped[i]].key_lenght_sum);
@@ -3244,11 +3240,7 @@ out:
 		Part.ntlm_size_bit_table = 0;
 
 	// Generate code
-#ifdef OCL_RULES_ALL_IN_GPU
-	char* source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, Part.ntlm_size_bit_table, salt_values_str, BINARY_SIZE, FORMAT_BUFFER, param->NUM_KEYS_OPENCL, param->NUM_KEYS_OPENCL);
-#else
 	char* source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, Part.ntlm_size_bit_table, salt_values_str, BINARY_SIZE, FORMAT_BUFFER, param->NUM_KEYS_OPENCL, param->NUM_KEYS_OPENCL, -1);
-#endif
 
 	// Perform runtime source compilation
 	if (!build_opencl_program(param, source, gpu_devices[gpu_index].compiler_options))
@@ -3277,48 +3269,36 @@ out:
 		return FALSE;
 	}
 
-#ifndef OCL_RULES_ALL_IN_GPU
-	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
-	{
-		free(source);
-		source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, Part.ntlm_size_bit_table,
-			salt_values_str, BINARY_SIZE, FORMAT_BUFFER, param->NUM_KEYS_OPENCL, param->NUM_KEYS_OPENCL, len);
+	// Create rules kernels
+	param->rules.num_kernels = current_rules_count * (NTLM_MAX_KEY_LENGHT + 1);
+	param->rules.kernels = (cl_kernel*)calloc(param->rules.num_kernels, sizeof(cl_kernel));
+	param->rules.work_group_sizes = (size_t*)malloc(sizeof(size_t) * param->rules.num_kernels);
+	param->additional_kernels_size = current_rules_count;
+	param->additional_programs = (cl_program*)calloc(current_rules_count, sizeof(cl_program));
 
-		param->rules.program = pclCreateProgramWithSource( param->context, 1, (char const **)(&source), NULL, &code );
-		// Build program
-		if(pclBuildProgram(param->rules.program, 1, &param->id, gpu_devices[gpu_index].compiler_options, NULL, NULL ) == CL_SUCCESS)
-		{
-			pclGetProgramInfo(param->rules.program, CL_PROGRAM_BINARY_SIZES, sizeof(size_t), &param->rules.binaries_size[len], NULL);
-			param->rules.binaries[len] = malloc(param->rules.binaries_size[len]);
-			unsigned char* buffers[1] = { param->rules.binaries[len] };
-			cl_int code = pclGetProgramInfo(param->rules.program, CL_PROGRAM_BINARIES, sizeof( buffers ), &buffers, NULL);
-			if(code != CL_SUCCESS)
-				code++;
-		}
-		else
+	// Compile programs
+	for (int rule_index = 0; rule_index < current_rules_count; rule_index++)
+	{
+		send_message_gui(MESSAGE_PUT_DATA(MESSAGE_CL_COMPILING, rule_index * 100 / current_rules_count));
+
+		free(source);
+		source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, Part.ntlm_size_bit_table, salt_values_str,
+			BINARY_SIZE, FORMAT_BUFFER, param->NUM_KEYS_OPENCL, param->NUM_KEYS_OPENCL, rule_index);
+		if (!build_opencl_program_private(param, source, gpu_devices[gpu_index].compiler_options, param->additional_programs + rule_index))
 		{
 			release_opencl_param(param);
 			free(source);
 			free(small_salts_values);
 			return FALSE;
 		}
-		pclReleaseProgram(param->rules.program);
-		param->rules.program = NULL;
 	}
-#endif
-
 	// Create rules kernels
-	param->rules.num_kernels = current_rules_count*(NTLM_MAX_KEY_LENGHT + 1);
-	param->rules.kernels = (cl_kernel*)calloc(param->rules.num_kernels, sizeof(cl_kernel));
-	param->rules.work_group_sizes = (size_t*)malloc(sizeof(size_t)*param->rules.num_kernels);
-
-#ifdef OCL_RULES_ALL_IN_GPU
 	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
-		for (int i = 0; i < current_rules_count; i++)
+		for (int rule_index = 0; rule_index < current_rules_count; rule_index++)
 		{
 			char name_buffer[12];
-			sprintf(name_buffer, "ru_%il%i", i, len);
-			param->rules.kernels[i + len*current_rules_count] = pclCreateKernel(param->program, name_buffer, &code);
+			sprintf(name_buffer, "ru_%il%i", rule_index, len);
+			param->rules.kernels[rule_index + len*current_rules_count] = pclCreateKernel(param->additional_programs[rule_index], name_buffer, &code);
 			if (code != CL_SUCCESS)
 			{
 				release_opencl_param(param);
@@ -3327,7 +3307,6 @@ out:
 				return FALSE;
 			}
 		}
-#endif
 
 	// Create memory objects
 	if (!create_opencl_mem(param, GPU_ORDERED_KEYS, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint)+param->NUM_KEYS_OPENCL*gpu_key_buffer_lenght, NULL))	{ release_opencl_param(param); free(source); free(small_salts_values); return FALSE; }
@@ -3372,7 +3351,6 @@ out:
 	pclSetKernelArg(param->kernels[KERNEL_ORDERED_INDEX], 0, sizeof(cl_mem), (void*)&param->mems[GPU_CURRENT_KEY]);
 	pclSetKernelArg(param->kernels[KERNEL_ORDERED_INDEX], 1, sizeof(cl_mem), (void*)&param->mems[GPU_ORDERED_KEYS]);
 
-#ifdef OCL_RULES_ALL_IN_GPU
 	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
 		for (int i = 0; i < current_rules_count; i++)
 		{
@@ -3393,7 +3371,6 @@ out:
 				pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 4, sizeof(cl_mem), (void*)&param->mems[GPU_BIT_TABLE]);
 			}
 		}
-#endif
 
 	// Copy data to GPU
 	memset(source, 0, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint));
@@ -3431,8 +3408,6 @@ out:
 	cl_uint zero = 0;
 	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
 	{
-		oclru_check_binary_present(param, len);
-
 		for (int i = 0; i < current_rules_count; i++)
 		{
 			cl_kernel kernel = param->rules.kernels[i + len*current_rules_count];
@@ -3501,9 +3476,7 @@ out:
 
 	*gpu_crypt = FORMAT_USE_SALT ? ocl_dcc_protocol_rules_work : ocl_protocol_rules_work;
 	param->additional_param = kernels2common + kernel2common_index;
-#ifndef OCL_RULES_ALL_IN_GPU
-	param->rules.gpu_index = gpu_index;
-#endif
+
 	return TRUE;
 }
 
@@ -3567,8 +3540,6 @@ PRIVATE void ocl_ssha_protocol_rules_work(OpenCL_Param* param)
 
 			while (continue_attack && (current_num_keys * num_diff_salts - current_offsets_by_len) >= param->NUM_KEYS_OPENCL)
 			{
-				oclru_check_binary_present(param, lenght);
-
 				// Take into account in the offset the already proccessed keys
 				cl_uint current_offset = current_offsets_by_len + num_keys_complete_proccessed_total*num_diff_salts;
 
@@ -3665,7 +3636,12 @@ PRIVATE void ocl_ssha_protocol_rules_work(OpenCL_Param* param)
 	pclEnqueueReadBuffer(param->queue, param->mems[GPU_ORDERED_KEYS], CL_TRUE, 0, (NTLM_MAX_KEY_LENGHT + 1) * sizeof(cl_uint), &gpu_num_keys_by_len, 0, NULL, NULL);
 	num_keys_in_memory = 0;
 	// Calculate the number of keys in memory
+	uint32_t count_kernel_invoc = 0, total_kernel_invoc = 0;
 	for (int lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+	{
+		if (gpu_num_keys_by_len[lenght])
+			total_kernel_invoc++;
+
 		for (int i = 0; i < current_rules_count; i++)
 		{
 			int64_t multipler = rules[rules_remapped[i]].multipler;
@@ -3674,16 +3650,21 @@ PRIVATE void ocl_ssha_protocol_rules_work(OpenCL_Param* param)
 
 			num_keys_in_memory += gpu_num_keys_by_len[lenght] * multipler;
 		}
+	}
 	rules_report_remain_key_space(num_keys_in_memory, param->thread_id);
 
 	for (int lenght = 0; !stop_universe && lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
 	{
+		if (gpu_num_keys_by_len[lenght])
+		{
+			send_message_gui(MESSAGE_PUT_DATA(MESSAGE_FLUSHING_KEYS, count_kernel_invoc * 100 / total_kernel_invoc));
+			count_kernel_invoc++;
+		}
+
 		cl_uint num_keys_complete_proccessed_total = 0;// The total of keys completly proccessed
 
-		while (gpu_num_keys_by_len[lenght])
+		while (!stop_universe && gpu_num_keys_by_len[lenght])
 		{
-			oclru_check_binary_present(param, lenght);
-
 			// Take into account in the offset the already proccessed keys
 			cl_uint current_offset = gpu_offsets_by_len[lenght] + num_keys_complete_proccessed_total*num_diff_salts;
 
@@ -3811,11 +3792,7 @@ out:
 	}
 
 	// Generate code
-#ifdef OCL_RULES_ALL_IN_GPU
-	char* source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, 0, NULL, BINARY_SIZE, FORMAT_BUFFER, param->param1, param->param1*2);
-#else
 	char* source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, 0, NULL, BINARY_SIZE, FORMAT_BUFFER, param->param1, param->param1*2, -1);
-#endif
 	sprintf(source + strlen(source),
 			"\n__kernel void move_to_begin(__global uint* keys, uint base_pos, uint len, uint offset, uint count)"
 			"{"
@@ -3839,48 +3816,36 @@ out:
 	create_kernel(param, KERNEL_ORDERED_INDEX, "common2ordered");
 	create_kernel(param, KERNEL_RULE_MOVE_TO_BEGIN, "move_to_begin");
 
-#ifndef OCL_RULES_ALL_IN_GPU
-	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
-	{
-		cl_int code;
-		free(source);
-		source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, 0, NULL, BINARY_SIZE, FORMAT_BUFFER, param->param1, param->param1 * 2, len);
+	// Create rules kernels
+	param->rules.num_kernels = current_rules_count*(NTLM_MAX_KEY_LENGHT + 1);
+	param->rules.kernels = (cl_kernel*)calloc(param->rules.num_kernels, sizeof(cl_kernel));
+	param->rules.work_group_sizes = (size_t*)malloc(sizeof(size_t)*param->rules.num_kernels);
+	param->additional_kernels_size = current_rules_count;
+	param->additional_programs = (cl_program*)calloc(current_rules_count, sizeof(cl_program));
 
-		param->rules.program = pclCreateProgramWithSource(param->context, 1, (char const **)(&source), NULL, &code);
-		// Build program
-		if (pclBuildProgram(param->rules.program, 1, &param->id, gpu_devices[gpu_index].compiler_options, NULL, NULL) == CL_SUCCESS)
-		{
-			pclGetProgramInfo(param->rules.program, CL_PROGRAM_BINARY_SIZES, sizeof(size_t), &param->rules.binaries_size[len], NULL);
-			param->rules.binaries[len] = malloc(param->rules.binaries_size[len]);
-			unsigned char* buffers[1] = { param->rules.binaries[len] };
-			code = pclGetProgramInfo(param->rules.program, CL_PROGRAM_BINARIES, sizeof(buffers), &buffers, NULL);
-			if (code != CL_SUCCESS)
-				code++;
-		}
-		else
+	// Compile programs
+	for (int rule_index = 0; rule_index < current_rules_count; rule_index++)
+	{
+		send_message_gui(MESSAGE_PUT_DATA(MESSAGE_CL_COMPILING, rule_index * 100 / current_rules_count));
+
+		free(source);
+		source = ocl_gen_rules_code(&gpu_devices[gpu_index], param, kernel2common_index, ocl_write_header, ocl_gen_kernel, 0, NULL, BINARY_SIZE, 
+			FORMAT_BUFFER, param->param1, param->param1 * 2, rule_index);
+		if (!build_opencl_program_private(param, source, gpu_devices[gpu_index].compiler_options, param->additional_programs + rule_index))
 		{
 			release_opencl_param(param);
 			free(source);
 			return FALSE;
 		}
-		pclReleaseProgram(param->rules.program);
-		param->rules.program = NULL;
 	}
-#endif
-
 	// Create rules kernels
-	param->rules.num_kernels = current_rules_count*(NTLM_MAX_KEY_LENGHT + 1);
-	param->rules.kernels = (cl_kernel*)calloc(param->rules.num_kernels, sizeof(cl_kernel));
-	param->rules.work_group_sizes = (size_t*)malloc(sizeof(size_t)*param->rules.num_kernels);
-
-#ifdef OCL_RULES_ALL_IN_GPU
 	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
-		for (int i = 0; i < current_rules_count; i++)
+		for (int rule_index = 0; rule_index < current_rules_count; rule_index++)
 		{
 			cl_int code;
 			char name_buffer[12];
-			sprintf(name_buffer, "ru_%il%i", i, len);
-			param->rules.kernels[i + len*current_rules_count] = pclCreateKernel(param->program, name_buffer, &code);
+			sprintf(name_buffer, "ru_%il%i", rule_index, len);
+			param->rules.kernels[rule_index + len * current_rules_count] = pclCreateKernel(param->additional_programs[rule_index], name_buffer, &code);
 			if (code != CL_SUCCESS)
 			{
 				release_opencl_param(param);
@@ -3888,7 +3853,6 @@ out:
 				return FALSE;
 			}
 		}
-#endif
 
 	// Create memory objects
 	create_opencl_mem(param, GPU_ORDERED_KEYS, CL_MEM_READ_WRITE, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint) + param->param1*2*gpu_key_buffer_lenght, NULL);
@@ -3919,7 +3883,6 @@ out:
 
 	pclSetKernelArg(param->kernels[KERNEL_RULE_MOVE_TO_BEGIN], 0, sizeof(cl_mem), &param->mems[GPU_ORDERED_KEYS]);
 
-#ifdef OCL_RULES_ALL_IN_GPU
 	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
 		for (int i = 0; i < current_rules_count; i++)
 		{
@@ -3934,7 +3897,6 @@ out:
 				pclSetKernelArg(param->rules.kernels[i + len*current_rules_count], 6, sizeof(cl_mem), &param->mems[GPU_SAME_SALT_NEXT]);
 			}
 		}
-#endif
 
 	// Copy data to GPU
 	memset(source, 0, MAX_KEY_LENGHT_SMALL * sizeof(cl_uint));
@@ -3975,8 +3937,6 @@ out:
 	cl_uint zero = 0;
 	for (int len = 0; len <= NTLM_MAX_KEY_LENGHT; len++)
 	{
-		oclru_check_binary_present(param, len);
-
 		for (int i = 0; i < current_rules_count; i++)
 		{
 			cl_kernel kernel = param->rules.kernels[i + len*current_rules_count];
@@ -4044,9 +4004,7 @@ out:
 
 	*gpu_crypt = ocl_ssha_protocol_rules_work;
 	param->additional_param = kernels2common + kernel2common_index;
-#ifndef OCL_RULES_ALL_IN_GPU
-	param->rules.gpu_index = gpu_index;
-#endif
+
 	return TRUE;
 }
 
@@ -4535,13 +4493,25 @@ PRIVATE void ocl_rule_work_slow_hashes_ordered(OpenCL_Param* param)
 
 	num_keys_in_memory = 0;
 	// Calculate the number of keys in memory
+	uint32_t count_kernel_invoc = 0, total_kernel_invoc = 0;
 	for (cl_uint lenght = 0; lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
+	{
+		if (gpu_num_keys_by_len[lenght])
+			total_kernel_invoc++;
+
 		num_keys_in_memory += gpu_num_keys_by_len[lenght];
+	}
 	rules_report_remain_key_space(num_keys_in_memory, param->thread_id);
 
 	// Process the remaining in memory
 	for (cl_uint lenght = 0; !stop_universe && lenght <= NTLM_MAX_KEY_LENGHT; lenght++)
 	{
+		if (gpu_num_keys_by_len[lenght])
+		{
+			send_message_gui(MESSAGE_PUT_DATA(MESSAGE_FLUSHING_KEYS, count_kernel_invoc * 100 / total_kernel_invoc));
+			count_kernel_invoc++;
+		}
+
 		cl_uint num_keys_complete_proccessed_total = 0;// The total of keys completly proccessed
 
 		while (gpu_num_keys_by_len[lenght])
@@ -4839,8 +4809,14 @@ PRIVATE void ocl_rule_work_slow_hashes_ordered_simple(OpenCL_Param* param)
 
 	num_keys_in_memory = 0;
 	// Calculate the number of keys in memory
+	cl_uint count_kernel_invoc = 0, total_kernel_invoc = 0;
 	for (cl_uint length = 0; length <= NTLM_MAX_KEY_LENGHT; length++)
+	{
+		if (gpu_num_keys_by_len[length])
+			total_kernel_invoc += num_diff_salts;
+
 		num_keys_in_memory += gpu_num_keys_by_len[length];
+	}
 	rules_report_remain_key_space(num_keys_in_memory, param->thread_id);
 
 	// Process the remaining in memory
@@ -4848,8 +4824,13 @@ PRIVATE void ocl_rule_work_slow_hashes_ordered_simple(OpenCL_Param* param)
 		if (gpu_num_keys_by_len[length])
 		{
 			size_t num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(gpu_num_keys_by_len[length], param->max_work_group_size);
-			for (cl_uint salt_index = 0; salt_index < num_diff_salts; salt_index++)
+			for (cl_uint salt_index = 0; !stop_universe && salt_index < num_diff_salts; salt_index++)
+			{
+				send_message_gui(MESSAGE_PUT_DATA(MESSAGE_FLUSHING_KEYS, count_kernel_invoc * 100 / total_kernel_invoc));
+				count_kernel_invoc++;
+
 				ocl_work_body(param, length, gpu_num_keys_by_len[length], gpu_pos_ordered_by_len[length], salt_index, num_work_items);
+			}
 			report_keys_processed(gpu_num_keys_by_len[length]);
 		}
 
@@ -4918,15 +4899,22 @@ PRIVATE void ocl_work_slow_hashes_ordered_simple(OpenCL_Param* param)
 			result = param->gen(buffer, param->NUM_KEYS_OPENCL, param->thread_id);
 	}
 
-	send_message_gui(MESSAGE_FLUSHING_KEYS);
+	cl_uint total_lengths = 0, count_length = 0;
+	for (cl_uint length = 0; length <= NTLM_MAX_KEY_LENGHT; length++)
+		if (gpu_num_keys_by_len[length])
+			total_lengths += num_diff_salts;
 
 	// Process the remaining in memory
 	for (cl_uint length = 0; !stop_universe && length <= NTLM_MAX_KEY_LENGHT; length++)
 		if (gpu_num_keys_by_len[length])
-		{			
+		{
 			size_t num_work_items = OCL_MULTIPLE_WORKGROUP_SIZE(gpu_num_keys_by_len[length], param->max_work_group_size);
-			for (cl_uint salt_index = 0; salt_index < num_diff_salts; salt_index++)
+			for (cl_uint salt_index = 0; !stop_universe && salt_index < num_diff_salts; salt_index++)
+			{
+				send_message_gui(MESSAGE_PUT_DATA(MESSAGE_FLUSHING_KEYS, count_length * 100 / total_lengths));
+				count_length++;
 				ocl_work_body(param, length, gpu_num_keys_by_len[length], gpu_pos_ordered_by_len[length], salt_index, num_work_items);
+			}
 			report_keys_processed(gpu_num_keys_by_len[length]);
 		}
 

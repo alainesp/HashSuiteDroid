@@ -935,7 +935,7 @@ PRIVATE void ocl_gen_load_w(char* block[32],
 		buffer_len += ocl_gen_update_buffer_be(block, data_prefix3, data_len3, buffer_len);
 	ocl_gen_finish_buffer_be(block, buffer_len);
 }
-PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_uint key_len, cl_uint salt_len)
+PRIVATE void ocl_gen_sha256body_by_lenght(char* source, cl_uint key_len, cl_uint salt_len)
 {
 	sprintf(source + strlen(source),
 		"\n__kernel void sha256crypt_cycle%ux%u(__global uint* current_data,uint rounds)"
@@ -1175,84 +1175,26 @@ PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_
 			"GET_DATA(7u)=state7;"
 		"}\n");
 }
-PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules)
+PRIVATE void ocl_gen_header_needed_by_crypts(char* source, const GPUDevice* gpu, cl_uint NUM_KEYS_OPENCL, int use_rules)
 {
-	// Generate code
-	assert(use_rules >= 0);
-	char* source = malloc(32 * 1024 * (1 + use_rules) + 8 * 1024 * (MAX_KEY_SIZE + 1) * MAX_SALT_SIZE);
-	source[0] = 0;
-	// Header definitions
-	//if(num_passwords_loaded > 1 )
-	strcat(source, "#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable\n");
 	if (gpu->flags & GPU_FLAG_SUPPORT_AMD_OPS)
 		strcat(source, "#pragma OPENCL EXTENSION cl_amd_media_ops : enable\n");
 
+	sprintf(source + strlen(source), "#define GET_DATA(index) current_data[(%uu+index)*%uu+get_global_id(0)]\n"
+		, use_rules ? 8 : 0, NUM_KEYS_OPENCL);
+
+	// Utilities
 	sprintf(source + strlen(source), "#define bytealign(high,low,shift) (%s)\n", (gpu->flags & GPU_FLAG_SUPPORT_AMD_OPS) ? "amd_bytealign(high,low,shift)" : "((high<<(32u-shift*8u))|(low>>(shift*8u)))");
 	sprintf(source + strlen(source), "#define bs(c,b,a) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bitselect((c),(b),(a))" : "((c)^((a)&((b)^(c))))");
 	sprintf(source + strlen(source), "#define MAJ(b,c,d) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
 
-	//Initial values
-	sprintf(source + strlen(source),
-		"typedef struct {"
-			"uint rounds;"
-			"uint saltlen;"
-			"uint salt[4];"
-		"} crypt_sha256_salt;\n"
-
-		"#define GET_DATA(index) current_data[(%uu+index)*%uu+get_global_id(0)]\n"
-		, use_rules ? 8 : 0, param->NUM_KEYS_OPENCL);
-
-	// Helpers
-	sprintf(source + strlen(source), "\n"
-		"#ifdef __ENDIAN_LITTLE__\n"
-			"#define SWAP_ENDIANNESS(x,data) x=rotate(data,16u);x=((x&0x00FF00FFu)<<8u)|((x>>8u)&0x00FF00FFu);\n"
-		"#else\n"
-			"#define SWAP_ENDIANNESS(x,data) x=data;\n"
-		"#endif\n"
-		"inline uint update_buffer_be(uint block[32],uint* data,uint data_len,uint buffer_len)"
-		"{"
-			"uint len3=8u*(buffer_len&3u);"
-			"if(len3)"
-			"{"
-				"uint block_value=block[buffer_len/4]&(0xffffff00u<<(24u-len3));"
-
-				"for(uint i=0;i<((data_len+3)/4);i++){"
-					"uint data_value=data[i];"
-					"block[buffer_len/4+i]=block_value|(data_value>>len3);"
-					"block_value=data_value<<(32u-len3);"
-				"}"
-				"block[buffer_len/4+((data_len+3)/4)]=block_value;"
-			"}else{"
-				"for(uint i=0;i<((data_len+3)/4);i++)"
-					"block[buffer_len/4+i]=data[i];"
-			"}"
-			"return data_len;"
-		"}");
 	// Main hash function
-	sprintf(source + strlen(source), "\n"
-		"#define sha256_process_block(state0,state1,state2,state3,state4,state5,state6,state7,W,w_base_index) "
-			"W00=W[w_base_index+0u];"
-			"W01=W[w_base_index+1u];"
-			"W02=W[w_base_index+2u];"
-			"W03=W[w_base_index+3u];"
-			"W04=W[w_base_index+4u];"
-			"W05=W[w_base_index+5u];"
-			"W06=W[w_base_index+6u];"
-			"W07=W[w_base_index+7u];"
-			"W08=W[w_base_index+8u];"
-			"W09=W[w_base_index+9u];"
-			"W10=W[w_base_index+10u];"
-			"W11=W[w_base_index+11u];"
-			"W12=W[w_base_index+12u];"
-			"W13=W[w_base_index+13u];"
-			"W14=W[w_base_index+14u];"
-			"W15=W[w_base_index+15u];"
-			"sha256_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7);\n"
-
+	sprintf(source + strlen(source),
 		"#define R_E(x) (rotate(x,26u)^rotate(x,21u)^rotate(x,7u))\n"
 		"#define R_A(x) (rotate(x,30u)^rotate(x,19u)^rotate(x,10u))\n"
 		"#define R0(x)  (rotate(x,25u)^rotate(x,14u)^(x>>3))\n"
 		"#define R1(x)  (rotate(x,15u)^rotate(x,13u)^(x>>10))\n"
+
 		"#define sha256_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7) "
 
 			"A=state0;"
@@ -1341,7 +1283,71 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules
 			"state5+=F;"
 			"state6+=G;"
 			"state7+=H;"
-		"\n");
+				"\n");
+}
+PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules)
+{
+	// Generate code
+	assert(use_rules >= 0);
+	char* source = malloc(32ull * 1024 * (1ull + use_rules) + 8 * 1024 * (MAX_KEY_SIZE + 1) * MAX_SALT_SIZE);
+	source[0] = 0;
+	// Header definitions
+	//if(num_passwords_loaded > 1 )
+	strcat(source, "#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable\n");
+	ocl_gen_header_needed_by_crypts(source, gpu, param->NUM_KEYS_OPENCL, use_rules);
+
+	// Helpers
+	sprintf(source + strlen(source), "\n"
+		"typedef struct {"
+			"uint rounds;"
+			"uint saltlen;"
+			"uint salt[4];"
+		"} crypt_sha256_salt;\n"
+
+		"#ifdef __ENDIAN_LITTLE__\n"
+			"#define SWAP_ENDIANNESS(x,data) x=as_uint(as_uchar4(data).s3210);\n"
+		"#else\n"
+			"#define SWAP_ENDIANNESS(x,data) x=data;\n"
+		"#endif\n"
+		"inline uint update_buffer_be(uint block[32],uint* data,uint data_len,uint buffer_len)"
+		"{"
+			"uint len3=8u*(buffer_len&3u);"
+			"if(len3)"
+			"{"
+				"uint block_value=block[buffer_len/4]&(0xffffff00u<<(24u-len3));"
+
+				"for(uint i=0;i<((data_len+3)/4);i++){"
+					"uint data_value=data[i];"
+					"block[buffer_len/4+i]=block_value|(data_value>>len3);"
+					"block_value=data_value<<(32u-len3);"
+				"}"
+				"block[buffer_len/4+((data_len+3)/4)]=block_value;"
+			"}else{"
+				"for(uint i=0;i<((data_len+3)/4);i++)"
+					"block[buffer_len/4+i]=data[i];"
+			"}"
+			"return data_len;"
+		"}");
+	// Main hash function
+	sprintf(source + strlen(source), "\n"
+		"#define sha256_process_block(state0,state1,state2,state3,state4,state5,state6,state7,W,w_base_index) "
+			"W00=W[w_base_index+0u];"
+			"W01=W[w_base_index+1u];"
+			"W02=W[w_base_index+2u];"
+			"W03=W[w_base_index+3u];"
+			"W04=W[w_base_index+4u];"
+			"W05=W[w_base_index+5u];"
+			"W06=W[w_base_index+6u];"
+			"W07=W[w_base_index+7u];"
+			"W08=W[w_base_index+8u];"
+			"W09=W[w_base_index+9u];"
+			"W10=W[w_base_index+10u];"
+			"W11=W[w_base_index+11u];"
+			"W12=W[w_base_index+12u];"
+			"W13=W[w_base_index+13u];"
+			"W14=W[w_base_index+14u];"
+			"W15=W[w_base_index+15u];"
+			"sha256_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7);\n");
 
 	// Init function definition
 	sprintf(source + strlen(source), "\n"
@@ -1511,8 +1517,16 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules
 		"uint index=salt_index[current_salt_index];"
 		"while(index!=0xffffffff)"
 		"{"
-			"if(GET_DATA(0)==bin[8u*index+0]&&GET_DATA(1)==bin[8u*index+1u]&&GET_DATA(2)==bin[8u*index+2u]&&GET_DATA(3)==bin[8u*index+3u]&&"
-				"GET_DATA(4)==bin[8u*index+4]&&GET_DATA(5)==bin[8u*index+5u]&&GET_DATA(6)==bin[8u*index+6u]&&GET_DATA(7)==bin[8u*index+7u])"
+			// Did it match?
+			"bool isFound=true;"
+			"for(uint i=0;i<8u;i++){"
+				"if(GET_DATA(i)!=bin[8u*index+i]){"
+					"isFound=false;"
+					"break;"
+				"}"
+			"}"
+
+			"if(isFound)"
 			"{"
 				"uint found=atomic_inc(output);"
 				"output[2*found+1]=idx;"
@@ -1666,20 +1680,10 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules
 	//		"GET_DATA(7u)=state7;"
 	//	"}\n");
 
-	uint32_t exist_salt_by_len[MAX_SALT_SIZE+1];
-	memset(exist_salt_by_len, FALSE, sizeof(exist_salt_by_len));
-	for (uint32_t i = 0; i < num_diff_salts; i++)
-		exist_salt_by_len[((const crypt_sha256_salt*)salts_values)->saltlen] = TRUE;
-
-	// Generate specific code for each length
-	for (cl_uint key_len = 0; key_len <= MAX_KEY_SIZE; key_len++)
-		for (uint32_t salt_len = 1; salt_len <= MAX_SALT_SIZE; salt_len++)
-			if(exist_salt_by_len[salt_len])
-				ocl_gen_sha256body_by_lenght(source + strlen(source), param, key_len, salt_len);
-
 	//size_t len = strlen(source);
 	return source;
 }
+int build_opencl_program_private(OpenCL_Param* param, const char* source, char* compiler_options, cl_program* program);
 PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules)
 {
 	// Only one hash
@@ -1708,7 +1712,7 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 	// For AMD HD 7970
 	// Hashcat: 
 	// Theoretical: 
-	// HS by len : 
+	// HS by len: 
 	if (!ocl_init_slow_hashes_ordered(param, gpu_index, gen, gpu_crypt, ocl_kernel_provider, use_rules, (use_rules ? 8 : 0) + 20, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 4, MAX_KEY_SIZE, TRUE))
 		return FALSE;
 
@@ -1753,31 +1757,61 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 	param->additional_kernels = malloc(param->additional_kernels_size * sizeof(cl_kernel));
 	memset(param->additional_kernels, 0, param->additional_kernels_size * sizeof(cl_kernel));
 	assert(param->additional_kernels);
+	param->additional_programs = malloc(param->additional_kernels_size * sizeof(cl_program));
+	memset(param->additional_programs, 0, param->additional_kernels_size * sizeof(cl_program));
+	assert(param->additional_programs);
 	// Pre-calculate salt sizes
 	uint32_t exist_salt_by_len[MAX_SALT_SIZE + 1];
 	memset(exist_salt_by_len, FALSE, sizeof(exist_salt_by_len));
 	for (uint32_t i = 0; i < num_diff_salts; i++)
-		exist_salt_by_len[((const crypt_sha256_salt*)salts_values)->saltlen] = TRUE;
+		exist_salt_by_len[((const crypt_sha256_salt*)salts_values)[i].saltlen] = TRUE;
+
+	// Generate specific code for each length
+	char* source = malloc(32 * 1024);
+	uint32_t count_kernels = 0;
+	uint32_t total_kernels = 0;
+	for (uint32_t salt_len = 1; salt_len <= MAX_SALT_SIZE; salt_len++)
+		if (exist_salt_by_len[salt_len])
+			total_kernels += MAX_KEY_SIZE + 1;
 
 	for (cl_uint key_len = 0; key_len <= MAX_KEY_SIZE; key_len++)
 		for (uint32_t salt_len = 1; salt_len <= MAX_SALT_SIZE; salt_len++)
 			if (exist_salt_by_len[salt_len])
 			{
+				cl_program* add_program = param->additional_programs + key_len * MAX_SALT_SIZE + salt_len - 1;
+				cl_kernel* add_kernel = param->additional_kernels + key_len * MAX_SALT_SIZE + salt_len - 1;
+
+				send_message_gui(MESSAGE_PUT_DATA(MESSAGE_CL_COMPILING, count_kernels * 100 / total_kernels));
+				// Generate source and compile it
+				source[0] = 0;
+				ocl_gen_header_needed_by_crypts(source, gpu_devices + gpu_index, param->NUM_KEYS_OPENCL, use_rules);
+				ocl_gen_sha256body_by_lenght(source + strlen(source), key_len, salt_len);
+				if (!build_opencl_program_private(param, source, gpu_devices[gpu_index].compiler_options, add_program))
+				{
+					free(source);
+					release_opencl_param(param);
+					return FALSE;
+				}
+				count_kernels++;
+
+				// Create kernel
 				cl_int code;
 				char name[32];
 				sprintf(name, "sha256crypt_cycle%ux%u", key_len, salt_len);
-				param->additional_kernels[key_len * MAX_SALT_SIZE + salt_len - 1] = pclCreateKernel(param->additional_program, name, &code);
+				*add_kernel = pclCreateKernel(*add_program, name, &code);
 
 				//	                        keylen-x-saltlen
 				//__kernel void sha256crypt_cycle%ux%u(__global uint* current_data,uint rounds)
+				assert(code == CL_SUCCESS);
 				if (code == CL_SUCCESS)
-					pclSetKernelArg(param->additional_kernels[key_len * MAX_SALT_SIZE + salt_len - 1], 0, sizeof(cl_mem), (void*)&param->mems[GPU_CURRENT_KEY]);
+					pclSetKernelArg(*add_kernel, 0, sizeof(cl_mem), (void*)&param->mems[GPU_CURRENT_KEY]);
 			}
 
+	free(source);
 	// Select best params
 	uint32_t max_salt_len = MAX_SALT_SIZE;
 	for (; !exist_salt_by_len[max_salt_len]; max_salt_len--);
-	cl_uint rounds = 42*8;
+	cl_uint rounds = 42 * 8;
 	ocl_calculate_best_work_group(param, param->additional_kernels + MAX_KEY_SIZE * MAX_SALT_SIZE + (max_salt_len-1), INT32_MAX, &rounds, 1, FALSE, CL_TRUE);
 	// Manage rounds
 	if (rounds == 0) rounds = 1;
@@ -1792,8 +1826,8 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 	// If it's too high
 	uint32_t min_rounds = UINT32_MAX;
 	for (size_t i = 0; i < num_diff_salts; i++)
-		if (min_rounds > ((const crypt_sha256_salt*)salts_values)->rounds)
-			min_rounds = ((const crypt_sha256_salt*)salts_values)->rounds;
+		if (min_rounds > ((const crypt_sha256_salt*)salts_values)[i].rounds)
+			min_rounds = ((const crypt_sha256_salt*)salts_values)[i].rounds;
 
 	if (rounds > min_rounds)
 	{

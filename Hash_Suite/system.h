@@ -23,7 +23,6 @@
 	#define OCL_NORMAL_KERNEL_TIME		40
 	#define HS_OCL_REDUCE_REGISTER_USE
 	#define OCL_MIN_WORKGROUP_SIZE		32
-	#define OCL_RULES_ALL_IN_GPU
 
 	#define Sleep(ms) usleep((ms)*((useconds_t)1000))
 	// Log support------------------------------------------
@@ -74,7 +73,6 @@
 	#define OPENCL_DLL "OpenCL.dll"
 	#define OCL_NORMAL_KERNEL_TIME 50
 	#define OCL_MIN_WORKGROUP_SIZE 64
-	#define OCL_RULES_ALL_IN_GPU
 	// Log support------------------------------------------
 	#define HS_LOG_DEBUG		0
 	#define HS_LOG_INFO			1

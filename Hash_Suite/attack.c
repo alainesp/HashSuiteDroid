@@ -132,7 +132,7 @@ PRIVATE void* backup_ids = NULL;
 PRIVATE void set_cache(int format_index)
 {
 	// TODO: This is because the copy of salts it's currently done wrong
-	if (formats[format_index].salt_size && num_diff_salts != num_passwords_found)
+	if (formats[format_index].salt_size && num_diff_salts != num_passwords_loaded)
 	{
 		cache_had_hashes = FALSE;
 	}
@@ -858,10 +858,10 @@ PRIVATE void load_hashes_benchmark(int format_index)
 		// Handle non-random salts-binary
 		switch (format_index)
 		{
-		case SHA256CRYPT_INDEX:
+		case SHA256CRYPT_INDEX: case SHA512CRYPT_INDEX:
 		{
 			crypt_sha256_salt* sha256_salt = (crypt_sha256_salt*)salt_value;
-			sha256_salt->saltlen = 8;
+			sha256_salt->saltlen = 16;
 			sha256_salt->rounds = 5000;
 			memset(sha256_salt->salt + sha256_salt->saltlen, 0, sizeof(sha256_salt->salt) - sha256_salt->saltlen);
 		}

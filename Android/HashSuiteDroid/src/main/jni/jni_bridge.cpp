@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2014-2020 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2014-2021 by Alain Espinosa. See LICENSE.
 
 #include <cstring>
 #include <jni.h>
@@ -29,6 +29,7 @@ PRIVATE jmethodID mid_attack_begin = nullptr;
 PRIVATE jmethodID mid_send_message = nullptr;
 PRIVATE int benchmark_init_complete = FALSE;
 extern "C" void flush_fam();
+PRIVATE int benchmark_gpu_fails = FALSE;
 PRIVATE void receive_message(int message)
 {
     JNIEnv *env = nullptr;
@@ -52,6 +53,8 @@ PRIVATE void receive_message(int message)
 
 			cached_jvm->AttachCurrentThread(&env, nullptr);
 			env->CallStaticVoidMethod(cls, mid_finish_batch);
+			if(stop_universe && !is_found_all_hashes(batch[current_attack_index].format_index))
+                env->CallStaticVoidMethod(cls, mid_send_message, MESSAGE_HARD_STOP);
 			env->DeleteGlobalRef(cls);
 			cls = nullptr;
 			cached_jvm->DetachCurrentThread();
@@ -72,6 +75,9 @@ PRIVATE void receive_message(int message)
 		}
 		break;
 
+    case MESSAGE_ATTACK_GPU_FAIL:
+    case MESSAGE_FLUSHING_KEYS:
+    case MESSAGE_CL_COMPILING:
     case MESSAGE_TESTING_INIT_COMPLETE:
     case MESSAGE_TESTING_SUCCEED:
     case MESSAGE_TESTING_FAIL:

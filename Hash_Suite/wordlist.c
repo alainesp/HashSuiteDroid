@@ -143,6 +143,9 @@ PRIVATE int getline_plaintext(unsigned char* current_key, int max_lenght)
 		uint32_t length_flag = getline_uint0((uint32_t*)(wordlist_buffer + buffer_pos), (uint32_t*)current_key, max_lenght);
 		length = length_flag & 0xffff;
 		buffer_pos += length + (length_flag >> 16);
+		// Handle Windows convention
+		if (buffer_pos >= 1 && wordlist_buffer[buffer_pos - 1] == '\r' && wordlist_buffer[buffer_pos] == '\n')
+			buffer_pos++;
 	}
 	else//copy line: General version
 		for(; length < max_lenght; buffer_pos++, length++)
@@ -286,6 +289,9 @@ PRIVATE int getline_zip(unsigned char* current_key, int max_lenght)
 		uint32_t length_flag = getline_uint0((uint32_t*)(wordlist_buffer + buffer_pos), (uint32_t*)current_key, max_lenght);
 		length = length_flag & 0xffff;
 		buffer_pos += length + (length_flag >> 16);
+		// Handle Windows convention
+		if (buffer_pos >= 1 && wordlist_buffer[buffer_pos - 1] == '\r' && wordlist_buffer[buffer_pos] == '\n')
+			buffer_pos++;
 	}
 	else//copy line: General version
 		for(; length < max_lenght; buffer_pos++, length++)
@@ -409,6 +415,9 @@ PRIVATE int getline_gz(unsigned char* current_key, int max_lenght)
 		uint32_t length_flag = getline_uint0((uint32_t*)(wordlist_buffer + buffer_pos), (uint32_t*)current_key, max_lenght);
 		length = length_flag & 0xffff;
 		buffer_pos += length + (length_flag >> 16);
+		// Handle Windows convention
+		if (buffer_pos >= 1 && wordlist_buffer[buffer_pos - 1] == '\r' && wordlist_buffer[buffer_pos] == '\n')
+			buffer_pos++;
 	}
 	else//copy line: General version
 		for(; length < max_lenght; buffer_pos++, length++)
@@ -540,6 +549,9 @@ PRIVATE int getline_bz2(unsigned char* current_key, int max_lenght)
 		uint32_t length_flag = getline_uint0((uint32_t*)(wordlist_buffer + buffer_pos), (uint32_t*)current_key, max_lenght);
 		length = length_flag & 0xffff;
 		buffer_pos += length + (length_flag >> 16);
+		// Handle Windows convention
+		if (buffer_pos >= 1 && wordlist_buffer[buffer_pos - 1] == '\r' && wordlist_buffer[buffer_pos] == '\n')
+			buffer_pos++;
 	}
 	else//copy line: General version
 		for(; length < max_lenght; buffer_pos++, length++)
@@ -1000,7 +1012,7 @@ PUBLIC int wordlist_gen_utf8(unsigned char* keys, uint32_t max_number, int threa
 
 	// Getting approximate key-space
 	wordlist_func.calculate_completition();
-	num_key_space = (int64_t)((get_num_keys_served()+i) * wordlist_completition);
+	num_key_space = (int64_t)((get_num_keys_served() + i) * wordlist_completition);
 
 	HS_LEAVE_MUTEX(&key_provider_mutex);	
 	return i;

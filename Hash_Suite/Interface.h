@@ -12,6 +12,7 @@
 #include "compilation_flags.h"
 
 #ifdef HS_OPENCL_SUPPORT
+#define CL_TARGET_OPENCL_VERSION 120
 #include "OpenCL\cl.h"
 #include "OpenCL\cl_ext.h"
 #include "OpenCL\cuda_drvapi_dynlink_cuda.h"
@@ -85,13 +86,6 @@ typedef struct OCL_Rules
 	cl_kernel* kernels;
 	size_t* work_group_sizes;
 	cl_uint num_kernels;
-
-#ifndef OCL_RULES_ALL_IN_GPU
-	int gpu_index;
-	cl_program program;
-	unsigned char* binaries[MAX_KEY_LENGHT_SMALL];
-	size_t binaries_size[MAX_KEY_LENGHT_SMALL];
-#endif
 }
 OCL_Rules;
 
@@ -136,6 +130,7 @@ typedef struct OpenCL_Param
 	void* additional_param;
 	void* additional_param1;
 	cl_kernel* additional_kernels;
+	cl_program* additional_programs;
 	cl_uint additional_kernels_size;
 	cl_program additional_program;
 	// Needed by rules
@@ -154,6 +149,13 @@ typedef int create_gpu_crypt_funtion(OpenCL_Param*, cl_uint, generate_key_funtio
 #define MESSAGE_TESTING_FAIL			6
 #define MESSAGE_TESTING_SUCCEED			7
 #define MESSAGE_FLUSHING_KEYS			8
+#define MESSAGE_CL_COMPILING            9
+#define MESSAGE_TESTING_PROGRESS       10
+#define MESSAGE_HARD_STOP			   11
+
+#define MESSAGE_MASK                    0xffff
+#define MESSAGE_PUT_DATA(message, data) ((message) | ((data)<<16))
+#define MESSAGE_GET_DATA(message)       ((message)>>16)
 typedef void callback_funtion(int message);
 
 ////////////////////////////////////////////////////////////////////////////////////

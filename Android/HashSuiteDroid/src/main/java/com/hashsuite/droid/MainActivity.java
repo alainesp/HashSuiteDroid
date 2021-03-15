@@ -1,6 +1,6 @@
 /*
 This file is part of Hash Suite password cracker,
-Copyright (c) 2014-2020 by Alain Espinosa. See LICENSE.
+Copyright (c) 2014-2021 by Alain Espinosa. See LICENSE.
 */
 
 package com.hashsuite.droid;
@@ -963,10 +963,16 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	//private static final int MESSAGE_TESTING_INIT_COMPLETE=	5;
 	private static final int MESSAGE_TESTING_FAIL		  =	6;
 	//private static final int MESSAGE_TESTING_SUCCEED	  = 7;
+	private static final int MESSAGE_FLUSHING_KEYS	      = 8;
+	private static final int MESSAGE_CL_COMPILING	      = 9;
+	private static final int MESSAGE_HARD_STOP	          = 11;
+	private static final int MESSAGE_MASK	  = 0xffff;
+	private static int MESSAGE_GET_DATA(int message) { return message >> 16; }
+	private static Toast lastToast = null;
+	private static int last_flushing_data = 1000;
 	private static void AttackReceiveMessage(int message) {
 		my_activity.runOnUiThread(() -> {
-			switch(message)
-			{
+			switch(message & MESSAGE_MASK) {
 //				case MESSAGE_TESTING_INIT_COMPLETE:
 //					Toast.makeText(my_activity, "Testing hardware...", Toast.LENGTH_SHORT).show();
 //					break;
@@ -977,12 +983,34 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 					Toast.makeText(my_activity, "Error trying to execute the attack in the GPU.", Toast.LENGTH_LONG).show();
 					break;
 				case MESSAGE_TESTING_FAIL:
-					if(ParamsFragment.getGPUsUsed() == 0)
+					if (ParamsFragment.getGPUsUsed() == 0)
 						Toast.makeText(my_activity, "A problem was detected testing the cracking process. This means there is a bug in Hash Suite. " +
 								"Hash Suite can't ensure reliable cracking results.", Toast.LENGTH_LONG).show();
 					else
 						Toast.makeText(my_activity, "A problem was detected testing the cracking process. This means there is a bug in Hash Suite or the OpenCL driver. " +
-							"Hash Suite can't ensure reliable cracking results.", Toast.LENGTH_LONG).show();
+								"Hash Suite can't ensure reliable cracking results.", Toast.LENGTH_LONG).show();
+					break;
+				case MESSAGE_CL_COMPILING:
+					if (lastToast != null)
+						lastToast.cancel();
+					lastToast = Toast.makeText(my_activity, "Compiling GPU kernels: " + MESSAGE_GET_DATA(message) + "%", Toast.LENGTH_LONG);
+					lastToast.show();
+					break;
+				case MESSAGE_FLUSHING_KEYS:
+					if(last_flushing_data != MESSAGE_GET_DATA(message)) {
+						last_flushing_data = MESSAGE_GET_DATA(message);
+						if (lastToast != null)
+							lastToast.cancel();
+						lastToast = Toast.makeText(my_activity, "Flushing keys: " + MESSAGE_GET_DATA(message) + "%", Toast.LENGTH_LONG);
+						lastToast.show();
+					}
+					break;
+				case MESSAGE_HARD_STOP:
+					if (lastToast != null) {
+						lastToast.cancel();
+						lastToast = null;
+					}
+					Toast.makeText(my_activity, "Hard stop. Keys were dropped.", Toast.LENGTH_LONG).show();
 					break;
 			}
 		});

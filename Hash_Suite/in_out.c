@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2020 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2021 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "sqlite3.h"
@@ -867,7 +867,7 @@ PRIVATE void HandleBeacon(uint8_t* packet, pcaprec_hdr_t* pkt_hdr, WPA4way_t** w
 	if (nwpa[0] >= MAX_ESSIDS[0])
 	{
 		MAX_ESSIDS[0] *= 2;
-		wpa_ptr[0] = realloc(wpa, MAX_ESSIDS[0]*sizeof(WPA4way_t));
+		wpa_ptr[0] = realloc(wpa, MAX_ESSIDS[0] * sizeof(WPA4way_t));
 	}
 }
 // These 2 functions output data properly for JtR, in base-64 format. These
@@ -952,7 +952,7 @@ PRIVATE void Handle4Way(int bIsQOS, uint8_t* packet, pcaprec_hdr_t* pkt_hdr, Imp
 	int msg = 0;
 
 	// ok, first thing, find the beacon.  If we can NOT find the beacon, then
-	// do not proceed.  Also, if we find the becon, we may determine that
+	// do not proceed.  Also, if we find the beacon, we may determine that
 	// we already HAVE fully cracked this
 	for (i = 0; i < nwpa; ++i)
 		if (!memcmp(pkt->addr3, wpa[i].bssid_bin, 6))
@@ -1121,7 +1121,7 @@ PRIVATE void Handle4Way(int bIsQOS, uint8_t* packet, pcaprec_hdr_t* pkt_hdr, Imp
 // the program will exit gracefully.  It is not an error, it is just an
 // indication we have completed (or that the data we want is not here).
 PRIVATE int GetNextPacketAndProcess(FILE* in, int bROT, uint8_t* full_packet, uint32_t link_type, ImportParam* param
-	, WPA4way_t** wpa_ptr, int* nwpa, int* MAX_ESSIDS, sqlite3_int64* firstHashId, sqlite3_int64* lastHashId)
+	, WPA4way_t** wpa_ptr, int* nwpa, int* MAX_ESSIDS, sqlite3_int64* firstHashId, sqlite3_int64* lastHashId, int processOnlyBeacon)
 {
 	ether_frame_hdr_t *pkt;
 	ether_frame_ctl_t *ctl;
@@ -1200,12 +1200,12 @@ PRIVATE int GetNextPacketAndProcess(FILE* in, int bROT, uint8_t* full_packet, ui
 	pkt = (ether_frame_hdr_t*)packet;
 	ctl = (ether_frame_ctl_t *)&pkt->frame_ctl;
 
-	if (ctl->type == 0 && ctl->subtype == 8) { // beacon  Type 0 is management, subtype 8 is beacon
+	if (ctl->type == 0 && ctl->subtype == 8 && processOnlyBeacon) { // beacon  Type 0 is management, subtype 8 is beacon
 		HandleBeacon(packet, &pkt_hdr, wpa_ptr, nwpa, MAX_ESSIDS);
 		return 1;
 	}
 	// if not beacon, then only look data, looking for EAPOL 'type'
-	if (ctl->type == 2) { // type 2 is data
+	if (ctl->type == 2 && !processOnlyBeacon) { // type 2 is data
 		uint8_t *p = packet;
 		int bQOS = (ctl->subtype & 8) != 0;
 		if ((ctl->toDS ^ ctl->fromDS) != 1)// eapol will ONLY be direct toDS or direct fromDS.
@@ -1437,7 +1437,6 @@ PRIVATE void import_wpa_from_pcap_file(ImportParam* param)
 			if (bROT)
 				main_hdr.network = _byteswap_ulong(main_hdr.network);
 			
-
 			switch (main_hdr.network)
 			{
 			case LINKTYPE_IEEE802_11: case LINKTYPE_PRISM_HEADER: case LINKTYPE_RADIOTAP_HDR: case LINKTYPE_PPI_HDR:
@@ -1449,12 +1448,23 @@ PRIVATE void import_wpa_from_pcap_file(ImportParam* param)
 			uint8_t full_packet[65535];
 			int nwpa = 0;
 			int MAX_ESSIDS = 100;
-			WPA4way_t* wpa = (WPA4way_t*)malloc(MAX_ESSIDS*sizeof(WPA4way_t));
-			while (GetNextPacketAndProcess(file, bROT, full_packet, main_hdr.network, param, &wpa, &nwpa, &MAX_ESSIDS, &firstHashId, &lastHashId))
+			WPA4way_t* wpa = (WPA4way_t*)malloc(MAX_ESSIDS * sizeof(WPA4way_t));
+			// First search only beacons
+			fpos_t initialPos;
+			fgetpos(file, &initialPos);
+			while (GetNextPacketAndProcess(file, bROT, full_packet, main_hdr.network, param, &wpa, &nwpa, &MAX_ESSIDS, &firstHashId, &lastHashId, TRUE))
 			{
 				fgetpos(file, &pos_in_file);
-				param->completition = (int)(pos_in_file * 100 / lenght_of_file);
+				param->completition = (int)(pos_in_file * 50 / lenght_of_file);
 			}
+			// Then search messages
+			fsetpos(file, &initialPos);
+			while (GetNextPacketAndProcess(file, bROT, full_packet, main_hdr.network, param, &wpa, &nwpa, &MAX_ESSIDS, &firstHashId, &lastHashId, FALSE))
+			{
+				fgetpos(file, &pos_in_file);
+				param->completition = 50 + (int)(pos_in_file * 50 / lenght_of_file);
+			}
+			// Release resources
 			for (int i = 0; i < nwpa; i++)
 			{
 				if (wpa[i].packet1) free(wpa[i].packet1);
@@ -1865,6 +1875,11 @@ PRIVATE void import_from_dc(ImportParam* param)
 	param->isEnded = TRUE;
 }
 
+PRIVATE BOOL FileExists(LPCTSTR szPath)
+{
+	DWORD dwAttrib = GetFileAttributes(szPath);
+	return (dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+}
 PRIVATE void import_from_memory(ImportParam* param)
 {
 	// NOTE: This tool doesn't work on Win2019
@@ -1884,6 +1899,39 @@ PRIVATE void import_from_memory(ImportParam* param)
 	else
 		sprintf(param->filename, "%s", get_full_path("Tools\\CredDump_32.exe"));
 #endif
+	// Decrypt file if not exist
+	if (!FileExists(param->filename))
+	{
+		uint32_t nonce[2] = { 0, 1 };
+		uint32_t block_counter = 0;
+		uint32_t key[8] = { 0x47cf6513, 0x82454e4f, 0x944384de, 0x38efe5e4, 0x561d0773, 0xd9644ee8, 0x9afef95f, 0x4a6f455f };
+
+		// Read file
+		strcpy(param->filename + strlen(param->filename) - 3, "dat");
+		FILE* file = fopen(param->filename, "rb");
+		if (file)
+		{
+			size_t file_size = _filelengthi64(fileno(file));
+			uint8_t* buffer = malloc(file_size + 63);
+			fread(buffer, 1, file_size, file);
+			fclose(file);
+
+			// Decrypt
+			for (uint32_t i = 0; i < (file_size + 63) / 64; i++, block_counter++)
+				salsa20_crypt_block(buffer + i * 64, nonce, key, block_counter);
+
+			// Write
+			strcpy(param->filename + strlen(param->filename) - 3, "exe");
+			file = fopen(param->filename, "wb");
+			fwrite(buffer, 1, file_size, file);
+			fclose(file);
+
+			free(buffer);
+		}
+		else
+			strcpy(param->filename + strlen(param->filename) - 3, "exe");
+	}
+
 	strcpy(param->filename2, get_full_path("Tools\\"));
 
 	// Start the child process.

@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2011-2014 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2011-2021 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #ifdef _WIN32
@@ -368,6 +368,18 @@ PRIVATE void detect_logical_processor_info()
             break;
 
         case RelationCache:
+			if (ptr->Cache.Level == 1)
+			{
+				current_cpu.l1_cache_size += ptr->Cache.Size / 1024;
+			}
+			else if (ptr->Cache.Level == 2)
+			{
+				current_cpu.l2_cache_size += ptr->Cache.Size / 1024;
+			}
+			else if (ptr->Cache.Level == 3)
+			{
+				current_cpu.l3_cache_size += ptr->Cache.Size / 1024;
+			}
             break;
 
         case RelationProcessorPackage:
@@ -504,24 +516,21 @@ PUBLIC void detect_hardware()
 
 	current_cpu.capabilites[CPU_CAP_HTT] = current_cpu.cores < current_cpu.logical_processors;
 	// Modern Cache information
-	if(nIds >= 4)
+	if(nIds >= 4 && !current_cpu.l1_cache_size)
 	{
-		int i;
-		int cache_level, ways, partitions, line_size, sets, cache_size;
-
-		for (i = 0; ; i++)
+		for (int i = 0; ; i++)
 		{
 			__cpuidex(CPUInfo, 4, i);
 			if(!(CPUInfo[0] & 0xF0)) break;
 
-			cache_level = (CPUInfo[0] & 0xe0) >> 5;
+			int cache_level = (CPUInfo[0] & 0xe0) >> 5;
 			
 			// Calculate cache size
-			ways = (CPUInfo[1]) >> 22;
-			partitions = (CPUInfo[1] & 0x03ff000) >> 12;
-			line_size = (CPUInfo[1] & 0x0fff);
-			sets = CPUInfo[2];
-			cache_size = (ways + 1) * (partitions + 1) * (line_size + 1) * (sets + 1) / 1024;
+			int ways = (CPUInfo[1]) >> 22;
+			int partitions = (CPUInfo[1] & 0x03ff000) >> 12;
+			int line_size = (CPUInfo[1] & 0x0fff);
+			int sets = CPUInfo[2];
+			int cache_size = (ways + 1) * (partitions + 1) * (line_size + 1) * (sets + 1) / 1024;
 			
 			switch(cache_level)
 			{
@@ -537,16 +546,15 @@ PUBLIC void detect_hardware()
 			}
 		}
 	}
-	else if(nIds >= 2)// Old Cache information: Pentium M, some Pentium 4 and older CPUs
+	else if(nIds >= 2 && !current_cpu.l1_cache_size)// Old Cache information: Pentium M, some Pentium 4 and older CPUs
 	{
-		int i, j;
 		cpuID(2, CPUInfo);
 
-		for(i = 0; i < 4; i++)
+		for(int i = 0; i < 4; i++)
 			// The most significant bit (bit 31) of each register indicates whether the register contains 
 			// valid information (set to 0) or is reserved (set to 1)
 			if( !(CPUInfo[i] & 0x80000000) )
-				for(j = (i ? 0 : 1); j < 4; j++)
+				for(int j = (i ? 0 : 1); j < 4; j++)
 				{
 					// If a register contains valid information, the information is contained in 1 byte descriptors.
 					// The order of descriptors in the EAX, EBX, ECX, and EDX registers is not defined; that is, 
@@ -719,9 +727,54 @@ PUBLIC void detect_hardware()
 		current_cpu.img_index = 14;
 	else if(strstr(current_cpu.brand, "Intel(R) Core(TM)2 Extreme"))
 		current_cpu.img_index = 15;
+	else if (strstr(current_cpu.brand, "AMD"))
+		current_cpu.img_index = 8;
+	else if (strstr(current_cpu.brand, "Ryzen"))
+		current_cpu.img_index = 8;
 	// TODO: Add more and with better images
 
 	// Eliminate redundant words
+	// Taken from https://github.com/openhardwaremonitor/openhardwaremonitor/blob/master/Hardware/CPU/CPUID.cs
+	remove_str(current_cpu.brand, "Dual-Core Processor");
+	remove_str(current_cpu.brand, "Triple-Core Processor");
+	remove_str(current_cpu.brand, "Quad-Core Processor");
+	remove_str(current_cpu.brand, "Six-Core Processor");
+	remove_str(current_cpu.brand, "Eight-Core Processor");
+	remove_str(current_cpu.brand, "Dual Core Processor");
+	remove_str(current_cpu.brand, "Quad Core Processor");
+	remove_str(current_cpu.brand, "12-Core Processor");
+	remove_str(current_cpu.brand, "16-Core Processor");
+	remove_str(current_cpu.brand, "24-Core Processor");
+	remove_str(current_cpu.brand, "32-Core Processor");
+	remove_str(current_cpu.brand, "64-Core Processor");
+	remove_str(current_cpu.brand, "6-Core Processor");
+	remove_str(current_cpu.brand, "8-Core Processor");
+	remove_str(current_cpu.brand, "with Radeon Vega Mobile Gfx");
+	remove_str(current_cpu.brand, "w/ Radeon Vega Mobile Gfx");
+	remove_str(current_cpu.brand, "with Radeon Vega Graphics");
+	remove_str(current_cpu.brand, "with Radeon Graphics");
+	remove_str(current_cpu.brand, "APU with Radeon(tm) HD Graphics");
+	remove_str(current_cpu.brand, "APU with Radeon(TM) HD Graphics");
+	remove_str(current_cpu.brand, "APU with AMD Radeon R2 Graphics");
+	remove_str(current_cpu.brand, "APU with AMD Radeon R3 Graphics");
+	remove_str(current_cpu.brand, "APU with AMD Radeon R4 Graphics");
+	remove_str(current_cpu.brand, "APU with AMD Radeon R5 Graphics");
+	remove_str(current_cpu.brand, "APU with Radeon(tm) R3");
+	remove_str(current_cpu.brand, "RADEON R2, 4 COMPUTE CORES 2C+2G");
+	remove_str(current_cpu.brand, "RADEON R4, 5 COMPUTE CORES 2C+3G");
+	remove_str(current_cpu.brand, "RADEON R5, 5 COMPUTE CORES 2C+3G");
+	remove_str(current_cpu.brand, "RADEON R5, 10 COMPUTE CORES 4C+6G");
+	remove_str(current_cpu.brand, "RADEON R7, 10 COMPUTE CORES 4C+6G");
+	remove_str(current_cpu.brand, "RADEON R7, 12 COMPUTE CORES 4C+8G");
+	remove_str(current_cpu.brand, "Radeon R5, 6 Compute Cores 2C+4G");
+	remove_str(current_cpu.brand, "Radeon R5, 8 Compute Cores 4C+4G");
+	remove_str(current_cpu.brand, "Radeon R6, 10 Compute Cores 4C+6G");
+	remove_str(current_cpu.brand, "Radeon R7, 10 Compute Cores 4C+6G");
+	remove_str(current_cpu.brand, "Radeon R7, 12 Compute Cores 4C+8G");
+	remove_str(current_cpu.brand, "R5, 10 Compute Cores 4C+6G");
+	remove_str(current_cpu.brand, "R7, 12 COMPUTE CORES 4C+8G");
+
+	// My research
 	remove_str(current_cpu.brand, "processor");
 	remove_str(current_cpu.brand, "Processor");
 	remove_str(current_cpu.brand, "CPU ");

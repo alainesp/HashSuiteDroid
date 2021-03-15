@@ -32,4 +32,17 @@ extern "C" PUBLIC void load_foundhashes_from_db()
 	// Save to FAM
 	for (auto found : founds)
 		save_fam(found.first, found.second);
+
+	// Update found count cache
+	memset(num_hashes_found_by_format1, 0, num_formats * sizeof(uint32_t));
+	sqlite3_stmt* findFormatID;
+	sqlite3_prepare_v2(db, "SELECT Type FROM Hash WHERE ID=?;", -1, &findFormatID, NULL);
+	for (auto found : founds)
+	{
+		sqlite3_reset(findFormatID);
+		sqlite3_bind_int(findFormatID, 1, found.first);
+		sqlite3_step(findFormatID);
+		num_hashes_found_by_format1[find_format_index(sqlite3_column_int64(findFormatID, 0))]++;
+	}
+	sqlite3_finalize(findFormatID);
 }

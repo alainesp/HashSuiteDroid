@@ -1,5 +1,5 @@
 // This file is part of Hash Suite password cracker,
-// Copyright (c) 2020 by Alain Espinosa. See LICENSE.
+// Copyright (c) 2020-2021 by Alain Espinosa. See LICENSE.
 
 #include "common.h"
 #include "attack.h"
@@ -867,22 +867,22 @@ PRIVATE void ocl_work_body(OpenCL_Param* param, cl_uint length, cl_uint gpu_max_
 	pclEnqueueNDRangeKernel(param->queue, KERNEL_INIT_PART, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 
 	// SHA256 cycle
-	cl_kernel sha256_kernel = param->additional_kernels[length * MAX_SALT_SIZE + salt->saltlen - 1];
+	cl_kernel sha512_kernel = param->additional_kernels[length * MAX_SALT_SIZE + salt->saltlen - 1];
 	cl_uint repeat_rounds = param->param0;
 	cl_uint rounds = 0;
 
-	pclSetKernelArg(sha256_kernel, 1, sizeof(cl_uint), &repeat_rounds);
+	pclSetKernelArg(sha512_kernel, 1, sizeof(cl_uint), &repeat_rounds);
 	for (; rounds < (salt->rounds-param->param0); rounds += param->param0)
-		pclEnqueueNDRangeKernel(param->queue, sha256_kernel, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+		pclEnqueueNDRangeKernel(param->queue, sha512_kernel, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 	
 	repeat_rounds = salt->rounds - rounds;
 	if (repeat_rounds)
 	{
 		pclFinish(param->queue);
-		pclSetKernelArg(sha256_kernel, 1, sizeof(cl_uint), &repeat_rounds);
-		pclEnqueueNDRangeKernel(param->queue, sha256_kernel, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
+		pclSetKernelArg(sha512_kernel, 1, sizeof(cl_uint), &repeat_rounds);
+		pclEnqueueNDRangeKernel(param->queue, sha512_kernel, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
 	}
-
+	
 	// Compare results
 	pclSetKernelArg(KERNEL_COMPARE_RESULT, 3, sizeof(cl_uint), &salt_index);
 	pclEnqueueNDRangeKernel(param->queue, KERNEL_COMPARE_RESULT, 1, NULL, &num_work_items, &param->max_work_group_size, 0, NULL, NULL);
@@ -898,22 +898,22 @@ PRIVATE uint32_t ocl_gen_update_buffer_be(char* block[32], const char* data_pref
 {
 	if (data_len)
 	{
-		uint32_t len3 = 8u * (buffer_len & 3u);
+		uint32_t len3 = 8u * (buffer_len & 7u);
 		if (len3)
 		{
-			sprintf(block[buffer_len / 4] + strlen(block[buffer_len / 4]), "W%02u|=%s0>>%uu;", (buffer_len / 4) & 15, data_prefix, len3);
+			sprintf(block[buffer_len / 8] + strlen(block[buffer_len / 8]), "W%02u|=%s0>>%u;", (buffer_len / 8) & 15, data_prefix, len3);
 
 			uint32_t i = 1;
-			for (; i < ((data_len + 3) / 4); i++) {
-				sprintf(block[buffer_len / 4 + i], "W%02u=bytealign(%s%u,%s%u,%uu);", (buffer_len / 4 + i) & 15, data_prefix, i - 1, data_prefix, i, len3 / 8);
+			for (; i < ((data_len + 7) / 8); i++) {
+				sprintf(block[buffer_len / 8 + i], "W%02u=bytealign(%s%u,%s%u,%uu);", (buffer_len / 8 + i) & 15, data_prefix, i - 1, data_prefix, i, len3 / 8);
 			}
 			// Overflow
-			if ((data_len & 3u) == 0 || ((buffer_len & 3u) + (data_len & 3u)) > 4)
-				sprintf(block[buffer_len / 4 + i], "W%02u=%s%u<<%uu;", (buffer_len / 4 + i) & 15, data_prefix, i - 1, 32 - len3);
+			if ((data_len & 7u) == 0 || ((buffer_len & 7u) + (data_len & 7u)) > 8)
+				sprintf(block[buffer_len / 8 + i], "W%02u=%s%u<<%uu;", (buffer_len / 8 + i) & 15, data_prefix, i - 1, 64 - len3);
 		}
 		else {
-			for (uint32_t i = 0; i < ((data_len + 3) / 4); i++)
-				sprintf(block[buffer_len / 4 + i], "W%02u=%s%u;", (buffer_len / 4 + i) & 15, data_prefix, i);
+			for (uint32_t i = 0; i < ((data_len + 7) / 8); i++)
+				sprintf(block[buffer_len / 8 + i], "W%02u=%s%u;", (buffer_len / 8 + i) & 15, data_prefix, i);
 		}
 	}
 
@@ -922,17 +922,17 @@ PRIVATE uint32_t ocl_gen_update_buffer_be(char* block[32], const char* data_pref
 PRIVATE void ocl_gen_finish_buffer_be(char* block[32], uint32_t buffer_len)
 {
 	// End buffer
-	uint32_t len3 = 8u * (buffer_len & 3u);
+	uint32_t len3 = 8u * (buffer_len & 7u);
 	if (len3)
-		sprintf(block[buffer_len / 4] + strlen(block[buffer_len / 4]), "W%02u|=%uu;", (buffer_len / 4) & 15, 0x80000000 >> len3);
+		sprintf(block[buffer_len / 8] + strlen(block[buffer_len / 8]), "W%02u|=%I64uul;", (buffer_len / 8) & 15, 0x8000000000000000 >> len3);
 	else
-		sprintf(block[buffer_len / 4], "W%02u=0x80000000;", (buffer_len / 4) & 15);
+		sprintf(block[buffer_len / 8], "W%02u=0x8000000000000000ul;", (buffer_len / 8) & 15);
 
 	// Zero terminate
-	uint32_t len_pos = buffer_len >= 56u ? 31 : 15;
-	for (uint32_t i = buffer_len / 4 + 1; i < 31; i++)
+	uint32_t len_pos = buffer_len >= 112u ? 31 : 15;
+	for (uint32_t i = buffer_len / 8 + 1; i < 31; i++)
 		sprintf(block[i], "W%02u=0;", i & 15);
-	sprintf(block[len_pos], "W%02u=%uu;", len_pos & 15, buffer_len << 3u);
+	sprintf(block[len_pos], "W%02u=%uul;", len_pos & 15, buffer_len << 3u);
 }
 PRIVATE void ocl_gen_load_w(char* block[32], 
 	const char* data_prefix0, const char* data_prefix1, const char* data_prefix2, const char* data_prefix3, 
@@ -948,39 +948,55 @@ PRIVATE void ocl_gen_load_w(char* block[32],
 		buffer_len += ocl_gen_update_buffer_be(block, data_prefix3, data_len3, buffer_len);
 	ocl_gen_finish_buffer_be(block, buffer_len);
 }
-PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_uint key_len, cl_uint salt_len)
+PRIVATE void ocl_gen_sha512body_by_lenght(char* source, cl_uint key_len, cl_uint salt_len)
 {
 	sprintf(source + strlen(source),
-		"\n__kernel void sha256crypt_cycle%ux%u(__global uint* current_data,uint rounds)"
+		"\n__kernel void sha512crypt_cycle%ux%u(__global uint* current_data,uint rounds)"
 		"{"
 			"uint idx=get_global_id(0);", key_len, salt_len);
 
-	sprintf(source + strlen(source), "uint A,B,C,D,E,F,G,H;");
+	sprintf(source + strlen(source), "ulong A,B,C,D,E,F,G,H;");
 	// Handle block vars used
 	for (cl_uint i = 0; i < 16; i++)
-		sprintf(source + strlen(source), "uint W%02u=0;", i);
+		sprintf(source + strlen(source), "ulong W%02u=0;", i);
 
 	// Load key
-	for (cl_uint i = 0; i < (key_len + 3) / 4; i++)
-		sprintf(source + strlen(source), "uint key%u=GET_DATA(8u+%iu);", i, i);
-	if (key_len & 3)
-		sprintf(source + strlen(source), "key%u&=%uu;", key_len / 4, 0xffffff00 << (24 - 8 * (key_len & 3)));
+	cl_uint i = 0;
+	for (; i < key_len/8; i++)
+		sprintf(source + strlen(source), "ulong k%u=upsample(GET_DATA(%uu),GET_DATA(%uu));", i, 20 + i * 2, 20 + i * 2 + 1);
+	if (key_len & 7)
+	{
+		if((key_len & 7) > 4)
+			sprintf(source + strlen(source), "ulong k%u=upsample(GET_DATA(%uu),GET_DATA(%uu));", i, 20 + i * 2, 20 + i * 2 + 1);
+		else
+			sprintf(source + strlen(source), "ulong k%u=upsample(GET_DATA(%uu),0);", i, 20 + i * 2);
+
+		sprintf(source + strlen(source), "k%u&=%I64uul;", i, 0xffffffffffffff00 << (56 - 8 * (key_len & 7)));
+	}
 
 	// Load salt
-	for (cl_uint i = 0; i < (salt_len + 3) / 4; i++)
-		sprintf(source + strlen(source), "uint salt%u=GET_DATA(16u+%iu);", i, i);
-	if (salt_len & 3)
-		sprintf(source + strlen(source), "salt%u&=%uu;", salt_len / 4, 0xffffff00 << (24 - 8 * (salt_len & 3)));
+	i = 0;
+	for (; i < salt_len/8; i++)
+		sprintf(source + strlen(source), "ulong s%u=upsample(GET_DATA(%uu),GET_DATA(%uu));", i, 16 + i * 2, 16 + i * 2 + 1);
+	if (salt_len & 7)
+	{
+		if ((salt_len & 7) > 4)
+			sprintf(source + strlen(source), "ulong s%u=upsample(GET_DATA(%uu),GET_DATA(%uu));", i, 16 + i * 2, 16 + i * 2 + 1);
+		else
+			sprintf(source + strlen(source), "ulong s%u=upsample(GET_DATA(%uu),0);", i, 16 + i * 2);
+
+		sprintf(source + strlen(source), "s%u&=%I64uul;\n", i, 0xffffffffffffff00 << (56 - 8 * (salt_len & 7)));
+	}
 
 	sprintf(source + strlen(source),
-			"uint state0=GET_DATA(0u);"
-			"uint state1=GET_DATA(1u);"
-			"uint state2=GET_DATA(2u);"
-			"uint state3=GET_DATA(3u);"
-			"uint state4=GET_DATA(4u);"
-			"uint state5=GET_DATA(5u);"
-			"uint state6=GET_DATA(6u);"
-			"uint state7=GET_DATA(7u);"
+			"ulong state0=upsample(GET_DATA(1u),GET_DATA(0u));"
+			"ulong state1=upsample(GET_DATA(3u),GET_DATA(2u));"
+			"ulong state2=upsample(GET_DATA(5u),GET_DATA(4u));"
+			"ulong state3=upsample(GET_DATA(7u),GET_DATA(6u));"
+			"ulong state4=upsample(GET_DATA(9u),GET_DATA(8u));"
+			"ulong state5=upsample(GET_DATA(11u),GET_DATA(10u));"
+			"ulong state6=upsample(GET_DATA(13u),GET_DATA(12u));"
+			"ulong state7=upsample(GET_DATA(15u),GET_DATA(14u));"
 
 			"for(uint i=0u;i<rounds;i++)"
 			"{"
@@ -991,28 +1007,28 @@ PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_
 
 				"switch(g_value)"
 				"{");
-	
+
 		char* block[32 * 9];
-		char* block_ptr = malloc(32 * 64 * 9);
-		memset(block_ptr, 0, 32 * 64 * 9);
+		char* block_ptr = malloc(32 * 128 * 9);
+		memset(block_ptr, 0, 32 * 128 * 9);
 		for (size_t i = 0; i < 32 * 9; i++)
-			block[i] = block_ptr + i * 64;
+			block[i] = block_ptr + i * 128;
 		//pattern[0]=alt pass-------------------------------------------------------------------------------------
-		ocl_gen_load_w(block + 0 * 32, "state", "key"  ,   NULL ,   NULL ,   32   ,  key_len,    0   ,    0);
+		ocl_gen_load_w(block + 0 * 32, "state",   "k"  ,   NULL ,   NULL ,   64   ,  key_len,    0   ,    0);
 		//pattern[1]=alt pass pass-------------------------------------------------------------------------------
-		ocl_gen_load_w(block + 1 * 32, "state", "key"  ,  "key" ,   NULL ,   32   ,  key_len, key_len,    0);
+		ocl_gen_load_w(block + 1 * 32, "state",   "k"  ,   "k"  ,   NULL ,   64   ,  key_len, key_len,    0);
 		//pattern[2]=alt salt pass--------------------------------------------------------------------------------
-		ocl_gen_load_w(block + 2 * 32, "state", "salt" ,  "key" ,   NULL ,   32   , salt_len, key_len,    0);
+		ocl_gen_load_w(block + 2 * 32, "state",   "s"  ,   "k"  ,   NULL ,   64   , salt_len, key_len,    0);
 		//pattern[3]=alt salt pass pass---------------------------------------------------------------------------
-		ocl_gen_load_w(block + 3 * 32, "state", "salt" ,  "key" ,  "key" ,   32   , salt_len, key_len, key_len);
+		ocl_gen_load_w(block + 3 * 32, "state",   "s"  ,   "k"  ,   "k"  ,   64   , salt_len, key_len, key_len);
 		//pattern[4]=pass alt-------------------------------------------------------------------------------------
-		ocl_gen_load_w(block + 4 * 32, "key"  , "state",   NULL ,   NULL , key_len,    32   ,    0   ,    0);
+		ocl_gen_load_w(block + 4 * 32,   "k"  , "state",   NULL ,   NULL , key_len,    64   ,    0   ,    0);
 		//pattern[5]=pass pass alt--------------------------------------------------------------------------------
-		ocl_gen_load_w(block + 5 * 32, "key"  , "key"  , "state",   NULL , key_len,  key_len,    32  ,    0);
+		ocl_gen_load_w(block + 5 * 32,   "k"  ,   "k"  , "state",   NULL , key_len,  key_len,    64  ,    0);
 		//pattern[6]=pass salt alt--------------------------------------------------------------------------------
-		ocl_gen_load_w(block + 6 * 32, "key"  , "salt" , "state",   NULL , key_len, salt_len,    32  ,    0);
+		ocl_gen_load_w(block + 6 * 32,   "k"  ,   "s"  , "state",   NULL , key_len, salt_len,    64  ,    0);
 		//pattern[7]=pass salt pass alt---------------------------------------------------------------------------
-		ocl_gen_load_w(block + 7 * 32, "key"  , "salt" ,   "key", "state", key_len, salt_len, key_len,    32);
+		ocl_gen_load_w(block + 7 * 32,   "k"  ,   "s"  ,   "k"  , "state", key_len, salt_len, key_len,    64);
 
 		// Search W for load patterns
 		for (size_t i = 0; i < 16; i++)
@@ -1049,31 +1065,31 @@ PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_
 		for (size_t i = 0; i < 16; i++)
 			sprintf(source + strlen(source), "%s", block[i + 8 * 32]);
 
-		// Cache 'state' for 2nd sha256 when needed
-		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 0)) sprintf(source + strlen(source), "uint tt7=state7;");
-		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 1)) sprintf(source + strlen(source), "uint tt6=state6;");
-		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 2)) sprintf(source + strlen(source), "uint tt5=state5;");
-		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 3)) sprintf(source + strlen(source), "uint tt4=state4;");
-		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 4)) sprintf(source + strlen(source), "uint tt3=state3;");
-		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 5)) sprintf(source + strlen(source), "uint tt2=state2;");
-		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 6)) sprintf(source + strlen(source), "uint tt1=state1;");
-		if ((32 + 2 * key_len + salt_len) > (64 + 4 * 7)) sprintf(source + strlen(source), "uint tt0=state0;");
+		// Cache 'state' for 2nd sha512 when needed
+		if ((64 + 2 * key_len + salt_len) > (128 + 8 * 0)) sprintf(source + strlen(source), "ulong tt7=state7;");
+		if ((64 + 2 * key_len + salt_len) > (128 + 8 * 1)) sprintf(source + strlen(source), "ulong tt6=state6;");
+		if ((64 + 2 * key_len + salt_len) > (128 + 8 * 2)) sprintf(source + strlen(source), "ulong tt5=state5;");
+		if ((64 + 2 * key_len + salt_len) > (128 + 8 * 3)) sprintf(source + strlen(source), "ulong tt4=state4;");
+		if ((64 + 2 * key_len + salt_len) > (128 + 8 * 4)) sprintf(source + strlen(source), "ulong tt3=state3;");
+		if ((64 + 2 * key_len + salt_len) > (128 + 8 * 5)) sprintf(source + strlen(source), "ulong tt2=state2;");
+		if ((64 + 2 * key_len + salt_len) > (128 + 8 * 6)) sprintf(source + strlen(source), "ulong tt1=state1;");
+		if ((64 + 2 * key_len + salt_len) > (128 + 8 * 7)) sprintf(source + strlen(source), "ulong tt0=state0;");
 
-		// First sha256 compress hash function
+		// First sha512 compress hash function
 		sprintf(source + strlen(source),
-				"state0=0x6A09E667;"
-				"state1=0xBB67AE85;"
-				"state2=0x3C6EF372;"
-				"state3=0xA54FF53A;"
-				"state4=0x510E527F;"
-				"state5=0x9B05688C;"
-				"state6=0x1F83D9AB;"
-				"state7=0x5BE0CD19;"
+				"state0=0x6A09E667F3BCC908UL;"
+				"state1=0xBB67AE8584CAA73BUL;"
+				"state2=0x3C6EF372FE94F82BUL;"
+				"state3=0xA54FF53A5F1D36F1UL;"
+				"state4=0x510E527FADE682D1UL;"
+				"state5=0x9B05688C2B3E6C1FUL;"
+				"state6=0x1F83D9ABFB41BD6BUL;"
+				"state7=0x5BE0CD19137E2179UL;"
 
-				"sha256_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7);");
+				"sha512_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7);");
 
-		// Need 2nd sha256 in some cases
-		if ((32 + 2 * key_len + salt_len) >= 56)
+		// Need 2nd sha512 in some cases
+		if ((64 + 2 * key_len + salt_len) >= 112)
 		{
 			memset(block_ptr, 0, 32 * 64 * 9);
 			// Load W
@@ -1081,21 +1097,21 @@ PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_
 				"switch(g_value)"
 				"{");
 			//pattern[0]=alt pass-------------------------------------------------------------------------------------------------------------------------
-			if ((32 + key_len) >= 56)              ocl_gen_load_w(block + 0 * 32, "tt" ,  "key",  NULL,  NULL,    32  ,  key_len,    0   ,    0);
+			if ((64 + key_len) >= 112)              ocl_gen_load_w(block + 0 * 32, "tt", "k" , NULL,  NULL,    64  ,  key_len,    0   ,    0);
 			//pattern[1]=alt pass pass--------------------------------------------------------------------------------------------------------------------
-			if ((32 + 2*key_len) >= 56)            ocl_gen_load_w(block + 1 * 32, "tt" ,  "key", "key",  NULL,    32  ,  key_len, key_len,    0);
+			if ((64 + 2*key_len) >= 112)            ocl_gen_load_w(block + 1 * 32, "tt", "k" ,  "k",  NULL,    64  ,  key_len, key_len,    0);
 			//pattern[2]=alt salt pass--------------------------------------------------------------------------------------------------------------------
-			if ((32 + salt_len + key_len) >= 56)   ocl_gen_load_w(block + 2 * 32, "tt" , "salt", "key",  NULL,    32  , salt_len, key_len,    0);
+			if ((64 + salt_len + key_len) >= 112)   ocl_gen_load_w(block + 2 * 32, "tt", "s" ,  "k",  NULL,    64  , salt_len, key_len,    0);
 			//pattern[3]=alt salt pass pass---------------------------------------------------------------------------------------------------------------
-			if ((32 + salt_len + 2*key_len) >= 56) ocl_gen_load_w(block + 3 * 32, "tt" , "salt", "key", "key",    32  , salt_len, key_len, key_len);
+			if ((64 + salt_len + 2*key_len) >= 112) ocl_gen_load_w(block + 3 * 32, "tt", "s" ,  "k",  "k" ,    64  , salt_len, key_len, key_len);
 			//pattern[4]=pass alt-------------------------------------------------------------------------------------------------------------------------
-			if ((key_len + 32) >= 56)              ocl_gen_load_w(block + 4 * 32, "key",  "tt" , NULL ,  NULL, key_len,    32   ,    0   ,    0);
+			if ((key_len + 64) >= 112)              ocl_gen_load_w(block + 4 * 32, "k" , "tt", NULL,  NULL, key_len,    64   ,    0   ,    0);
 			//pattern[5]=pass pass alt--------------------------------------------------------------------------------------------------------------------											          
-			if ((2*key_len + 32) >= 56)            ocl_gen_load_w(block + 5 * 32, "key",  "key", "tt" ,  NULL, key_len,  key_len,    32  ,    0);
+			if ((2*key_len + 64) >= 112)            ocl_gen_load_w(block + 5 * 32, "k" , "k" , "tt",  NULL, key_len,  key_len,    64  ,    0);
 			//pattern[6]=pass salt alt--------------------------------------------------------------------------------------------------------------------													          
-			if ((key_len + salt_len + 32) >= 56)   ocl_gen_load_w(block + 6 * 32, "key", "salt", "tt" ,  NULL, key_len, salt_len,    32  ,    0);
+			if ((key_len + salt_len + 64) >= 112)   ocl_gen_load_w(block + 6 * 32, "k" , "s" , "tt",  NULL, key_len, salt_len,    64  ,    0);
 			//pattern[7]=pass salt pass alt---------------------------------------------------------------------------------------------------------------
-			if ((2*key_len + salt_len + 32) >= 56) ocl_gen_load_w(block + 7 * 32, "key", "salt", "key",  "tt", key_len, salt_len, key_len,    32);
+			if ((2*key_len + salt_len + 64) >= 112) ocl_gen_load_w(block + 7 * 32, "k" , "s" ,  "k",  "tt", key_len, salt_len, key_len,    64);
 
 			// Search W for load patterns
 			for (size_t i = 16; i < 32; i++)
@@ -1141,109 +1157,237 @@ PRIVATE void ocl_gen_sha256body_by_lenght(char* source, OpenCL_Param* param, cl_
 				sprintf(source + strlen(source), "break;");
 			}
 
-			// 2nd sha256 compress hash function
+			// 2nd sha512 compress hash function
 			sprintf(source + strlen(source),
 				"}"
 				"switch(g_value)"
 				"{");
 			//pattern[0]=alt pass-------------------------------------------------------------
-			if ((32 + key_len) >= 56)                sprintf(source + strlen(source), "case 0:");
+			if ((64 + key_len) >= 112)                sprintf(source + strlen(source), "case 0:");
 			//pattern[1]=alt pass pass--------------------------------------------------------
-			if ((32 + 2 * key_len) >= 56)            sprintf(source + strlen(source), "case 1:");
+			if ((64 + 2 * key_len) >= 112)            sprintf(source + strlen(source), "case 1:");
 			//pattern[2]=alt salt pass--------------------------------------------------------
-			if ((32 + salt_len + key_len) >= 56)     sprintf(source + strlen(source), "case 2:");
+			if ((64 + salt_len + key_len) >= 112)     sprintf(source + strlen(source), "case 2:");
 			//pattern[3]=alt salt pass pass---------------------------------------------------
-			if ((32 + salt_len + 2 * key_len) >= 56) sprintf(source + strlen(source), "case 3:");
+			if ((64 + salt_len + 2 * key_len) >= 112) sprintf(source + strlen(source), "case 3:");
 			//pattern[4]=pass alt-------------------------------------------------------------
-			if ((key_len + 32) >= 56)                sprintf(source + strlen(source), "case 4:");
+			if ((key_len + 64) >= 112)                sprintf(source + strlen(source), "case 4:");
 			//pattern[5]=pass pass alt--------------------------------------------------------
-			if ((2 * key_len + 32) >= 56)            sprintf(source + strlen(source), "case 5:");
+			if ((2 * key_len + 64) >= 112)            sprintf(source + strlen(source), "case 5:");
 			//pattern[6]=pass salt alt--------------------------------------------------------
-			if ((key_len + salt_len + 32) >= 56)     sprintf(source + strlen(source), "case 6:");
+			if ((key_len + salt_len + 64) >= 112)     sprintf(source + strlen(source), "case 6:");
 			//pattern[7]=pass salt pass alt---------------------------------------------------
-			if ((2 * key_len + salt_len + 32) >= 56) sprintf(source + strlen(source), "case 7:");
+			if ((2 * key_len + salt_len + 64) >= 112) sprintf(source + strlen(source), "case 7:");
 		
 			// Load common patterns of W
 			for (size_t i = 16; i < 32; i++)
 				sprintf(source + strlen(source), "%s", block[i + 8 * 32]);
 
 			sprintf(source + strlen(source),
-					"sha256_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7);"
+					"sha512_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7);"
 					"break;"
 				"}");
 		}
 
-		free(block_ptr);
+		free(block_ptr);	
 		// End rounds cycle
 		sprintf(source + strlen(source),
-			"}"
+			"}"		
 
-			"GET_DATA(0u)=state0;"
-			"GET_DATA(1u)=state1;"
-			"GET_DATA(2u)=state2;"
-			"GET_DATA(3u)=state3;"
-			"GET_DATA(4u)=state4;"
-			"GET_DATA(5u)=state5;"
-			"GET_DATA(6u)=state6;"
-			"GET_DATA(7u)=state7;"
+			"GET_DATA(0u)=as_uint2(state0).s0;"
+			"GET_DATA(1u)=as_uint2(state0).s1;"
+			"GET_DATA(2u)=as_uint2(state1).s0;"
+			"GET_DATA(3u)=as_uint2(state1).s1;"
+			"GET_DATA(4u)=as_uint2(state2).s0;"
+			"GET_DATA(5u)=as_uint2(state2).s1;"
+			"GET_DATA(6u)=as_uint2(state3).s0;"
+			"GET_DATA(7u)=as_uint2(state3).s1;"
+			"GET_DATA(8u)=as_uint2(state4).s0;"
+			"GET_DATA(9u)=as_uint2(state4).s1;"
+			"GET_DATA(10u)=as_uint2(state5).s0;"
+			"GET_DATA(11u)=as_uint2(state5).s1;"
+			"GET_DATA(12u)=as_uint2(state6).s0;"
+			"GET_DATA(13u)=as_uint2(state6).s1;"
+			"GET_DATA(14u)=as_uint2(state7).s0;"
+			"GET_DATA(15u)=as_uint2(state7).s1;"
 		"}\n");
+}
+PRIVATE void ocl_gen_header_needed_by_crypts(char* source, const GPUDevice* gpu, cl_uint NUM_KEYS_OPENCL, int use_rules)
+{
+	if (gpu->flags & GPU_FLAG_SUPPORT_AMD_OPS)
+		strcat(source, "#pragma OPENCL EXTENSION cl_amd_media_ops : enable\n");
+
+	sprintf(source + strlen(source), "#define GET_DATA(index) current_data[(%uu+index)*%uu+get_global_id(0)]\n"
+		, use_rules ? 8 : 0, NUM_KEYS_OPENCL);
+
+	// Utilities
+	sprintf(source + strlen(source), "#define bytealign(high,low,shift) (%s)\n", (gpu->flags & GPU_FLAG_SUPPORT_AMD_OPS) ? "amd_bytealign(high,low,shift)" : "((high<<(64u-shift*8u))|(low>>(shift*8u)))");
+	sprintf(source + strlen(source), "#define bs(c,b,a) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bitselect((c),(b),(a))" : "((c)^((a)&((b)^(c))))");
+	sprintf(source + strlen(source), "#define MAJ(b,c,d) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
+
+	// Main hash function
+	sprintf(source + strlen(source),
+		"#define R_E(x) (rotate(x,50UL)^rotate(x,46UL)^rotate(x,23UL))\n"
+		"#define R_A(x) (rotate(x,36UL)^rotate(x,30UL)^rotate(x,25UL))\n"
+		"#define R0(x)  (rotate(x,63UL)^rotate(x,56UL)^(x>>7UL))\n"
+		"#define R1(x)  (rotate(x,45UL)^rotate(x,3UL)^(x>>6UL))\n"
+
+		"#define STEP(A,B,C,D,E,F,G,H,CONST,W) H+=R_E(E)+bs(G,F,E)+CONST+W;D+=H;H+=R_A(A)+MAJ(A,B,C);\n"
+		"#define WSTEP(W00,W14,W09,W01) W00+=R1(W14)+W09+R0(W01)\n"
+
+		"#define sha512_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7) "
+
+			"A=state0;"
+			"B=state1;"
+			"C=state2;"
+			"D=state3;"
+			"E=state4;"
+			"F=state5;"
+			"G=state6;"
+			"H=state7;"
+
+			/* Rounds */
+			"STEP(A,B,C,D,E,F,G,H,0x428A2F98D728AE22UL,W00)"
+			"STEP(H,A,B,C,D,E,F,G,0x7137449123EF65CDUL,W01)"
+			"STEP(G,H,A,B,C,D,E,F,0xB5C0FBCFEC4D3B2FUL,W02)"
+			"STEP(F,G,H,A,B,C,D,E,0xE9B5DBA58189DBBCUL,W03)"
+			"STEP(E,F,G,H,A,B,C,D,0x3956C25BF348B538UL,W04)"
+			"STEP(D,E,F,G,H,A,B,C,0x59F111F1B605D019UL,W05)"
+			"STEP(C,D,E,F,G,H,A,B,0x923F82A4AF194F9BUL,W06)"
+			"STEP(B,C,D,E,F,G,H,A,0xAB1C5ED5DA6D8118UL,W07)"
+			"STEP(A,B,C,D,E,F,G,H,0xD807AA98A3030242UL,W08)"
+			"STEP(H,A,B,C,D,E,F,G,0x12835B0145706FBEUL,W09)"
+			"STEP(G,H,A,B,C,D,E,F,0x243185BE4EE4B28CUL,W10)"
+			"STEP(F,G,H,A,B,C,D,E,0x550C7DC3D5FFB4E2UL,W11)"
+			"STEP(E,F,G,H,A,B,C,D,0x72BE5D74F27B896FUL,W12)"
+			"STEP(D,E,F,G,H,A,B,C,0x80DEB1FE3B1696B1UL,W13)"
+			"STEP(C,D,E,F,G,H,A,B,0x9BDC06A725C71235UL,W14)"
+			"STEP(B,C,D,E,F,G,H,A,0xC19BF174CF692694UL,W15)"
+
+			"WSTEP(W00,W14,W09,W01);STEP(A,B,C,D,E,F,G,H,0xE49B69C19EF14AD2UL,W00)"
+			"WSTEP(W01,W15,W10,W02);STEP(H,A,B,C,D,E,F,G,0xEFBE4786384F25E3UL,W01)"
+			"WSTEP(W02,W00,W11,W03);STEP(G,H,A,B,C,D,E,F,0x0FC19DC68B8CD5B5UL,W02)"
+			"WSTEP(W03,W01,W12,W04);STEP(F,G,H,A,B,C,D,E,0x240CA1CC77AC9C65UL,W03)"
+			"WSTEP(W04,W02,W13,W05);STEP(E,F,G,H,A,B,C,D,0x2DE92C6F592B0275UL,W04)"
+			"WSTEP(W05,W03,W14,W06);STEP(D,E,F,G,H,A,B,C,0x4A7484AA6EA6E483UL,W05)"
+			"WSTEP(W06,W04,W15,W07);STEP(C,D,E,F,G,H,A,B,0x5CB0A9DCBD41FBD4UL,W06)"
+			"WSTEP(W07,W05,W00,W08);STEP(B,C,D,E,F,G,H,A,0x76F988DA831153B5UL,W07)"
+			"WSTEP(W08,W06,W01,W09);STEP(A,B,C,D,E,F,G,H,0x983E5152EE66DFABUL,W08)"
+			"WSTEP(W09,W07,W02,W10);STEP(H,A,B,C,D,E,F,G,0xA831C66D2DB43210UL,W09)"
+			"WSTEP(W10,W08,W03,W11);STEP(G,H,A,B,C,D,E,F,0xB00327C898FB213FUL,W10)"
+			"WSTEP(W11,W09,W04,W12);STEP(F,G,H,A,B,C,D,E,0xBF597FC7BEEF0EE4UL,W11)"
+			"WSTEP(W12,W10,W05,W13);STEP(E,F,G,H,A,B,C,D,0xC6E00BF33DA88FC2UL,W12)"
+			"WSTEP(W13,W11,W06,W14);STEP(D,E,F,G,H,A,B,C,0xD5A79147930AA725UL,W13)"
+			"WSTEP(W14,W12,W07,W15);STEP(C,D,E,F,G,H,A,B,0x06CA6351E003826FUL,W14)"
+			"WSTEP(W15,W13,W08,W00);STEP(B,C,D,E,F,G,H,A,0x142929670A0E6E70UL,W15)"
+
+			"WSTEP(W00,W14,W09,W01);STEP(A,B,C,D,E,F,G,H,0x27B70A8546D22FFCUL,W00)"
+			"WSTEP(W01,W15,W10,W02);STEP(H,A,B,C,D,E,F,G,0x2E1B21385C26C926UL,W01)"
+			"WSTEP(W02,W00,W11,W03);STEP(G,H,A,B,C,D,E,F,0x4D2C6DFC5AC42AEDUL,W02)"
+			"WSTEP(W03,W01,W12,W04);STEP(F,G,H,A,B,C,D,E,0x53380D139D95B3DFUL,W03)"
+			"WSTEP(W04,W02,W13,W05);STEP(E,F,G,H,A,B,C,D,0x650A73548BAF63DEUL,W04)"
+			"WSTEP(W05,W03,W14,W06);STEP(D,E,F,G,H,A,B,C,0x766A0ABB3C77B2A8UL,W05)"
+			"WSTEP(W06,W04,W15,W07);STEP(C,D,E,F,G,H,A,B,0x81C2C92E47EDAEE6UL,W06)"
+			"WSTEP(W07,W05,W00,W08);STEP(B,C,D,E,F,G,H,A,0x92722C851482353BUL,W07)"
+			"WSTEP(W08,W06,W01,W09);STEP(A,B,C,D,E,F,G,H,0xA2BFE8A14CF10364UL,W08)"
+			"WSTEP(W09,W07,W02,W10);STEP(H,A,B,C,D,E,F,G,0xA81A664BBC423001UL,W09)"
+			"WSTEP(W10,W08,W03,W11);STEP(G,H,A,B,C,D,E,F,0xC24B8B70D0F89791UL,W10)"
+			"WSTEP(W11,W09,W04,W12);STEP(F,G,H,A,B,C,D,E,0xC76C51A30654BE30UL,W11)"
+			"WSTEP(W12,W10,W05,W13);STEP(E,F,G,H,A,B,C,D,0xD192E819D6EF5218UL,W12)"
+			"WSTEP(W13,W11,W06,W14);STEP(D,E,F,G,H,A,B,C,0xD69906245565A910UL,W13)"
+			"WSTEP(W14,W12,W07,W15);STEP(C,D,E,F,G,H,A,B,0xF40E35855771202AUL,W14)"
+			"WSTEP(W15,W13,W08,W00);STEP(B,C,D,E,F,G,H,A,0x106AA07032BBD1B8UL,W15)"
+
+			"WSTEP(W00,W14,W09,W01);STEP(A,B,C,D,E,F,G,H,0x19A4C116B8D2D0C8UL,W00)"
+			"WSTEP(W01,W15,W10,W02);STEP(H,A,B,C,D,E,F,G,0x1E376C085141AB53UL,W01)"
+			"WSTEP(W02,W00,W11,W03);STEP(G,H,A,B,C,D,E,F,0x2748774CDF8EEB99UL,W02)"
+			"WSTEP(W03,W01,W12,W04);STEP(F,G,H,A,B,C,D,E,0x34B0BCB5E19B48A8UL,W03)"
+			"WSTEP(W04,W02,W13,W05);STEP(E,F,G,H,A,B,C,D,0x391C0CB3C5C95A63UL,W04)"
+			"WSTEP(W05,W03,W14,W06);STEP(D,E,F,G,H,A,B,C,0x4ED8AA4AE3418ACBUL,W05)"
+			"WSTEP(W06,W04,W15,W07);STEP(C,D,E,F,G,H,A,B,0x5B9CCA4F7763E373UL,W06)"
+			"WSTEP(W07,W05,W00,W08);STEP(B,C,D,E,F,G,H,A,0x682E6FF3D6B2B8A3UL,W07)"
+			"WSTEP(W08,W06,W01,W09);STEP(A,B,C,D,E,F,G,H,0x748F82EE5DEFB2FCUL,W08)"
+			"WSTEP(W09,W07,W02,W10);STEP(H,A,B,C,D,E,F,G,0x78A5636F43172F60UL,W09)"
+			"WSTEP(W10,W08,W03,W11);STEP(G,H,A,B,C,D,E,F,0x84C87814A1F0AB72UL,W10)"
+			"WSTEP(W11,W09,W04,W12);STEP(F,G,H,A,B,C,D,E,0x8CC702081A6439ECUL,W11)"
+			"WSTEP(W12,W10,W05,W13);STEP(E,F,G,H,A,B,C,D,0x90BEFFFA23631E28UL,W12)"
+			"WSTEP(W13,W11,W06,W14);STEP(D,E,F,G,H,A,B,C,0xA4506CEBDE82BDE9UL,W13)"
+			"WSTEP(W14,W12,W07,W15);STEP(C,D,E,F,G,H,A,B,0xBEF9A3F7B2C67915UL,W14)"
+			"WSTEP(W15,W13,W08,W00);STEP(B,C,D,E,F,G,H,A,0xC67178F2E372532BUL,W15)"
+
+			"WSTEP(W00,W14,W09,W01);STEP(A,B,C,D,E,F,G,H,0xCA273ECEEA26619CUL,W00)"
+			"WSTEP(W01,W15,W10,W02);STEP(H,A,B,C,D,E,F,G,0xD186B8C721C0C207UL,W01)"
+			"WSTEP(W02,W00,W11,W03);STEP(G,H,A,B,C,D,E,F,0xEADA7DD6CDE0EB1EUL,W02)"
+			"WSTEP(W03,W01,W12,W04);STEP(F,G,H,A,B,C,D,E,0xF57D4F7FEE6ED178UL,W03)"
+			"WSTEP(W04,W02,W13,W05);STEP(E,F,G,H,A,B,C,D,0x06F067AA72176FBAUL,W04)"
+			"WSTEP(W05,W03,W14,W06);STEP(D,E,F,G,H,A,B,C,0x0A637DC5A2C898A6UL,W05)"
+			"WSTEP(W06,W04,W15,W07);STEP(C,D,E,F,G,H,A,B,0x113F9804BEF90DAEUL,W06)"
+			"WSTEP(W07,W05,W00,W08);STEP(B,C,D,E,F,G,H,A,0x1B710B35131C471BUL,W07)"
+			"WSTEP(W08,W06,W01,W09);STEP(A,B,C,D,E,F,G,H,0x28db77f523047d84UL,W08)"
+			"WSTEP(W09,W07,W02,W10);STEP(H,A,B,C,D,E,F,G,0x32caab7b40c72493UL,W09)"
+			"WSTEP(W10,W08,W03,W11);STEP(G,H,A,B,C,D,E,F,0x3c9ebe0a15c9bebcUL,W10)"
+			"WSTEP(W11,W09,W04,W12);STEP(F,G,H,A,B,C,D,E,0x431d67c49c100d4cUL,W11)"
+			"WSTEP(W12,W10,W05,W13);STEP(E,F,G,H,A,B,C,D,0x4cc5d4becb3e42b6UL,W12)"
+			"WSTEP(W13,W11,W06,W14);STEP(D,E,F,G,H,A,B,C,0x597f299cfc657e2aUL,W13)"
+			"WSTEP(W14,W12,W07,W15);STEP(C,D,E,F,G,H,A,B,0x5fcb6fab3ad6faecUL,W14)"
+			"WSTEP(W15,W13,W08,W00);STEP(B,C,D,E,F,G,H,A,0x6c44198c4a475817UL,W15)"
+
+			"state0+=A;"
+			"state1+=B;"
+			"state2+=C;"
+			"state3+=D;"
+			"state4+=E;"
+			"state5+=F;"
+			"state6+=G;"
+			"state7+=H;"
+				"\n");
 }
 PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules)
 {
 	// Generate code
 	assert(use_rules >= 0);
-	char* source = malloc(32 * 1024 * (1 + use_rules) + 8 * 1024 * (MAX_KEY_SIZE + 1) * MAX_SALT_SIZE);
+	char* source = malloc(32ull * 1024 * (1ull + use_rules) + 8 * 1024 * (MAX_KEY_SIZE + 1) * MAX_SALT_SIZE);
 	source[0] = 0;
 	// Header definitions
 	//if(num_passwords_loaded > 1 )
 	strcat(source, "#pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable\n");
-	if (gpu->flags & GPU_FLAG_SUPPORT_AMD_OPS)
-		strcat(source, "#pragma OPENCL EXTENSION cl_amd_media_ops : enable\n");
+	ocl_gen_header_needed_by_crypts(source, gpu, param->NUM_KEYS_OPENCL, use_rules);
 
-	sprintf(source + strlen(source), "#define bytealign(high,low,shift) (%s)\n", (gpu->flags & GPU_FLAG_SUPPORT_AMD_OPS) ? "amd_bytealign(high,low,shift)" : "((high<<(32u-shift*8u))|(low>>(shift*8u)))");
-	sprintf(source + strlen(source), "#define bs(c,b,a) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bitselect((c),(b),(a))" : "((c)^((a)&((b)^(c))))");
-	sprintf(source + strlen(source), "#define MAJ(b,c,d) (%s)\n", (gpu->flags & GPU_FLAG_NATIVE_BITSELECT) ? "bs(c,b,d^c)" : "(b&(c|d))|(c&d)");
-
-	//Initial values
-	sprintf(source + strlen(source),
+	// Helpers
+	sprintf(source + strlen(source), "\n"
 		"typedef struct {"
 			"uint rounds;"
 			"uint saltlen;"
 			"uint salt[4];"
 		"} crypt_sha256_salt;\n"
 
-		"#define GET_DATA(index) current_data[(%uu+index)*%uu+get_global_id(0)]\n"
-		, use_rules ? 8 : 0, param->NUM_KEYS_OPENCL);
-
-	// Helpers
-	sprintf(source + strlen(source), "\n"
 		"#ifdef __ENDIAN_LITTLE__\n"
-			"#define SWAP_ENDIANNESS(x,data) x=rotate(data,16u);x=((x&0x00FF00FFu)<<8u)|((x>>8u)&0x00FF00FFu);\n"
+			"#define SWAP_ENDIANNESS(x,data) x=as_uint(as_uchar4(data).s3210);\n"
 		"#else\n"
 			"#define SWAP_ENDIANNESS(x,data) x=data;\n"
 		"#endif\n"
-		"inline uint update_buffer_be(uint block[32],uint* data,uint data_len,uint buffer_len)"
+		"inline uint update_buffer_be(ulong block[32],ulong* data,uint data_len,uint buffer_len)"
 		"{"
-			"uint len3=8u*(buffer_len&3u);"
+			"uint len3=8u*(buffer_len&7u);"
 			"if(len3)"
 			"{"
-				"uint block_value=block[buffer_len/4]&(0xffffff00u<<(24u-len3));"
+				"ulong block_value=block[buffer_len/8]&(0xFFFFFFFFFFFFFF00UL<<(56u-len3));"
 
-				"for(uint i=0;i<((data_len+3)/4);i++){"
-					"uint data_value=data[i];"
-					"block[buffer_len/4+i]=block_value|(data_value>>len3);"
-					"block_value=data_value<<(32u-len3);"
+				"for(uint i=0;i<((data_len+7)/8);i++){"
+					"ulong data_value=data[i];"
+					"block[buffer_len/8+i]=block_value|(data_value>>len3);"
+					"block_value=data_value<<(64u-len3);"
 				"}"
-				"block[buffer_len/4+((data_len+3)/4)]=block_value;"
+				"block[buffer_len/8+((data_len+7)/8)]=block_value;"
 			"}else{"
-				"for(uint i=0;i<((data_len+3)/4);i++)"
-					"block[buffer_len/4+i]=data[i];"
+				"for(uint i=0;i<((data_len+7)/8);i++)"
+					"block[buffer_len/8+i]=data[i];"
 			"}"
 			"return data_len;"
 		"}");
 	// Main hash function
 	sprintf(source + strlen(source), "\n"
-		"#define sha256_process_block(state0,state1,state2,state3,state4,state5,state6,state7,W,w_base_index) "
+		"#define sha512_process_block(state0,state1,state2,state3,state4,state5,state6,state7,W,w_base_index) "
 			"W00=W[w_base_index+0u];"
 			"W01=W[w_base_index+1u];"
 			"W02=W[w_base_index+2u];"
@@ -1260,181 +1404,93 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules
 			"W13=W[w_base_index+13u];"
 			"W14=W[w_base_index+14u];"
 			"W15=W[w_base_index+15u];"
-			"sha256_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7);\n"
-
-		"#define R_E(x) (rotate(x,26u)^rotate(x,21u)^rotate(x,7u))\n"
-		"#define R_A(x) (rotate(x,30u)^rotate(x,19u)^rotate(x,10u))\n"
-		"#define R0(x)  (rotate(x,25u)^rotate(x,14u)^(x>>3))\n"
-		"#define R1(x)  (rotate(x,15u)^rotate(x,13u)^(x>>10))\n"
-		"#define sha256_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7) "
-
-			"A=state0;"
-			"B=state1;"
-			"C=state2;"
-			"D=state3;"
-			"E=state4;"
-			"F=state5;"
-			"G=state6;"
-			"H=state7;"
-
-			/* Rounds */
-			"H+=R_E(E)+bs(G,F,E)+0x428A2F98u+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"G+=R_E(D)+bs(F,E,D)+0x71374491u+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"F+=R_E(C)+bs(E,D,C)+0xB5C0FBCFu+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"E+=R_E(B)+bs(D,C,B)+0xE9B5DBA5u+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"D+=R_E(A)+bs(C,B,A)+0x3956C25Bu+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"C+=R_E(H)+bs(B,A,H)+0x59F111F1u+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"B+=R_E(G)+bs(A,H,G)+0x923F82A4u+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"A+=R_E(F)+bs(H,G,F)+0xAB1C5ED5u+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-			"H+=R_E(E)+bs(G,F,E)+0xD807AA98u+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"G+=R_E(D)+bs(F,E,D)+0x12835B01u+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"F+=R_E(C)+bs(E,D,C)+0x243185BEu+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"E+=R_E(B)+bs(D,C,B)+0x550C7DC3u+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"D+=R_E(A)+bs(C,B,A)+0x72BE5D74u+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"C+=R_E(H)+bs(B,A,H)+0x80DEB1FEu+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"B+=R_E(G)+bs(A,H,G)+0x9BDC06A7u+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"A+=R_E(F)+bs(H,G,F)+0xC19BF174u+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-
-			"W00+=R1(W14)+W09+R0(W01);H+=R_E(E)+bs(G,F,E)+0xE49B69C1u+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W01+=R1(W15)+W10+R0(W02);G+=R_E(D)+bs(F,E,D)+0xEFBE4786u+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W02+=R1(W00)+W11+R0(W03);F+=R_E(C)+bs(E,D,C)+0x0FC19DC6u+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W03+=R1(W01)+W12+R0(W04);E+=R_E(B)+bs(D,C,B)+0x240CA1CCu+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W04+=R1(W02)+W13+R0(W05);D+=R_E(A)+bs(C,B,A)+0x2DE92C6Fu+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W05+=R1(W03)+W14+R0(W06);C+=R_E(H)+bs(B,A,H)+0x4A7484AAu+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W06+=R1(W04)+W15+R0(W07);B+=R_E(G)+bs(A,H,G)+0x5CB0A9DCu+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W07+=R1(W05)+W00+R0(W08);A+=R_E(F)+bs(H,G,F)+0x76F988DAu+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-			"W08+=R1(W06)+W01+R0(W09);H+=R_E(E)+bs(G,F,E)+0x983E5152u+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W09+=R1(W07)+W02+R0(W10);G+=R_E(D)+bs(F,E,D)+0xA831C66Du+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W10+=R1(W08)+W03+R0(W11);F+=R_E(C)+bs(E,D,C)+0xB00327C8u+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W11+=R1(W09)+W04+R0(W12);E+=R_E(B)+bs(D,C,B)+0xBF597FC7u+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W12+=R1(W10)+W05+R0(W13);D+=R_E(A)+bs(C,B,A)+0xC6E00BF3u+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W13+=R1(W11)+W06+R0(W14);C+=R_E(H)+bs(B,A,H)+0xD5A79147u+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W14+=R1(W12)+W07+R0(W15);B+=R_E(G)+bs(A,H,G)+0x06CA6351u+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W15+=R1(W13)+W08+R0(W00);A+=R_E(F)+bs(H,G,F)+0x14292967u+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-
-			"W00+=R1(W14)+W09+R0(W01);H+=R_E(E)+bs(G,F,E)+0x27B70A85u+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W01+=R1(W15)+W10+R0(W02);G+=R_E(D)+bs(F,E,D)+0x2E1B2138u+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W02+=R1(W00)+W11+R0(W03);F+=R_E(C)+bs(E,D,C)+0x4D2C6DFCu+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W03+=R1(W01)+W12+R0(W04);E+=R_E(B)+bs(D,C,B)+0x53380D13u+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W04+=R1(W02)+W13+R0(W05);D+=R_E(A)+bs(C,B,A)+0x650A7354u+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W05+=R1(W03)+W14+R0(W06);C+=R_E(H)+bs(B,A,H)+0x766A0ABBu+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W06+=R1(W04)+W15+R0(W07);B+=R_E(G)+bs(A,H,G)+0x81C2C92Eu+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W07+=R1(W05)+W00+R0(W08);A+=R_E(F)+bs(H,G,F)+0x92722C85u+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-			"W08+=R1(W06)+W01+R0(W09);H+=R_E(E)+bs(G,F,E)+0xA2BFE8A1u+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W09+=R1(W07)+W02+R0(W10);G+=R_E(D)+bs(F,E,D)+0xA81A664Bu+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W10+=R1(W08)+W03+R0(W11);F+=R_E(C)+bs(E,D,C)+0xC24B8B70u+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W11+=R1(W09)+W04+R0(W12);E+=R_E(B)+bs(D,C,B)+0xC76C51A3u+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W12+=R1(W10)+W05+R0(W13);D+=R_E(A)+bs(C,B,A)+0xD192E819u+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W13+=R1(W11)+W06+R0(W14);C+=R_E(H)+bs(B,A,H)+0xD6990624u+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W14+=R1(W12)+W07+R0(W15);B+=R_E(G)+bs(A,H,G)+0xF40E3585u+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W15+=R1(W13)+W08+R0(W00);A+=R_E(F)+bs(H,G,F)+0x106AA070u+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-
-			"W00+=R1(W14)+W09+R0(W01);H+=R_E(E)+bs(G,F,E)+0x19A4C116u+W00;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W01+=R1(W15)+W10+R0(W02);G+=R_E(D)+bs(F,E,D)+0x1E376C08u+W01;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W02+=R1(W00)+W11+R0(W03);F+=R_E(C)+bs(E,D,C)+0x2748774Cu+W02;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W03+=R1(W01)+W12+R0(W04);E+=R_E(B)+bs(D,C,B)+0x34B0BCB5u+W03;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W04+=R1(W02)+W13+R0(W05);D+=R_E(A)+bs(C,B,A)+0x391C0CB3u+W04;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W05+=R1(W03)+W14+R0(W06);C+=R_E(H)+bs(B,A,H)+0x4ED8AA4Au+W05;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W06+=R1(W04)+W15+R0(W07);B+=R_E(G)+bs(A,H,G)+0x5B9CCA4Fu+W06;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W07+=R1(W05)+W00+R0(W08);A+=R_E(F)+bs(H,G,F)+0x682E6FF3u+W07;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-			"W08+=R1(W06)+W01+R0(W09);H+=R_E(E)+bs(G,F,E)+0x748F82EEu+W08;D+=H;H+=R_A(A)+MAJ(A,B,C);"
-			"W09+=R1(W07)+W02+R0(W10);G+=R_E(D)+bs(F,E,D)+0x78A5636Fu+W09;C+=G;G+=R_A(H)+MAJ(H,A,B);"
-			"W10+=R1(W08)+W03+R0(W11);F+=R_E(C)+bs(E,D,C)+0x84C87814u+W10;B+=F;F+=R_A(G)+MAJ(G,H,A);"
-			"W11+=R1(W09)+W04+R0(W12);E+=R_E(B)+bs(D,C,B)+0x8CC70208u+W11;A+=E;E+=R_A(F)+MAJ(F,G,H);"
-			"W12+=R1(W10)+W05+R0(W13);D+=R_E(A)+bs(C,B,A)+0x90BEFFFAu+W12;H+=D;D+=R_A(E)+MAJ(E,F,G);"
-			"W13+=R1(W11)+W06+R0(W14);C+=R_E(H)+bs(B,A,H)+0xA4506CEBu+W13;G+=C;C+=R_A(D)+MAJ(D,E,F);"
-			"W14+=R1(W12)+W07+R0(W15);B+=R_E(G)+bs(A,H,G)+0xBEF9A3F7u+W14;F+=B;B+=R_A(C)+MAJ(C,D,E);"
-			"W15+=R1(W13)+W08+R0(W00);A+=R_E(F)+bs(H,G,F)+0xC67178F2u+W15;E+=A;A+=R_A(B)+MAJ(B,C,D);"
-
-			"state0+=A;"
-			"state1+=B;"
-			"state2+=C;"
-			"state3+=D;"
-			"state4+=E;"
-			"state5+=F;"
-			"state6+=G;"
-			"state7+=H;"
-		"\n");
+			"sha512_process_block_base(state0,state1,state2,state3,state4,state5,state6,state7);\n");
 
 	// Init function definition
 	sprintf(source + strlen(source), "\n"
-		"#define SHA256_INIT_STATE(state0,state1,state2,state3,state4,state5,state6,state7) "
+		"#define SHA512_INIT_STATE(state0,state1,state2,state3,state4,state5,state6,state7) "
 			"buffer_len=0,num_blocks=0;"
-			"state0=0x6A09E667;"
-			"state1=0xBB67AE85;"
-			"state2=0x3C6EF372;"
-			"state3=0xA54FF53A;"
-			"state4=0x510E527F;"
-			"state5=0x9B05688C;"
-			"state6=0x1F83D9AB;"
-			"state7=0x5BE0CD19;\n"
-		"#define SHA256_END_CTX(state0,state1,state2,state3,state4,state5,state6,state7)"
-			"len3=8u*(buffer_len&3u);"
+			"state0=0x6A09E667F3BCC908UL;"
+			"state1=0xBB67AE8584CAA73BUL;"
+			"state2=0x3C6EF372FE94F82BUL;"
+			"state3=0xA54FF53A5F1D36F1UL;"
+			"state4=0x510E527FADE682D1UL;"
+			"state5=0x9B05688C2B3E6C1FUL;"
+			"state6=0x1F83D9ABFB41BD6BUL;"
+			"state7=0x5BE0CD19137E2179UL;\n"
+		"#define SHA512_END_CTX(state0,state1,state2,state3,state4,state5,state6,state7)"
+			"len3=8u*(buffer_len&7u);"
 			"if(len3){"
-				"uint block_value=w[buffer_len/4]&(0xffffff00u<<(24u-len3));"
-				"w[buffer_len/4]=block_value|(0x80000000u>>len3);"
+				"ulong block_value=w[buffer_len/8]&(0xffffffffffffff00UL<<(56u-len3));"
+				"w[buffer_len/8]=block_value|(0x8000000000000000UL>>len3);"
 			"}else{"
-				"w[buffer_len/4]=0x80000000;}"
-			"if (buffer_len>=56u)"
+				"w[buffer_len/8]=0x8000000000000000UL;}"
+			"if (buffer_len>=112u)"
 			"{"
-				"for(uint i=buffer_len/4+1;i<31u;i++)"
+				"for(uint i=buffer_len/8+1;i<31u;i++)"
 					"w[i]=0;"
-				"w[16+15]=(num_blocks*64u+buffer_len)<<3u;"
-				"sha256_process_block(state0,state1,state2,state3,state4,state5,state6,state7,w,0u);"
-				"sha256_process_block(state0,state1,state2,state3,state4,state5,state6,state7,w,16u);"
+				"w[16+15]=(num_blocks*128u+buffer_len)<<3u;"
+				"sha512_process_block(state0,state1,state2,state3,state4,state5,state6,state7,w,0u);"
+				"sha512_process_block(state0,state1,state2,state3,state4,state5,state6,state7,w,16u);"
 			"}"
 			"else"
 			"{"
-				"for(uint i=buffer_len/4+1;i<15u;i++)"
+				"for(uint i=buffer_len/8+1;i<15u;i++)"
 					"w[i]=0;"
-				"w[15u]=(num_blocks*64u+buffer_len)<<3u;"
-				"sha256_process_block(state0,state1,state2,state3,state4,state5,state6,state7,w,0u);"
+				"w[15u]=(num_blocks*128u+buffer_len)<<3u;"
+				"sha512_process_block(state0,state1,state2,state3,state4,state5,state6,state7,w,0u);"
 			"}\n"
 
 		"__kernel void init_part(__global uint* current_key,__global uint* current_data,__global crypt_sha256_salt* salts,uint base_len,uint len,uint salt_index)"
 		"{"
 			"uint idx=get_global_id(0);"
 
-			"uint tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7;"
-			"uint alt_state0,alt_state1,alt_state2,alt_state3,alt_state4,alt_state5,alt_state6,alt_state7;"
-			"uint w[32];"
+			"ulong tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7;"
+			"ulong alt_state0,alt_state1,alt_state2,alt_state3,alt_state4,alt_state5,alt_state6,alt_state7;"
+			"ulong w[32];"
 			"uint buffer_len,num_blocks,len3;"
 
-			"uint A,B,C,D,E,F,G,H;"
-			"uint W00,W01,W02,W03,W04,W05,W06,W07,W08,W09,W10,W11,W12,W13,W14,W15;"
+			"ulong A,B,C,D,E,F,G,H;"
+			"ulong W00,W01,W02,W03,W04,W05,W06,W07,W08,W09,W10,W11,W12,W13,W14,W15;"
 
 			"if(len>%iu)return;"
 
 			// Load key
-			"uint key[7];"
+			"ulong key[4];"
 			"for(uint i=0;i<((len+3u)/4u);i++)"
 			"{"
 				"uint tmp=current_key[idx+i*%uu+base_len];"
 				"SWAP_ENDIANNESS(tmp,tmp);"
-				"key[i]=tmp;"
+				"if(i&1){"
+					"key[i/2]|=((ulong)tmp);"
+				"}else{"
+					"key[i/2]=((ulong)tmp)<<32;}"
 			"}"
 
 			// Load salt
-			"uint salt[4];"
+			"ulong salt[2];"
 			"uint saltlen=salts[salt_index].saltlen;"
 			"for(uint i=0;i<((saltlen+3u)/4u);i++)"
 			"{"
 				"uint tmp=salts[salt_index].salt[i];"
 				"SWAP_ENDIANNESS(tmp,tmp);"
-				"salt[i]=tmp;"
+				"if(i&1){"
+					"salt[i/2]|=((ulong)tmp);"
+				"}else{"
+					"salt[i/2]=((ulong)tmp)<<32;}"
 			"}"
 		, MAX_KEY_SIZE, param->param1 * 2);		
 		
 	sprintf(source + strlen(source),	
 			// 1st digest
-			"SHA256_INIT_STATE(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
+			"SHA512_INIT_STATE(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
 			"buffer_len+=update_buffer_be(w,key,len,buffer_len);"// Copy key
 			"buffer_len+=update_buffer_be(w,salt,saltlen,buffer_len);"// Copy salt
 			"buffer_len+=update_buffer_be(w,key,len,buffer_len);"// Copy key
-			"SHA256_END_CTX(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
+			"SHA512_END_CTX(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
 
 			// 2nd digest
-			"SHA256_INIT_STATE(alt_state0,alt_state1,alt_state2,alt_state3,alt_state4,alt_state5,alt_state6,alt_state7);"
+			"SHA512_INIT_STATE(alt_state0,alt_state1,alt_state2,alt_state3,alt_state4,alt_state5,alt_state6,alt_state7);"
 			"buffer_len+=update_buffer_be(w,key,len,buffer_len);"// Copy key
 			"buffer_len+=update_buffer_be(w,salt,saltlen,buffer_len);"// Copy salt
 			"w[24]=tmp_state0;w[25]=tmp_state1;w[26]=tmp_state2;w[27]=tmp_state3;w[28]=tmp_state4;w[29]=tmp_state5;w[30]=tmp_state6;w[31]=tmp_state7;"
@@ -1444,76 +1500,84 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules
 				"if(j & 1u)"
 				"{"
 					"w[24]=tmp_state0;w[25]=tmp_state1;w[26]=tmp_state2;w[27]=tmp_state3;w[28]=tmp_state4;w[29]=tmp_state5;w[30]=tmp_state6;w[31]=tmp_state7;"
-					"buffer_len+=update_buffer_be(w,w+24,32u,buffer_len);"// Copy state
+					"buffer_len+=update_buffer_be(w,w+24,64u,buffer_len);"// Copy state
 				"}"
 				"else"
 				"{"
 					"buffer_len+=update_buffer_be(w,key,len,buffer_len);"// Copy key
 				"}"
-				"if(buffer_len>=64u)"
+				"if(buffer_len>=128u)"
 				"{"
-					"sha256_process_block(alt_state0,alt_state1,alt_state2,alt_state3,alt_state4,alt_state5,alt_state6,alt_state7,w,0u);"
-					"buffer_len-=64u;"
+					"sha512_process_block(alt_state0,alt_state1,alt_state2,alt_state3,alt_state4,alt_state5,alt_state6,alt_state7,w,0u);"
+					"buffer_len-=128u;"
 					"num_blocks++;"
-					"for(uint i=0;i<((buffer_len+3u)/4u);i++)"// Copy block end to begining
+					"for(uint i=0;i<((buffer_len+7u)/8u);i++)"// Copy block end to begining
 						"w[i]=w[16u+i];"
 				"}"
 			"}"
-			"SHA256_END_CTX(alt_state0,alt_state1,alt_state2,alt_state3,alt_state4,alt_state5,alt_state6,alt_state7);"
+			"SHA512_END_CTX(alt_state0,alt_state1,alt_state2,alt_state3,alt_state4,alt_state5,alt_state6,alt_state7);"
 			// Save state for big cycle
 			"GET_DATA(0u)=alt_state0;"
-			"GET_DATA(1u)=alt_state1;"
-			"GET_DATA(2u)=alt_state2;"
-			"GET_DATA(3u)=alt_state3;"
-			"GET_DATA(4u)=alt_state4;"
-			"GET_DATA(5u)=alt_state5;"
-			"GET_DATA(6u)=alt_state6;"
-			"GET_DATA(7u)=alt_state7;"
+			"GET_DATA(1u)=alt_state0>>32u;"
+			"GET_DATA(2u)=alt_state1;"
+			"GET_DATA(3u)=alt_state1>>32u;"
+			"GET_DATA(4u)=alt_state2;"
+			"GET_DATA(5u)=alt_state2>>32u;"
+			"GET_DATA(6u)=alt_state3;"
+			"GET_DATA(7u)=alt_state3>>32u;"
+			"GET_DATA(8u)=alt_state4;"
+			"GET_DATA(9u)=alt_state4>>32u;"
+			"GET_DATA(10u)=alt_state5;"
+			"GET_DATA(11u)=alt_state5>>32u;"
+			"GET_DATA(12u)=alt_state6;"
+			"GET_DATA(13u)=alt_state6>>32u;"
+			"GET_DATA(14u)=alt_state7;"
+			"GET_DATA(15u)=alt_state7>>32u;"
 
 			// Start computation of P byte sequence.
-			"SHA256_INIT_STATE(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
+			"SHA512_INIT_STATE(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
 			"for(uint j=0;j<len;j++)"
 			"{"
 				"buffer_len+=update_buffer_be(w,key,len,buffer_len);"// Copy key
-				"if(buffer_len>=64u)"
+				"if(buffer_len>=128u)"
 				"{"
-					"sha256_process_block(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7,w,0u);"
-					"buffer_len-=64u;"
+					"sha512_process_block(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7,w,0u);"
+					"buffer_len-=128u;"
 					"num_blocks++;"
-					"for(uint i=0;i<((buffer_len+3u)/4u);i++)"// Copy block end to begining
+					"for(uint i=0;i<((buffer_len+7u)/8u);i++)"// Copy block end to begining
 						"w[i]=w[16u+i];"
 				"}"
 			"}"
-			"SHA256_END_CTX(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
+			"SHA512_END_CTX(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
 			//"memcpy(p_bytes, tmp_state, key_len);"
-			           "GET_DATA(8u+0u)=tmp_state0;"
-			"if(len>4u){GET_DATA(8u+1u)=tmp_state1;}"
-			"if(len>8u){GET_DATA(8u+2u)=tmp_state2;}"
-			"if(len>12u){GET_DATA(8u+3u)=tmp_state3;}"
-			"if(len>16u){GET_DATA(8u+4u)=tmp_state4;}"
-			"if(len>20u){GET_DATA(8u+5u)=tmp_state5;}"
-			"if(len>24u){GET_DATA(8u+6u)=tmp_state6;}"
+			           "GET_DATA(20u+0u)=tmp_state0>>32u;"
+			"if(len>4u){GET_DATA(20u+1u)=tmp_state0;}"
+			"if(len>8u){GET_DATA(20u+2u)=tmp_state1>>32u;}"
+			"if(len>12u){GET_DATA(20u+3u)=tmp_state1;}"
+			"if(len>16u){GET_DATA(20u+4u)=tmp_state2>>32u;}"
+			"if(len>20u){GET_DATA(20u+5u)=tmp_state2;}"
+			"if(len>24u){GET_DATA(20u+6u)=tmp_state3>>32u;}"
 
 			// Start computation of S byte sequence.
-			"SHA256_INIT_STATE(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
-			"for(uint j=0;j<(16u+(alt_state0>>24u));j++)"
+			"SHA512_INIT_STATE(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
+			"for(uint j=0;j<(16u+(alt_state0>>56u));j++)"
 			"{"
 				"buffer_len+=update_buffer_be(w,salt,saltlen,buffer_len);"// Copy salt
-				"if (buffer_len>=64u)"
+				"if(buffer_len>=128u)"
 				"{"
-					"sha256_process_block(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7,w,0u);"
-					"buffer_len-=64u;"
+					"sha512_process_block(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7,w,0u);"
+					"buffer_len-=128u;"
 					"num_blocks++;"
-					"for(uint i=0;i<((buffer_len+3u)/4u);i++)"// Copy block end to begining
+					"for(uint i=0;i<((buffer_len+7u)/8u);i++)"// Copy block end to begining
 						"w[i]=w[16u+i];"
 				"}"
 			"}"
-			"SHA256_END_CTX(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
+			"SHA512_END_CTX(tmp_state0,tmp_state1,tmp_state2,tmp_state3,tmp_state4,tmp_state5,tmp_state6,tmp_state7);"
 			//memcpy(s_bytes, tmp_state, salt.saltlen);
-							"GET_DATA(16u+0u)=tmp_state0;"
-			"if(saltlen> 4u){GET_DATA(16u+1u)=tmp_state1;}"
-			"if(saltlen> 8u){GET_DATA(16u+2u)=tmp_state2;}"
-			"if(saltlen>12u){GET_DATA(16u+3u)=tmp_state3;}"
+						   "GET_DATA(16u+0u)=tmp_state0>>32u;"
+			"if(saltlen>4u){GET_DATA(16u+1u)=tmp_state0;}"
+			"if(saltlen>8u){GET_DATA(16u+2u)=tmp_state1>>32u;}"
+			"if(saltlen>12u){GET_DATA(16u+3u)=tmp_state1;}"
 	"}");
 
 	sprintf(source + strlen(source), "\n__kernel void compare_result(__global uint* current_data,__global uint* output,const __global uint* bin,"
@@ -1524,8 +1588,16 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules
 		"uint index=salt_index[current_salt_index];"
 		"while(index!=0xffffffff)"
 		"{"
-			"if(GET_DATA(0)==bin[8u*index+0]&&GET_DATA(1)==bin[8u*index+1u]&&GET_DATA(2)==bin[8u*index+2u]&&GET_DATA(3)==bin[8u*index+3u]&&"
-				"GET_DATA(4)==bin[8u*index+4]&&GET_DATA(5)==bin[8u*index+5u]&&GET_DATA(6)==bin[8u*index+6u]&&GET_DATA(7)==bin[8u*index+7u])"
+			// Did it match?
+			"bool isFound=true;"
+			"for(uint i=0;i<16u;i++){"
+				"if(GET_DATA(i)!=bin[16u*index+i]){"
+					"isFound=false;"
+					"break;"
+				"}"
+			"}"
+
+			"if(isFound)"
 			"{"
 				"uint found=atomic_inc(output);"
 				"output[2*found+1]=idx;"
@@ -1536,42 +1608,37 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules
 	"}");
 
 	//sprintf(source + strlen(source),
-	//	"\n__kernel void sha256crypt_cycle(__global uint* current_data,uint len,uint rounds,uint saltlen)"
+	//	"\n__kernel void sha512crypt_cycle(__global uint* current_data,uint rounds,uint len,uint saltlen)"
 	//	"{"
 	//		"if(len>%iu)return;"
 
-	//		"uint A,B,C,D,E,F,G,H;"
-	//		"uint W00,W01,W02,W03,W04,W05,W06,W07,W08,W09,W10,W11,W12,W13,W14,W15;"
+	//		"ulong A,B,C,D,E,F,G,H;"
+	//		"ulong W00,W01,W02,W03,W04,W05,W06,W07,W08,W09,W10,W11,W12,W13,W14,W15;"
 
 	//		// Load data from global memory
 	//		"uint idx=get_global_id(0);"
 
-	//		"uint salt0=(saltlen)?GET_DATA(16u+0u):0;"
-	//		"uint salt1=(saltlen>4)?GET_DATA(16u+1u):0;"
-	//		"uint salt2=(saltlen>8)?GET_DATA(16u+2u):0;"
-	//		"uint salt3=(saltlen>12)?GET_DATA(16u+3u):0;"
+	//		"ulong salt0=upsample((saltlen)?GET_DATA(16u+0u):0,(saltlen>4u)?GET_DATA(16u+1u):0);"
+	//		"ulong salt1=upsample((saltlen>8u)?GET_DATA(16u+2u):0,(saltlen>12u)?GET_DATA(16u+3u):0);"
 
-	//		"uint key0=(len)?GET_DATA(8u+0u):0;"
-	//		"uint key1=(len>4)?GET_DATA(8u+1u):0;"
-	//		"uint key2=(len>8)?GET_DATA(8u+2u):0;"
-	//		"uint key3=(len>12)?GET_DATA(8u+3u):0;"
-	//		"uint key4=(len>16)?GET_DATA(8u+4u):0;"
-	//		"uint key5=(len>20)?GET_DATA(8u+5u):0;"
-	//		"uint key6=(len>24)?GET_DATA(8u+6u):0;"
+	//		"ulong key0=upsample((len)?GET_DATA(20u+0u):0,(len>4u)?GET_DATA(20u+1u):0);"
+	//		"ulong key1=upsample((len>8u)?GET_DATA(20u+2u):0,(len>12u)?GET_DATA(20u+3u):0);"
+	//		"ulong key2=upsample((len>16u)?GET_DATA(20u+4u):0,(len>20u)?GET_DATA(20u+5u):0);"
+	//		"ulong key3=upsample((len>24u)?GET_DATA(20u+6u):0,0);"
 
-	//		"uint state0=GET_DATA(0u);"
-	//		"uint state1=GET_DATA(1u);"
-	//		"uint state2=GET_DATA(2u);"
-	//		"uint state3=GET_DATA(3u);"
-	//		"uint state4=GET_DATA(4u);"
-	//		"uint state5=GET_DATA(5u);"
-	//		"uint state6=GET_DATA(6u);"
-	//		"uint state7=GET_DATA(7u);"
+	//		"ulong state0=upsample(GET_DATA(1u),GET_DATA(0u));"
+	//		"ulong state1=upsample(GET_DATA(3u),GET_DATA(2u));"
+	//		"ulong state2=upsample(GET_DATA(5u),GET_DATA(4u));"
+	//		"ulong state3=upsample(GET_DATA(7u),GET_DATA(6u));"
+	//		"ulong state4=upsample(GET_DATA(9u),GET_DATA(8u));"
+	//		"ulong state5=upsample(GET_DATA(11u),GET_DATA(10u));"
+	//		"ulong state6=upsample(GET_DATA(13u),GET_DATA(12u));"
+	//		"ulong state7=upsample(GET_DATA(15u),GET_DATA(14u));"
 	//, MAX_KEY_SIZE);
 
 
 	//sprintf(source + strlen(source),
-	//		"uint w[32];"
+	//		"ulong w[32];"
 	//		"uint buffer_len=0;"
 
 	//		"for(uint i=0u;i<rounds;i++)"
@@ -1582,9 +1649,6 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules
 	//				"w[1]=key1;"
 	//				"w[2]=key2;"
 	//				"w[3]=key3;"
-	//				"w[4]=key4;"
-	//				"w[5]=key5;"
-	//				"w[6]=key6;"
 	//				"buffer_len=len;"
 	//			"}else{"
 	//				"w[0]=state0;"
@@ -1595,26 +1659,21 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules
 	//				"w[5]=state5;"
 	//				"w[6]=state6;"
 	//				"w[7]=state7;"
-	//				"buffer_len=32u;"
+	//				"buffer_len=64u;"
 	//			"}"
 	//			"if(i%%3u)"
 	//			"{"
-	//				"w[28]=salt0;"
-	//				"w[29]=salt1;"
-	//				"w[30]=salt2;"
-	//				"w[31]=salt3;"
-	//				"buffer_len+=update_buffer_be(w,w+28u,saltlen,buffer_len);"
+	//				"w[30]=salt0;"
+	//				"w[31]=salt1;"
+	//				"buffer_len+=update_buffer_be(w,w+30u,saltlen,buffer_len);"
 	//			"}"
 	//			"if(i%%7u)"
 	//			"{"
-	//				"w[25]=key0;"
-	//				"w[26]=key1;"
-	//				"w[27]=key2;"
-	//				"w[28]=key3;"
-	//				"w[29]=key4;"
-	//				"w[30]=key5;"
-	//				"w[31]=key6;"
-	//				"buffer_len+=update_buffer_be(w,w+25u,len,buffer_len);"
+	//				"w[28]=key0;"
+	//				"w[29]=key1;"
+	//				"w[30]=key2;"
+	//				"w[31]=key3;"
+	//				"buffer_len+=update_buffer_be(w,w+28u,len,buffer_len);"
 	//			"}"
 	//			"if(i&1u)"
 	//			"{"
@@ -1626,103 +1685,97 @@ PRIVATE char* ocl_gen_kernels(GPUDevice* gpu, OpenCL_Param* param, int use_rules
 	//				"w[29]=state5;"
 	//				"w[30]=state6;"
 	//				"w[31]=state7;"
-	//				"buffer_len+=update_buffer_be(w,w+24u,32u,buffer_len);"
+	//				"buffer_len+=update_buffer_be(w,w+24u,64u,buffer_len);"
 	//			"}else{"
-	//				"w[25]=key0;"
-	//				"w[26]=key1;"
-	//				"w[27]=key2;"
-	//				"w[28]=key3;"
-	//				"w[29]=key4;"
-	//				"w[30]=key5;"
-	//				"w[31]=key6;"
-	//				"buffer_len+=update_buffer_be(w,w+25u,len,buffer_len);"
+	//				"w[28]=key0;"
+	//				"w[29]=key1;"
+	//				"w[30]=key2;"
+	//				"w[31]=key3;"
+	//				"buffer_len+=update_buffer_be(w,w+28u,len,buffer_len);"
 	//			"}"
-	//			
-	//			 // End buffer
-	//			"uint len3=8u*(buffer_len&3u);"
+	//			// End buffer
+	//			"uint len3=8u*(buffer_len&7u);"
 	//			"if(len3){"
-	//				"uint block_value=w[buffer_len/4]&(0xffffff00u<<(24u-len3));"
-	//				"w[buffer_len/4]=block_value|(0x80000000>>len3);"
+	//				"ulong block_value=w[buffer_len/8]&(0xffffffffffffff00UL<<(56u-len3));"
+	//				"w[buffer_len/8]=block_value|(0x8000000000000000UL>>len3);"
 	//			"}else{"
-	//				"w[buffer_len/4]=0x80000000;}"
-
+	//				"w[buffer_len/8]=0x8000000000000000UL;}"
 	//			// Zero terminate
-	//			"uint len_pos=buffer_len>=56u?31:15;"
-	//			"for(uint i=buffer_len/4+1;i<len_pos;i++)"
+	//			"uint len_pos=buffer_len>=112u?31u:15u;"
+	//			"for(uint i=buffer_len/8+1;i<len_pos;i++)"
 	//				"w[i]=0;"
 	//			"w[len_pos]=buffer_len<<3u;"
-
+	//			
 	//			// Compress hash function
-	//			"state0=0x6A09E667;"
-	//			"state1=0xBB67AE85;"
-	//			"state2=0x3C6EF372;"
-	//			"state3=0xA54FF53A;"
-	//			"state4=0x510E527F;"
-	//			"state5=0x9B05688C;"
-	//			"state6=0x1F83D9AB;"
-	//			"state7=0x5BE0CD19;"
+	//			"state0=0x6A09E667F3BCC908UL;"
+	//			"state1=0xBB67AE8584CAA73BUL;"
+	//			"state2=0x3C6EF372FE94F82BUL;"
+	//			"state3=0xA54FF53A5F1D36F1UL;"
+	//			"state4=0x510E527FADE682D1UL;"
+	//			"state5=0x9B05688C2B3E6C1FUL;"
+	//			"state6=0x1F83D9ABFB41BD6BUL;"
+	//			"state7=0x5BE0CD19137E2179UL;"
 
-	//			"sha256_process_block(state0,state1,state2,state3,state4,state5,state6,state7,w,0u);"
-	//			"if(buffer_len>=56u)"
+	//			"sha512_process_block(state0,state1,state2,state3,state4,state5,state6,state7,w,0u);"
+	//			"if(buffer_len>=112u)"
 	//			"{"
-	//				"sha256_process_block(state0,state1,state2,state3,state4,state5,state6,state7,w,16u);"
+	//				"sha512_process_block(state0,state1,state2,state3,state4,state5,state6,state7,w,16u);"
 	//			"}"
 	//		"}"
 
+	//		// Save state for big cycle
 	//		"GET_DATA(0u)=state0;"
-	//		"GET_DATA(1u)=state1;"
-	//		"GET_DATA(2u)=state2;"
-	//		"GET_DATA(3u)=state3;"
-	//		"GET_DATA(4u)=state4;"
-	//		"GET_DATA(5u)=state5;"
-	//		"GET_DATA(6u)=state6;"
-	//		"GET_DATA(7u)=state7;"
+	//		"GET_DATA(1u)=state0>>32u;"
+	//		"GET_DATA(2u)=state1;"
+	//		"GET_DATA(3u)=state1>>32u;"
+	//		"GET_DATA(4u)=state2;"
+	//		"GET_DATA(5u)=state2>>32u;"
+	//		"GET_DATA(6u)=state3;"
+	//		"GET_DATA(7u)=state3>>32u;"
+	//		"GET_DATA(8u)=state4;"
+	//		"GET_DATA(9u)=state4>>32u;"
+	//		"GET_DATA(10u)=state5;"
+	//		"GET_DATA(11u)=state5>>32u;"
+	//		"GET_DATA(12u)=state6;"
+	//		"GET_DATA(13u)=state6>>32u;"
+	//		"GET_DATA(14u)=state7;"
+	//		"GET_DATA(15u)=state7>>32u;"
 	//	"}\n");
-
-	uint32_t exist_salt_by_len[MAX_SALT_SIZE+1];
-	memset(exist_salt_by_len, FALSE, sizeof(exist_salt_by_len));
-	for (uint32_t i = 0; i < num_diff_salts; i++)
-		exist_salt_by_len[((const crypt_sha256_salt*)salts_values)->saltlen] = TRUE;
-
-	// Generate specific code for each length
-	for (cl_uint key_len = 0; key_len <= MAX_KEY_SIZE; key_len++)
-		for (uint32_t salt_len = 1; salt_len <= MAX_SALT_SIZE; salt_len++)
-			if(exist_salt_by_len[salt_len])
-				ocl_gen_sha256body_by_lenght(source + strlen(source), param, key_len, salt_len);
 
 	//size_t len = strlen(source);
 	return source;
 }
+int build_opencl_program_private(OpenCL_Param* param, const char* source, char* compiler_options, cl_program* program);
 PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, generate_key_funtion* gen, gpu_crypt_funtion** gpu_crypt, oclKernel2Common* ocl_kernel_provider, int use_rules)
 {
 	// Only one hash
 	// For Intel HD 4600 best DIVIDER=?
-	//  1	4.00K
-	//	2	3.94K
-	//	4	3.90K
-	//	8	3.55K
-	//	16	2.99K
-	//	32	2.84K
-	// For AMD HD 7970 best DIVIDER=?
-	//  1	146K
-	//	2	146K
-	//	4	144K
-	//	8	141K
-	//	16	138K
-	//	32	131K
-	// For Nvidia GTX 970 best DIVIDER=?
-	//  1	99K
-	//	2	142K
-	//	4	139K
-	//	8	119K
-	//	16	101K
-	//	32	127K
+	//  1	?
+	//	2	?
+	//	4	?
+	//	8	?
+	//	16	?
+	//	32	?
+	// For AMD gfx902 best DIVIDER=?
+	//  1	?
+	//	2	?
+	//	4	?
+	//	8	?
+	//	16	?
+	//	32	?
+	// For Nvidia GTX 1650 Ti best DIVIDER=8-16
+	//  1	87.3K
+	//	2	97k
+	//	4	100k
+	//	8	102k
+	//	16	102K
+	//	32	92.9K
 
 	// For AMD HD 7970
 	// Hashcat: 
 	// Theoretical: 
-	// HS by len : 
-	if (!ocl_init_slow_hashes_ordered(param, gpu_index, gen, gpu_crypt, ocl_kernel_provider, use_rules, (use_rules ? 8 : 0) + 20, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 4, MAX_KEY_SIZE, TRUE))
+	// HS by len: 
+	if (!ocl_init_slow_hashes_ordered(param, gpu_index, gen, gpu_crypt, ocl_kernel_provider, use_rules, (use_rules ? 8 : 0) + 16+4+7, BINARY_SIZE, SALT_SIZE, ocl_gen_kernels, ocl_work_body, 8, MAX_KEY_SIZE, TRUE))
 		return FALSE;
 
 	// Crypt Kernels
@@ -1766,31 +1819,61 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 	param->additional_kernels = malloc(param->additional_kernels_size * sizeof(cl_kernel));
 	memset(param->additional_kernels, 0, param->additional_kernels_size * sizeof(cl_kernel));
 	assert(param->additional_kernels);
+	param->additional_programs = malloc(param->additional_kernels_size * sizeof(cl_program));
+	memset(param->additional_programs, 0, param->additional_kernels_size * sizeof(cl_program));
+	assert(param->additional_programs);
 	// Pre-calculate salt sizes
 	uint32_t exist_salt_by_len[MAX_SALT_SIZE + 1];
 	memset(exist_salt_by_len, FALSE, sizeof(exist_salt_by_len));
 	for (uint32_t i = 0; i < num_diff_salts; i++)
-		exist_salt_by_len[((const crypt_sha256_salt*)salts_values)->saltlen] = TRUE;
+		exist_salt_by_len[((const crypt_sha256_salt*)salts_values)[i].saltlen] = TRUE;
+
+	// Generate specific code for each length
+	char* source = malloc(32 * 1024);
+	uint32_t count_kernels = 0;
+	uint32_t total_kernels = 0;
+	for (uint32_t salt_len = 1; salt_len <= MAX_SALT_SIZE; salt_len++)
+		if (exist_salt_by_len[salt_len])
+			total_kernels += MAX_KEY_SIZE + 1;
 
 	for (cl_uint key_len = 0; key_len <= MAX_KEY_SIZE; key_len++)
 		for (uint32_t salt_len = 1; salt_len <= MAX_SALT_SIZE; salt_len++)
 			if (exist_salt_by_len[salt_len])
 			{
+				cl_program* add_program = param->additional_programs + key_len * MAX_SALT_SIZE + salt_len - 1;
+				cl_kernel* add_kernel = param->additional_kernels + key_len * MAX_SALT_SIZE + salt_len - 1;
+
+				send_message_gui(MESSAGE_PUT_DATA(MESSAGE_CL_COMPILING, count_kernels * 100 / total_kernels));
+				// Generate source and compile it
+				source[0] = 0;
+				ocl_gen_header_needed_by_crypts(source, gpu_devices + gpu_index, param->NUM_KEYS_OPENCL, use_rules);
+				ocl_gen_sha512body_by_lenght(source + strlen(source), key_len, salt_len);
+				if (!build_opencl_program_private(param, source, gpu_devices[gpu_index].compiler_options, add_program))
+				{
+					free(source);
+					release_opencl_param(param);
+					return FALSE;
+				}
+				count_kernels++;
+
+				// Create kernel
 				cl_int code;
 				char name[32];
-				sprintf(name, "sha256crypt_cycle%ux%u", key_len, salt_len);
-				param->additional_kernels[key_len * MAX_SALT_SIZE + salt_len - 1] = pclCreateKernel(param->additional_program, name, &code);
+				sprintf(name, "sha512crypt_cycle%ux%u", key_len, salt_len);
+				*add_kernel = pclCreateKernel(*add_program, name, &code);
 
 				//	                        keylen-x-saltlen
 				//__kernel void sha256crypt_cycle%ux%u(__global uint* current_data,uint rounds)
+				assert(code == CL_SUCCESS);
 				if (code == CL_SUCCESS)
-					pclSetKernelArg(param->additional_kernels[key_len * MAX_SALT_SIZE + salt_len - 1], 0, sizeof(cl_mem), (void*)&param->mems[GPU_CURRENT_KEY]);
+					pclSetKernelArg(*add_kernel, 0, sizeof(cl_mem), (void*)&param->mems[GPU_CURRENT_KEY]);
 			}
 
+	free(source);
 	// Select best params
 	uint32_t max_salt_len = MAX_SALT_SIZE;
 	for (; !exist_salt_by_len[max_salt_len]; max_salt_len--);
-	cl_uint rounds = 42*8;
+	cl_uint rounds = 42 * 8;
 	ocl_calculate_best_work_group(param, param->additional_kernels + MAX_KEY_SIZE * MAX_SALT_SIZE + (max_salt_len-1), INT32_MAX, &rounds, 1, FALSE, CL_TRUE);
 	// Manage rounds
 	if (rounds == 0) rounds = 1;
@@ -1805,8 +1888,8 @@ PRIVATE int ocl_protocol_common_init(OpenCL_Param* param, cl_uint gpu_index, gen
 	// If it's too high
 	uint32_t min_rounds = UINT32_MAX;
 	for (size_t i = 0; i < num_diff_salts; i++)
-		if (min_rounds > ((const crypt_sha256_salt*)salts_values)->rounds)
-			min_rounds = ((const crypt_sha256_salt*)salts_values)->rounds;
+		if (min_rounds > ((const crypt_sha256_salt*)salts_values)[i].rounds)
+			min_rounds = ((const crypt_sha256_salt*)salts_values)[i].rounds;
 
 	if (rounds > min_rounds)
 	{
