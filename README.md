@@ -24,4 +24,4 @@ Requirements:
 
 
 Please provide comments, suggestions, benchmark results (found in /sdcard/Android/data/com.hashsuite.droid/files/benchmark.csv) and any other feedback.
-More details in the webpage: http://hashsuite.openwall.net/Android
+More details in the webpage: https://hashsuite.openwall.net/android

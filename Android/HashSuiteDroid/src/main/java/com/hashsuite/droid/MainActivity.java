@@ -698,7 +698,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		FileChooserDialog dialog = new FileChooserDialog(this, "Select file to import (pwdump | .db | .pcap | ...)", getLayoutInflater());
 
 		// Define the filter
-		dialog.setFilter(".*txt|.*db|.*pcap|.*cap|.*hccap");
+		dialog.setFilter(".*txt|.*db|.*pcap|.*cap|.*hccap|.*hccapx");
 
 		// Assign listener for the select event.
 		dialog.addListener(new FileChooserDialog.OnFileSelectedListener()

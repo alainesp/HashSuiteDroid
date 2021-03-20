@@ -115,7 +115,7 @@ PUBLIC sqlite3_int64 insert_hash_account1(ImportParam* param, const char* user_n
 	sqlite3_int64 hash_id = insert_hash_if_necesary(ciphertext, db_index, param->result.formats_stat + db_index);
 
 	// Insert tagged account
-	if(user_name)
+	if (user_name)
 		return insert_tagged_account(user_name, hash_id, &param->result, db_index);
 
 	return -1;
@@ -1623,7 +1623,7 @@ PRIVATE void import_wpa_from_hccapx_file(ImportParam* param)
 					cp += code_block(&w[i], 1, cp);
 				cp += code_block(&w[i], 0, cp);
 
-				sqlite3_int64 insertId = insert_hash_account1(param, wpa.essid, TmpKey, WPA_INDEX);
+				sqlite3_int64 insertId = insert_hash_account1(param, wpax.essid, TmpKey, WPA_INDEX);
 				if (insertId >= 0)
 				{
 					lastHashId = insertId;
