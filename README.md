@@ -16,10 +16,10 @@ Features highlight:
 Requirements:
 
 - Android 4.4 or newer.
-- ARM CPU supporting armeabi-v7a.
+- ARM CPU supporting armeabi-v7a or arm64-v8a.
 - INTERNET permission to download wordlists.
 - WAKE_LOCK permission to prevent Android from putting the CPU to sleep while cracking.
 
 
 Please provide comments, suggestions, benchmark results (found in /sdcard/Android/data/com.hashsuite.droid/files/benchmark.csv) and any other feedback.
-More details in the webpage: https://hashsuite.openwall.net/Android
+More details on the webpage: https://hashsuite.openwall.net/Android
