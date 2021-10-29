@@ -5,14 +5,14 @@ Copyright (c) 2014-2021 by Alain Espinosa. See LICENSE.
 
 package com.hashsuite.droid;
 
-import android.Manifest;
+import static android.os.Environment.DIRECTORY_DOCUMENTS;
+import static android.view.Gravity.LEFT;
+
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.app.ActionBar;
 import android.app.Activity;
 import android.app.AlarmManager;
 import android.app.AlertDialog;
-import android.app.Dialog;
 import android.app.DownloadManager;
 import android.app.DownloadManager.Request;
 import android.app.Fragment;
@@ -22,7 +22,6 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.database.Cursor;
 import android.graphics.Color;
@@ -31,6 +30,7 @@ import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.ParcelFileDescriptor;
 import android.os.PowerManager;
 import android.preference.PreferenceManager;
 import android.text.Html;
@@ -59,6 +59,7 @@ import com.codemybrainsout.ratingdialog.RatingDialog;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
@@ -67,14 +68,11 @@ import java.io.LineNumberReader;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Objects;
 import java.util.Timer;
 import java.util.TimerTask;
-
-import ar.com.daidalos.afiledialog.FileChooserDialog;
-
-import static android.view.Gravity.LEFT;
 
 public class MainActivity extends Activity implements ActionBar.TabListener, OnItemSelectedListener
 {
@@ -100,7 +98,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	private static native int GetImportResultInt(int index);
 	private static native void ImportHashesStop();
 	private static native void ImportDB(String file_path);
-	private static native void Export(String dir_path, int index, int format_index);
+	private static native String Export(String dir_path, int index, int format_index);
 	
 	// Hashes stats
 	private static native String ShowHashesStats(int format_index, int width);
@@ -147,12 +145,6 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 	private static boolean is_initialize_native = false;
 	public static int num_hashes_show = 1;
 	public static int current_page_hash = 0;
-
-	// Permissions
-	public static final int MY_PERMISSIONS_READ_EXTERNAL_STORAGE = 1;
-	public static final int MY_PERMISSIONS_WRITE_EXTERNAL_STORAGE = 2;
-	public static final int MY_PERMISSIONS_READ_EXTERNAL_STORAGE_WP = 3;// WordlistPreference
-	public static final int MY_PERMISSIONS_DOWNLOAD_WORDLISTS = 4;// Download wordlists
 
 	public static MainActivity my_activity;
 	public WordlistPreference wp;// saved value when asking for android permission
@@ -359,8 +351,10 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 								String path = c.getString(c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)).replace("file://","");
 								WordlistData.finishWordlistDownload(downloading_data.get(d_index).db_id, path, new File(path).length());
 								downloading_data.remove(d_index);
+								Toast.makeText(my_activity, "Successfully download of file " + path.substring(path.lastIndexOf('/') + 1), Toast.LENGTH_LONG).show();
 							}
-							// TODO: check failed downloads
+							else
+								Toast.makeText(my_activity, "Can't download file " + c.getString(c.getColumnIndex(DownloadManager.COLUMN_URI)), Toast.LENGTH_LONG).show();
 						}
 						c.close();
 					}
@@ -521,8 +515,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		final TableLayout formats_table = (TableLayout)stats_dialog.findViewById(R.id.import_table);
 		final String[] format_names = HashesFragment.GetFormats();
 		final int[] format_remaped = new int[format_names.length];
-		for (int i = 0; i < format_remaped.length; i++)
-			format_remaped[i] = -1;
+		Arrays.fill(format_remaped, -1);
 		
 		import_timer.schedule(new TimerTask()
 		{
@@ -605,83 +598,25 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			}
 		}, 500, 500);
 	}
-	public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults)
-	{
-		if(permissions.length > 0 && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED)
-		{
-			if (requestCode == MY_PERMISSIONS_READ_EXTERNAL_STORAGE && permissions[0].equals(Manifest.permission.READ_EXTERNAL_STORAGE))
-				onImportFile();
-
-			if (requestCode == MY_PERMISSIONS_WRITE_EXTERNAL_STORAGE && permissions[0].equals(Manifest.permission.WRITE_EXTERNAL_STORAGE))
-				onExportFile();
-
-			if (requestCode == MY_PERMISSIONS_READ_EXTERNAL_STORAGE_WP && permissions[0].equals(Manifest.permission.READ_EXTERNAL_STORAGE))
-				wp.onImportWordlistDialog();
-
-			if (requestCode == MY_PERMISSIONS_DOWNLOAD_WORDLISTS && permissions[0].equals(Manifest.permission.READ_EXTERNAL_STORAGE))
-				onBeginDownloadWordlists();
-		}
-	}
-	@TargetApi(23)
-	public void requestPermission(String permission, int requestCode)
-	{
-		if (android.os.Build.VERSION.SDK_INT >= 23 && PackageManager.PERMISSION_GRANTED != this.checkSelfPermission(permission)) {
-			// No explanation needed, we can request the permission.
-			this.requestPermissions(new String[]{permission}, requestCode);
-		}
-		else
-		{
-			if(requestCode == MY_PERMISSIONS_READ_EXTERNAL_STORAGE)
-				onImportFile();
-
-			if(requestCode == MY_PERMISSIONS_WRITE_EXTERNAL_STORAGE)
-				onExportFile();
-
-			if(requestCode == MY_PERMISSIONS_READ_EXTERNAL_STORAGE_WP)
-				wp.onImportWordlistDialog();
-
-			if(requestCode == MY_PERMISSIONS_DOWNLOAD_WORDLISTS)
-				onBeginDownloadWordlists();
-		}
-	}
 	private void onExportFile()
 	{
 		CharSequence[] exporters = new CharSequence[] { "Found passwords", "Found passwords as wordlist", "LM/NTLM in pwdump format", "Hashes", "Hash Suite Database"};
 		AlertDialog.Builder builder = new AlertDialog.Builder(my_activity);
 		if(!isTabletUI())
 			builder.setTitle("Export");
+
 		builder.setItems(exporters, (dialog, which) -> {
 			dialog.dismiss();
 			// The 'which' argument contains the index position of the selected item
 			if(which >= 0 && which < 5)
 			{
-				// Create the dialog.
-				FileChooserDialog select_directory = new FileChooserDialog(my_activity, "Select directory to export", my_activity.getLayoutInflater());
-				select_directory.setFolderMode(true);
-				select_directory.setShowOnlySelectable(true);
-
-				// Assign listener for the select event.
-				select_directory.addListener(new FileChooserDialog.OnFileSelectedListener()
+				try {
+					String filePath = MainActivity.Export(Environment.getExternalStoragePublicDirectory(DIRECTORY_DOCUMENTS).getAbsolutePath(), which, format_index);
+					Toast.makeText(my_activity, "Exported file successfully to " + filePath, Toast.LENGTH_LONG).show();
+				} catch (Exception e)
 				{
-					private void Export(Dialog source, String file_path)
-					{
-						source.dismiss();
-						MainActivity.Export(file_path, which, format_index);
-						Toast.makeText(my_activity, "Exported file successfully", Toast.LENGTH_SHORT).show();
-					}
-
-					public void onFileSelected(Dialog source, File file)
-					{
-						Export(source, file.getAbsolutePath());
-					}
-					public void onFileSelected(Dialog source, File folder, String name)
-					{
-						Export(source, folder.getAbsolutePath());
-					}
-				});
-
-				// Show the dialog.
-				select_directory.show();
+					Toast.makeText(my_activity, "Error exporting: " + e.getMessage(), Toast.LENGTH_LONG).show();
+				}
 			}
 		});
 		AlertDialog dialog = builder.create();
@@ -691,54 +626,6 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		dialog.show();
 
 		Objects.requireNonNull(dialog.getWindow()).setLayout(calculateDialogWidth(320), WindowManager.LayoutParams.WRAP_CONTENT);
-	}
-	private void onImportFile()
-	{
-		// Create the dialog.
-		FileChooserDialog dialog = new FileChooserDialog(this, "Select file to import (pwdump | .db | .pcap | ...)", getLayoutInflater());
-
-		// Define the filter
-		dialog.setFilter(".*txt|.*db|.*pcap|.*cap|.*hccap|.*hccapx");
-
-		// Assign listener for the select event.
-		dialog.addListener(new FileChooserDialog.OnFileSelectedListener()
-		{
-			private void BeginImport(Dialog source, String file_path)
-			{
-				source.dismiss();
-				if(file_path.endsWith(".db"))
-				{
-					ImportDB(file_path);
-					// Delete wordlist files to import again
-					new File(getFilesDir().getAbsolutePath() + "/" + DEFAULT_WORDLIST).delete();
-					new File(getFilesDir().getAbsolutePath() + "/" + DEFAULT_PHRASES_FILE).delete();
-
-					// Restart app
-					Intent mStartActivity = new Intent(my_activity, MainActivity.class);
-					int mPendingIntentId = 123456;
-					PendingIntent mPendingIntent = PendingIntent.getActivity(my_activity, mPendingIntentId,    mStartActivity, PendingIntent.FLAG_CANCEL_CURRENT);
-					AlarmManager mgr = (AlarmManager)my_activity.getSystemService(Context.ALARM_SERVICE);
-					assert mgr != null;
-					mgr.set(AlarmManager.RTC, System.currentTimeMillis() + 300, mPendingIntent);
-					System.exit(0);
-				}
-				else
-					onImportHashesDialog(file_path);
-			}
-
-			public void onFileSelected(Dialog source, File file)
-			{
-				BeginImport(source, file.getAbsolutePath());
-			}
-
-			public void onFileSelected(Dialog source, File folder, String name)
-			{
-				BeginImport(source, folder.getAbsolutePath() + name);
-			}
-		});
-
-		// Show the dialog.
-		dialog.show();
 	}
 	private static int conflict_format_result;
 	private static RadioGroup rb_formats;
@@ -1083,7 +970,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 						Request request = new Request(Uri.parse(wordlists2download[which].url));
 						request.setTitle(wordlists2download[which].name);
 						request.setDescription("Downloading wordlist for Hash Suite");
-						request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, wordlists2download[which].name);
+						request.setDestinationInExternalFilesDir(my_activity, null, wordlists2download[which].name);
 						try {
 							long enqueue = dm.enqueue(request);
 
@@ -1099,6 +986,71 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 		AlertDialog downloader = builder.create();
 		downloader.show();
 		Objects.requireNonNull(downloader.getWindow()).setLayout(calculateDialogWidth(520), WindowManager.LayoutParams.WRAP_CONTENT);
+	}
+	private static final int IMPORT_FILE = 2;
+	protected static final int IMPORT_WORDLIST = 3;
+	private String copyFileFromSAF(Uri uri){
+		String filename = uri.getLastPathSegment();
+		filename = filename.substring(filename.lastIndexOf('/') + 1);
+		String extFilePath = my_activity.getExternalFilesDir(null).getAbsolutePath() + "/" + filename;
+		try {
+			ParcelFileDescriptor pfd = my_activity.getContentResolver().openFileDescriptor(uri, "r");
+			FileInputStream in = new FileInputStream(pfd.getFileDescriptor());
+			FileOutputStream out = new FileOutputStream(extFilePath);
+
+			byte[] buffer = new byte[1024*4];
+			int bytes_read = in.read(buffer);
+			while (bytes_read >= 0) {
+				out.write(buffer, 0, bytes_read);
+				bytes_read = in.read(buffer);
+			}
+
+			out.close();
+			in.close();
+			pfd.close();
+		} catch (IOException e) {
+			Toast.makeText(this, "Exception: " + e.getMessage(), Toast.LENGTH_LONG).show();
+		}
+
+		return extFilePath;
+	}
+	@Override
+	public void onActivityResult(int requestCode, int resultCode, Intent resultData) {
+		if (requestCode == IMPORT_FILE && resultCode == Activity.RESULT_OK && resultData != null) {
+			// Perform operations on the document using its URI.
+			String file_path = copyFileFromSAF(resultData.getData());
+			if (file_path.endsWith(".db")) {
+				ImportDB(file_path);
+				// Delete wordlist files to import again
+				new File(getFilesDir().getAbsolutePath() + "/" + DEFAULT_WORDLIST).delete();
+				new File(getFilesDir().getAbsolutePath() + "/" + DEFAULT_PHRASES_FILE).delete();
+
+				// Restart app
+				Intent mStartActivity = new Intent(my_activity, MainActivity.class);
+				int mPendingIntentId = 123456;
+				PendingIntent mPendingIntent = PendingIntent.getActivity(my_activity, mPendingIntentId, mStartActivity, PendingIntent.FLAG_CANCEL_CURRENT);
+				AlarmManager mgr = (AlarmManager) my_activity.getSystemService(Context.ALARM_SERVICE);
+				assert mgr != null;
+				mgr.set(AlarmManager.RTC, System.currentTimeMillis() + 300, mPendingIntent);
+				System.exit(0);
+			} else
+				onImportHashesDialog(file_path);
+		}
+		if (requestCode == IMPORT_WORDLIST && resultCode == Activity.RESULT_OK && resultData != null) {
+			// Perform operations on the document using its URI.
+			String file_path = copyFileFromSAF(resultData.getData());
+
+			WordlistData data = new WordlistData(0);
+			File word_info = new File(file_path);
+			data.name = word_info.getName();
+			data.size = WordlistData.filelength2string(word_info.length());
+			data.id = MainActivity.SaveWordlist(file_path, data.name, word_info.length());
+
+			if (data.id < 0)
+				Toast.makeText(MainActivity.my_activity, "Failed to import wordlist", Toast.LENGTH_SHORT).show();
+			else
+				wp.addWordlist(data);
+		}
 	}
 	@SuppressLint({"RtlHardcoded", "SetTextI18n", "DefaultLocale"})
 	@Override
@@ -1191,11 +1143,16 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			}
 			return true;
 		case R.id.import_file:
-			//onImportFile();
-			requestPermission(Manifest.permission.READ_EXTERNAL_STORAGE, MY_PERMISSIONS_READ_EXTERNAL_STORAGE);
+			Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+			intent.addCategory(Intent.CATEGORY_OPENABLE);
+			// Define the filter
+			//dialog.setFilter(".*txt|.*db|.*pcap|.*cap|.*hccap|.*hccapx");
+			intent.setType("*/*");
+			intent.putExtra(Intent.EXTRA_TITLE, "Select file to import (pwdump | .db | .pcap | ...)");
+			startActivityForResult(intent, IMPORT_FILE);
 			return true;
 		case R.id.export:
-			requestPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE, MY_PERMISSIONS_WRITE_EXTERNAL_STORAGE);
+			onExportFile();
 			return true;
 		case R.id.resume_attack:
 			if(checkBattery("Battery low, can not resume an attack."))
@@ -1268,7 +1225,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			return true;
 			
 		case R.id.downloader:
-			requestPermission(Manifest.permission.READ_EXTERNAL_STORAGE, MY_PERMISSIONS_DOWNLOAD_WORDLISTS);
+			onBeginDownloadWordlists();
 			return true;
 		case R.id.benchmark:
 			if(checkBattery("Battery low, can not benchmark."))
@@ -1578,7 +1535,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 			{
 				try
 				{
-					File bench_file = new File(my_activity.getExternalFilesDir(null), "benchmark.csv");
+					File bench_file = new File(Environment.getExternalStoragePublicDirectory(DIRECTORY_DOCUMENTS), "benchmark.csv");
 					FileOutputStream file = new FileOutputStream(bench_file.getAbsolutePath(), true);
 					OutputStreamWriter writer = new OutputStreamWriter(file);
 
@@ -1586,11 +1543,11 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 
 					// Save benchmark header
 					writer.write("/////////////////////////////////////////////////////////////////////////////////\n");
-					writer.write("Hash Suite Droid "+app_version);
-					writer.write(","+Build.MANUFACTURER);
-					writer.write(" "+Build.PRODUCT);
-					writer.write(" "+Build.MODEL);
-					writer.write(","+new Date().toString()+"\n");
+					writer.write("Hash Suite Droid " + app_version);
+					writer.write("," + Build.MANUFACTURER);
+					writer.write(" " + Build.PRODUCT);
+					writer.write(" " + Build.MODEL);
+					writer.write("," + new Date().toString() + "\n");
 
 					// Save benchmark table data
 					SaveDataTable(benchmark_dialog.findViewById(R.id.benchmark_hardware), writer);
@@ -1598,6 +1555,7 @@ public class MainActivity extends Activity implements ActionBar.TabListener, OnI
 
 					writer.close();
 					file.close();
+					Toast.makeText(my_activity, "Benchmark exported to " + bench_file.getAbsolutePath(), Toast.LENGTH_LONG).show();
 				}
 				catch (Exception ignored)
 				{}

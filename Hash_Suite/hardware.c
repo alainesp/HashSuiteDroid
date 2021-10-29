@@ -727,9 +727,9 @@ PUBLIC void detect_hardware()
 		current_cpu.img_index = 14;
 	else if(strstr(current_cpu.brand, "Intel(R) Core(TM)2 Extreme"))
 		current_cpu.img_index = 15;
-	else if (strstr(current_cpu.brand, "AMD"))
-		current_cpu.img_index = 8;
 	else if (strstr(current_cpu.brand, "Ryzen"))
+		current_cpu.img_index = 20;
+	else if (strstr(current_cpu.brand, "AMD"))
 		current_cpu.img_index = 8;
 	// TODO: Add more and with better images
 

@@ -971,7 +971,9 @@ PUBLIC int get_setting(int id, int default_value)
 PUBLIC uint32_t* num_hashes_by_formats1 = NULL;
 PUBLIC uint32_t* num_hashes_found_by_format1 = NULL;
 PUBLIC uint32_t* num_user_by_formats1 = NULL;
+PUBLIC uint32_t total_deleted_hashes = 0;
 
+#define ID_NUM_DELETED_HASHES           69999
 #define ID_NUM_HASHES_DATA              70000
 PRIVATE void load_cache()
 {
@@ -989,7 +991,7 @@ PRIVATE void load_cache()
 		// Count users
 		num_user_by_formats1[i] = get_setting(ID_NUM_HASHES_DATA + 3 * i + 2, 0);
 	}
-
+	total_deleted_hashes = get_setting(ID_NUM_DELETED_HASHES, 0);
 }
 PUBLIC void save_num_hashes_cache()
 {
@@ -1002,6 +1004,7 @@ PUBLIC void save_num_hashes_cache()
 		// Count users
 		save_setting(ID_NUM_HASHES_DATA + 3 * i + 2, num_user_by_formats1[i]);
 	}
+	save_setting(ID_NUM_DELETED_HASHES, total_deleted_hashes);
 
 	save_settings_to_db();
 }

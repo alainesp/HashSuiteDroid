@@ -758,11 +758,9 @@ PRIVATE void crypt_utf8_coalesc_protocol_sse2(CryptParam* param)
 // TODO: Neon code
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef HS_ARM
-void md5_one_block_neon(void* state, const void* block);
 PRIVATE void crypt_utf8_coalesc_protocol_neon(CryptParam* param)
 {
-	copy_pattern_same_size_func* copy_pattern_v128[] = { copy_pattern_v128_1, copy_pattern_v128_2, copy_pattern_v128_3 };
-	crypt_utf8_coalesc_protocol_body(param, md5_one_block_neon, 4, copy_pattern_v128);
+	crypt_utf8_coalesc_protocol_c_code(param);
 }
 #endif
 

@@ -1249,7 +1249,7 @@ PRIVATE void ensure_good_fam(uint64_t pos)
 }
 PUBLIC void resize_fam()
 {
-	uint64_t new_size = (total_num_hashes() + 1) * sizeof(uint32_t);
+	uint64_t new_size = (total_num_hashes() + 1 + total_deleted_hashes) * sizeof(uint32_t);
 	if (new_size != hash2found_id.file_size)
 	{
 		UnmapViewOfFile(hash2found_id.data);

@@ -438,6 +438,7 @@ extern int num_rules;
 #define FIXED_EXPIRE	2
 
 extern uint32_t* num_user_by_formats1;
+extern uint32_t total_deleted_hashes;
 
 // Executed at program init
 void init_all(const char* program_exe_path);

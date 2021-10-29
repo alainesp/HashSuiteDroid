@@ -425,8 +425,10 @@ JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_ImportDB(JNIEnv* en
 	env->ReleaseStringUTFChars(file_path, path);
 	db = nullptr;
 }
-JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_Export(JNIEnv* env, jclass unused, jstring dir_path, jint index, jint format_index)
+JNIEXPORT jstring JNICALL Java_com_hashsuite_droid_MainActivity_Export(JNIEnv* env, jclass unused, jstring dir_path, jint index, jint format_index)
 {
+    buffer_str[0] = 0;
+
 	if(index >=0 && index < num_exporters)
 	{
 		const char* path = env->GetStringUTFChars(dir_path, nullptr);
@@ -435,6 +437,8 @@ JNIEXPORT void JNICALL Java_com_hashsuite_droid_MainActivity_Export(JNIEnv* env,
 
 		exporters[index].function(buffer_str, format_index);
 	}
+
+    return env->NewStringUTF(buffer_str);
 }
 
 // Hashes stats
